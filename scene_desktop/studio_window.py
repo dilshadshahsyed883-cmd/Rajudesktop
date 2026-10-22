@@ -10,7 +10,7 @@ import subprocess
 import uuid
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QBrush, QPen, QPixmap, QIcon
+from PySide6.QtGui import QAction, QColor, QBrush, QPen, QPixmap, QIcon, QDesktopServices
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
@@ -257,6 +257,7 @@ class StudioWindow(QMainWindow):
         self.worker: RenderThread | None = None
         self.preview_pending = False
         self._preview_output = None
+        self.last_export: Path | None = None
         self.setWindowTitle("Scene Desktop Studio — Unified Editor")
         self.resize(1530, 940)
         self.setMinimumSize(1020, 650)
@@ -305,7 +306,8 @@ class StudioWindow(QMainWindow):
                               ("Save", self.save_project), ("Recover", self.recover_autosave),
                               ("Relink Media", self.relink_media),
                               ("PC Resources", self.show_resources), ("Undo", self.undo),
-                              ("Redo", self.redo), ("Export MP4", self.export_video)]:
+                              ("Redo", self.redo), ("Export MP4", self.export_video),
+                              ("Open Last Video", self.open_last_export)]:
             b = QPushButton(title)
             b.clicked.connect(action)
             toolrow.addWidget(b)
@@ -1182,15 +1184,41 @@ class StudioWindow(QMainWindow):
 
     def _preview_ready(self, filename: str):
         self._preview_output = filename
+        self._prune_preview_files(filename)
         self.player.stop()
         self.player.setSource(QUrl.fromLocalFile(filename))
         self.player.play()
         self.message("Preview ready (low-resolution cached composition)")
 
+    def _prune_preview_files(self, active_file: str):
+        # Only our app-generated short previews; never user's input media.
+        folder = app_directory() / "previews"
+        files = sorted((p for p in folder.glob("*.mp4") if p.is_file()
+                        and not p.is_symlink()),key=lambda p: p.stat().st_mtime)
+        for candidate in files[:-20]:
+            if str(candidate) != str(active_file):
+                try:
+                    candidate.unlink()
+                except OSError:
+                    pass
+
     def _preview_finish(self):
         if self.preview_pending:
             self.preview_pending = False
             self.preview_timer.start()
+
+    def open_last_export(self):
+        if self.last_export and self.last_export.is_file():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.last_export)))
+        else:
+            self.message("No completed export in this session")
+
+    def _on_export_done(self, dest: str):
+        self.last_export = Path(dest)
+        QMessageBox.information(self, "Export complete",
+                                f"Verified new video saved:\n{dest}\n"
+                                "Use Open Last Video to play the MP4.")
+        self.message("Export complete: " + dest)
 
     def export_video(self):
         if self.worker and self.worker.isRunning():
@@ -1203,9 +1231,7 @@ class StudioWindow(QMainWindow):
         out = Path(path).with_suffix(".mp4")
         self.worker = RenderThread(self.project, out, app_directory() / "segment-cache")
         self.worker.progress.connect(lambda n, msg: self.message(f"{n}% — {msg}"))
-        self.worker.done.connect(lambda dest: QMessageBox.information(
-            self, "Export complete", f"New video saved:\n{dest}"
-        ))
+        self.worker.done.connect(self._on_export_done)
         self.worker.failed.connect(lambda msg: QMessageBox.warning(self, "Export error", msg))
         self.worker.start()
         self.message("Export started; original media will not be modified")

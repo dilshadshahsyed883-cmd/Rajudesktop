@@ -1,37 +1,47 @@
-# Scene Desktop Studio — Rajudesktop
+# Rajudesktop — Scene Desktop Studio for Windows
 
-A standalone Windows video production studio combining local Media Library workflows, script-to-scene planning and a CapCut-inspired editable timeline. Independent of existing VPS_1 Scene Builder, SML, Haseeb and Bilal projects.
+Independent, local-first **scene planning + indexed media library + multitrack video editor**. Windows application source and distributable are hosted ONLY in this repository. No existing VPS_1, Haseeb, Bilal, Scene Builder or SML deployments are modified.
 
-Development policy: one consolidated feature branch until unified acceptance. GitHub builds and tests automatically. NO automatic installation or remote desktop deployment; Windows app installation is exclusively via an owner-approved manual Tailscale/PowerShell action.
+## Editing capabilities
 
-## Functional unified-build scope
+- Local media library: file/folder import (background indexing), searchable thumbnails, selected/video/image counts, tags, exact duplicates, candidate/approved/rejected review and approval.
+- Scene Director: import TXT or paste script, split into editable timed scenes, match approved local media (local-first, alternate video/image, video-only or image-only), manual media selection and batch five-at-a-time approval.
+- Optional **actual AI** scene proposal generation using an owner-installed **local Ollama** model. It runs only against 127.0.0.1:11434 when the operator clicks AI Scene Plan; no background model downloads and no hosted cloud upload. If no model is installed, the built-in deterministic planner works offline.
+- Graphical six-track timeline for main video, video overlay, captions, narration, music and SFX. Drag positions, switch compatible tracks, edit source trims, split, duplicate, delete, undo/redo, lock/mute/hide tracks and scale timeline zoom.
+- Inspector: zoom 50–300%, horizontal mirror, pan/reframe/slow-push/Ken Burns motion, 23 parameterized color looks (not .cube LUT files), look intensity, basic grain/noise styles, brightness, saturation, fade/dissolve and slide transitions, optional original-video audio, audio volume/fades and captions.
+- SRT caption import/export, project save/open, backups, recover autosave, find/relink missing assets, read-only Windows resource panel.
+- FFmpeg preview segment compositing from the same project model, preview continuation, 16:9/9:16 720p/1080p video export, original/voice/music/SFX audio mixing, output open/play, job cancellation and source-preserving non-overwrite.
+- Hashed render-section reuse, guarded free-disk admission, app-owned cache trimming and preview expiry; original project media files NEVER removed.
 
-- Persistent indexed local library (SQLite): folder/file imports, tagging, search, status filters, video/image/selected counts, explicit approval, SHA-256 exact duplicate grouping, crisp image/video thumbnails. Source files are read-only.
-- Script TXT import/paste, offline timed scene planning, keyword/media matching against approved local assets, source preference modes, manual media replacements, five-scene batch review and bulk approval/locking. Auto-approval optional and off by default.
-- Native six-track graphical timeline (main video, overlay, captions, narration, music, SFX): drag, reposition/change compatible track, trim, split, replace, delete, undo/redo and properties inspector.
-- Supported clip options include zoom, mirror, brightness/contrast/saturation, basic grain, alpha fade transitions, audio volume and fades, timed captions, SRT import/export.
-- Short composited audiovisual FFmpeg proxy preview (cached), full H.264/AAC video export, compatible-section caching, background rendering and cancellation. Existing exports are never overwritten.
-- Atomic editable project saves (.sds2) with backups, local autosave recovery and missing-file relinking. Read-only PC resource/codec report available in app.
-- Windows GitHub Actions PyInstaller build, versioned downloadable ZIP, SHA-256 and tests with real generated audio/video and Qt UI smoke.
+## Important accuracy/limitations
 
-## Honest current limitations (not full CapCut parity)
+The UI is **CapCut-inspired**, not full CapCut feature parity. Playback previews render short cached sections on a worker, so instant GPU-smooth scrubbing and frame-perfect arbitrary-layer preview on all hardware is NOT guaranteed. Transitions and presets cover an initial functional subset; third-party .cube LUTs, nonlinear motion keyframe authoring, AI word-level Whisper timing/karaoke, advanced face embeddings, integrated stock download, project collaboration, and full audio ducking are NOT implemented or independently verified.
 
-- Script planning uses offline keyword/timing estimation: it is NOT yet a generative AI model, Whisper word-aligned captions or fully accurate voice timing.
-- GPU hardware acceleration, 4K and actual owner's Windows PC performance are not verified. Preview renders short cached segments, not instantaneous full-timeline GPU compositing.
-- Advanced animated keyframes, full named transition/LUT libraries, noise modes, face clustering and automatic AI inference remain future milestones. Nothing silently claims to implement these.
-- Local original media must remain accessible; portable project import of actual VPS-only Scene Builder/SML assets and external Drive/Pexels connectors are NOT wired.
-- Video visuals do not automatically mix their source audio; manually place the file on an audio track when needed. Sophisticated music ducking is not implemented yet.
-- Source lives exclusively in Rajudesktop; does not edit or migrate production apps, jobs, OAuth credentials or the user's videos.
+The owner PC's CPU/RAM/GPU and media-heavy UAT are not yet measured. The initial app includes read-only PC Resources inspection. **Do not claim hardware/performance verification just because GitHub Windows runner tests passed.**
 
-## Developer workflow
+The optional local Ollama AI feature requires a separately installed, compatible local model; there is NO embedded large language model or automatic download. Local media and projects are never uploaded from CI or shared by default.
 
-For developers with Python 3.11+:
-1. python -m pip install -r requirements.txt
-2. python -m unittest discover -s tests -v
-3. python launch.py
+## Build and automated validation
 
-Windows CI generates SceneDesktopStudio-windows-x64.zip and SceneDesktopStudio-windows-x64.zip.sha256 via PyInstaller, with artifact retention. This is a CI build, not a validation of the executable on the owner's actual PC.
+Windows workflow: source lint/compile and model/unit tests → real FFmpeg generated-media rendering and 1080p landscape/portrait smoke → Qt headless smoke → PyInstaller Windows EXE → executable headless launch → artifact SHA-256/manifest + manual installer PowerShell syntax validation.
 
-Only later, upon explicit owner authorization, an operator may perform a manual Tailscale-connected PowerShell deployment. Confirm target identity, installation directory, artifact/checksum, GUI session, app-only backup/rollback and smoke tests. No GitHub-to-PC auto-deploy is configured.
+Developer commands (not needed for packaged app):
 
-The living decisions and development register belong to the separate Scene Desktop Studio Master Google Doc; previous Master Docs are untouched.
+    python -m pip install -r requirements.txt
+    python -m unittest discover -s tests -v
+    python launch.py
+
+## Manual-only Windows delivery
+
+1. Open the successful GitHub Actions Windows build and download its artifact bundle. It contains the portable application ZIP, checksum file and standalone manual installer script.
+2. Copy the three files to an authorized Windows machine (locally or over Tailscale). Do not execute inside GitHub Actions.
+3. Verify Tailscale device identity, installed release, idle editor, disk room and backup destination.
+4. Run from a PowerShell terminal opened in that folder:
+
+    .\Install-SceneDesktop.ps1 -ArtifactZip .\SceneDesktopStudio-windows-x64.zip -ChecksumFile .\SceneDesktopStudio-windows-x64.zip.sha256
+
+For remote noninteractive sessions over Windows OpenSSH Server and Tailscale, invoke the same script with -SkipLaunchSmoke, then log into the actual interactive Windows desktop session for GUI playback/UAT. Tailscale's Linux built-in SSH server is not the Windows OpenSSH server.
+
+The script verifies ZIP and EXE hashes, refuses installation when the GUI is running, retains the previous app version for rollback, and does not touch project data. **No automatic deployment, auto-updater, cloud credentials, remote runner shell or other project mutations exist.**
+
+See docs/THIRD_PARTY_NOTICES.txt before redistribution or commercialization. Detailed decisions and results are maintained in the independent Desktop Studio Master Google Doc, not the VPS_1 Master Doc.

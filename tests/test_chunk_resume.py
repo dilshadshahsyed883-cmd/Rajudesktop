@@ -56,7 +56,7 @@ class ChunkResumeTests(unittest.TestCase):
             self.assertFalse((root/"first.mp4").exists())
             store=ChunkStore(cache)
             self.assertTrue(list(store.receipts.glob("*.json")))
-            self.assertEqual(resumable_exports(p,cache,max_chunk_ms=4000),[root/"first.mp4"])
+            self.assertEqual(resumable_exports(p,cache,max_chunk_ms=4000),[(root/"first.mp4").resolve()])
             incompatible=StudioProject(width=480,height=270,fps=24)
             incompatible.add(str(second),"image","v1",7500)
             self.assertEqual(resumable_exports(incompatible,cache,max_chunk_ms=4000),[])

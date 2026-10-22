@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QStandardPaths
 
 from .library import MediaLibrary
-from .sml_client import SMLClient, SMLAsset, SMLError
+from .sml_client import SMLClient, SMLAsset, SMLError, ordered_assets
 from .media import duration_ms, ffmpeg_path
 from .timeline import StudioProject, Item, EditHistory, save, load, VISUAL_TRACKS, AUDIO_TRACKS
 from .planner import create_scene_plan, match_media, append_scenes, Scene
@@ -630,6 +630,13 @@ class StudioWindow(QMainWindow):
         self.sml_kind.addItems(["All", "Videos", "Images"])
         query_row.addWidget(self.sml_kind)
         layout.addLayout(query_row)
+        self.sml_order = QComboBox()
+        self.sml_order.addItems([
+            "Server order", "Videos first", "Images first",
+            "Alternate: video first", "Alternate: image first"
+        ])
+        self.sml_order.currentIndexChanged.connect(self._render_sml_results)
+        layout.addWidget(self.sml_order)
         btns=QHBoxLayout()
         for label, method in [
             ("Connect & Search", self.search_sml),
@@ -686,14 +693,7 @@ class StudioWindow(QMainWindow):
 
     def _sml_found(self, assets, counts):
         self.sml_results=assets
-        self.sml_list.clear()
-        for asset in assets:
-            line=QListWidgetItem(
-                f"{'VIDEO' if asset.kind=='video' else 'IMAGE'}  |  {asset.name}  "
-                f"|  {', '.join(asset.keywords[:5])}  |  {asset.id}"
-            )
-            line.setData(Qt.ItemDataRole.UserRole, asset.id)
-            self.sml_list.addItem(line)
+        self._render_sml_results()
         vid=counts.get("video",{})
         img=counts.get("image",{})
         self.sml_stats.setText(
@@ -703,6 +703,16 @@ class StudioWindow(QMainWindow):
             "Filter keywords to narrow results."
         )
 
+    def _render_sml_results(self, *_):
+        assets=ordered_assets(self.sml_results,self.sml_order.currentText())
+        self.sml_list.clear()
+        for asset in assets:
+            line=QListWidgetItem(
+                f"{'VIDEO' if asset.kind=='video' else 'IMAGE'}  |  {asset.name}  "
+                f"|  {', '.join(asset.keywords[:5])}  |  {asset.id}"
+            )
+            line.setData(Qt.ItemDataRole.UserRole, asset.id)
+            self.sml_list.addItem(line)
     def move_sml_selection(self, step: int):
         items=self.sml_list.selectedItems()
         if len(items)!=1:

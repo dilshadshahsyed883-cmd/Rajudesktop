@@ -13,7 +13,7 @@ import threading
 import unittest
 
 from scene_desktop.sml_client import (
-    SMLClient, SMLAsset, SMLError, normalize_url, MAX_VIDEO
+    SMLClient, SMLAsset, SMLError, normalize_url, ordered_assets, MAX_VIDEO
 )
 from scene_desktop.library import MediaLibrary
 from scene_desktop.media import ffmpeg_path
@@ -168,6 +168,26 @@ class ClientTests(unittest.TestCase):
                 client.download(fake,folder)
             self.assertEqual(list(Path(folder).iterdir()),[])
         self.assertTrue(all(method=="GET" for method,_ in Handler.seen))
+
+    def test_import_order_policies_video_image_alternation(self):
+        sha="a"*64
+        assets=[
+            SMLAsset.parse({"id":f"{prefix}-{i}","type":kind,
+                            "sha256":sha})
+            for prefix,kind,i in [
+                ("IMG","image","one"),("IMG","image","two"),
+                ("CLP","video","three"),("CLP","video","four"),
+                ("IMG","image","five")
+            ]
+        ]
+        self.assertEqual([x.id for x in ordered_assets(assets,"Videos first")],
+                         ["CLP-three","CLP-four","IMG-one","IMG-two","IMG-five"])
+        self.assertEqual([x.id for x in ordered_assets(assets,"Alternate: video first")],
+                         ["CLP-three","IMG-one","CLP-four","IMG-two","IMG-five"])
+        self.assertEqual([x.id for x in ordered_assets(assets,"Alternate: image first")],
+                         ["IMG-one","CLP-three","IMG-two","CLP-four","IMG-five"])
+        with self.assertRaises(ValueError):
+            ordered_assets(assets,"unknown")
 
     def test_reject_untrusted_search_content_url_and_unsafe_id(self):
         bad={"id":"IMG-a/../b","type":"image","sha256":"a"*64}

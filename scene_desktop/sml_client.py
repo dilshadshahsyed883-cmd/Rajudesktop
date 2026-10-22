@@ -120,6 +120,30 @@ def choose_suffix(asset: SMLAsset, mime: str) -> str:
     raise SMLError("Unsupported SML image format (no verified content type)")
 
 
+def ordered_assets(assets: list[SMLAsset], policy: str) -> list[SMLAsset]:
+    """Stable ordering for selected SML videos/images without remote mutations."""
+    if policy == "Server order":
+        return list(assets)
+    videos = [a for a in assets if a.kind == "video"]
+    images = [a for a in assets if a.kind == "image"]
+    if policy == "Videos first":
+        return videos + images
+    if policy == "Images first":
+        return images + videos
+    if policy not in {"Alternate: video first", "Alternate: image first"}:
+        raise ValueError("Unknown SML media ordering policy")
+    groups = [videos, images] if policy.endswith("video first") else [images, videos]
+    result = []
+    index = 0
+    while index < max(map(len, groups),default=0):
+        for group in groups:
+            if index < len(group):
+                result.append(group[index])
+        index += 1
+    return result
+
+
+
 class SMLClient:
     def __init__(self, base_url: str, token: str, *, opener=None):
         self.url = normalize_url(base_url)

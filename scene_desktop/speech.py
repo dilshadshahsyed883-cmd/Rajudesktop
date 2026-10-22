@@ -16,11 +16,11 @@ MAX_WORDS=20000
 def transcribe_local(audio_path: str | Path, model_name: str,
                      models_dir: str | Path, allow_download: bool = False,
                      progress: Callable[[str],None] | None = None) -> dict:
+    if model_name not in MODELS:
+        raise ValueError("Select tiny, base or small Whisper model")
     file=Path(audio_path).expanduser()
     if not file.is_file():
         raise FileNotFoundError(f"Missing audio file: {file}")
-    if model_name not in MODELS:
-        raise ValueError("Select tiny, base or small Whisper model")
     root=Path(models_dir).expanduser()
     root.mkdir(parents=True,exist_ok=True)
     if progress:

@@ -19,6 +19,7 @@ from typing import Callable
 from .media import ffmpeg_path
 from .timeline import StudioProject, Item, VISUAL_TRACKS, AUDIO_TRACKS
 from .effects import visual_filters, overlay_position
+from .word_captions import ass_for_section
 
 Progress = Callable[[int, str], None]
 
@@ -204,9 +205,9 @@ def _one_section(project: StudioProject, start_ms: int, end_ms: int, output: Pat
         graph.append(f"[{base}][{label}]overlay=x='{x_pos}':y='{y_pos}':"
                      f"eval=frame:shortest=1:eof_action=pass:format=auto[{target}]")
         base = target
-    for number, item in enumerate(captions):
-        # Each section starts at an edit boundary, so only active captions
-        # appear in this section. Handles native FFmpeg libfreetype.
+    regular = [x for x in captions if not x.caption_style.get("karaoke_words")]
+    for number, item in enumerate(regular):
+        # Ordinary caption text uses FFmpeg drawtext.
         text = _text_for_filter(item.text)
         size = max(18, min(100, int(item.caption_style.get("font_size", 38))))
         color = str(item.caption_style.get("color", "white"))
@@ -216,6 +217,13 @@ def _one_section(project: StudioProject, start_ms: int, end_ms: int, output: Pat
         graph.append(f"[{base}]drawtext=text='{text}':fontcolor={color}:fontsize={size}:"
                      f"x=(w-text_w)/2:y=h-text_h-50:box=1:boxcolor=black@0.45[{target}]")
         base = target
+    karaoke = [x for x in captions if x.caption_style.get("karaoke_words")]
+    if karaoke:
+        ass_path = output.parent / f"scene_karaoke_{start_ms}_{end_ms}.ass"
+        ass_path.write_text(ass_for_section(karaoke, start_ms,end_ms,width,height),
+                            encoding="utf-8")
+        graph.append(f"[{base}]ass=filename={ass_path.name}[karaoke]")
+        base = "karaoke"
     args += ["-filter_complex", ";".join(graph),
              "-map", f"[{base}]", "-an", "-t", f"{duration:.6f}",
              "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",

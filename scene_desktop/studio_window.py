@@ -28,6 +28,7 @@ from .media import duration_ms, ffmpeg_path
 from .timeline import StudioProject, Item, EditHistory, save, load, VISUAL_TRACKS, AUDIO_TRACKS
 from .planner import create_scene_plan, match_media, append_scenes, Scene
 from .captions import import_srt, export_srt
+from .word_captions import import_word_json
 from .resources import probe
 from .local_ai import plan_with_local_ai
 from .keyframes import set_keyframe,remove_keyframe
@@ -360,6 +361,7 @@ class StudioWindow(QMainWindow):
                               ("Track Controls", self.track_controls),
                               ("Add caption", self.add_caption),
                               ("Import SRT", self.import_subtitles),
+                              ("Word JSON", self.import_word_captions),
                               ("Export SRT", self.export_subtitles)]:
             b = QPushButton(title)
             b.clicked.connect(action)
@@ -825,6 +827,23 @@ class StudioWindow(QMainWindow):
         self.history.checkpoint()
         self.project.add(path, "audio", tracks[selected], dur, start_ms=self.playhead_ms)
         self.mark_changed()
+
+    def import_word_captions(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,"Import word-aligned Whisper transcript","","Whisper Word JSON (*.json)"
+        )
+        if not path:
+            return
+        self.history.checkpoint()
+        try:
+            count = import_word_json(self.project,path)
+        except Exception as exc:
+            self.project = self.history.undo()
+            self.history.project = self.project
+            QMessageBox.warning(self,"Word captions import",str(exc))
+            return
+        self.mark_changed()
+        self.message(f"Imported {count} karaoke phrases with word-level timing")
 
     def import_subtitles(self):
         path, _ = QFileDialog.getOpenFileName(self, "Import timed captions", "", "SubRip subtitles (*.srt)")

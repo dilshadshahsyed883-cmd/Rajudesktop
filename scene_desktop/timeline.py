@@ -16,7 +16,7 @@ VERSION = 2
 VISUAL_TRACKS = {"video", "overlay", "image"}
 AUDIO_TRACKS = {"narration", "music", "sfx", "audio"}
 KINDS = {"video", "image", "audio", "text"}
-EFFECTS = {"zoom", "mirror", "brightness", "contrast", "saturation", "grain", "grain_style", "opacity", "rotate", "blur", "motion", "look", "look_intensity", "source_audio"}
+EFFECTS = {"zoom", "mirror", "brightness", "contrast", "saturation", "grain", "grain_style", "opacity", "rotate", "blur", "motion", "look", "look_intensity", "source_audio", "lut_file"}
 TRANSITIONS = {"cut", "fade", "dissolve", "slide_left", "slide_right", "slide_up", "slide_down"}
 MIN_DURATION_MS = 100
 

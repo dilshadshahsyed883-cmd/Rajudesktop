@@ -501,6 +501,14 @@ class StudioWindow(QMainWindow):
         form.addRow("Color look (23)", self.look_select)
         self.look_strength_spin = self._spin(0, 100, 100)
         form.addRow("Look strength %", self.look_strength_spin)
+        lut_row = QHBoxLayout()
+        self.lut_path = QLineEdit()
+        self.lut_path.setPlaceholderText("Optional .cube LUT (not bundled)")
+        lut_row.addWidget(self.lut_path)
+        choose_lut = QPushButton("...")
+        choose_lut.clicked.connect(self.choose_lut)
+        lut_row.addWidget(choose_lut)
+        form.addRow("3D LUT File", lut_row)
         self.noise_select = QComboBox()
         self.noise_select.addItems(sorted(GRAINS))
         form.addRow("Grain/Noise style", self.noise_select)
@@ -536,6 +544,11 @@ class StudioWindow(QMainWindow):
         self.details.setWordWrap(True)
         lay.addWidget(self.details)
         lay.addStretch()
+
+    def choose_lut(self):
+        path, _ = QFileDialog.getOpenFileName(self,"Choose a 3D color LUT","","3D LUT (*.cube)")
+        if path:
+            self.lut_path.setText(str(Path(path).resolve()))
 
     def _spin(self, minimum, maximum, value=0):
         widget = QDoubleSpinBox()
@@ -914,6 +927,7 @@ class StudioWindow(QMainWindow):
         self.mirror_check.setChecked(bool(obj.effects.get("mirror",False)))
         self.motion_select.setCurrentText(str(obj.effects.get("motion","none")))
         self.look_select.setCurrentText(str(obj.effects.get("look","neutral")))
+        self.lut_path.setText(str(obj.effects.get("lut_file","")))
         self.noise_select.setCurrentText(str(obj.effects.get("grain_style","film")))
         self.source_audio_check.setEnabled(obj.kind == "video")
         self.source_audio_check.setChecked(bool(obj.effects.get("source_audio",False)))
@@ -940,7 +954,8 @@ class StudioWindow(QMainWindow):
                                  "look_intensity": self.look_strength_spin.value(),
                                  "motion": self.motion_select.currentText(),
                                  "grain_style": self.noise_select.currentText(),
-                                 "source_audio": self.source_audio_check.isChecked() if item.kind=="video" else False})
+                                 "source_audio": self.source_audio_check.isChecked() if item.kind=="video" else False,
+                                 "lut_file": self.lut_path.text().strip()})
             item.transition_in = self.transition.currentText()
             item.transition_ms = round(self.trans_spin.value()*1000)
             item.volume = self.volume_spin.value()/100

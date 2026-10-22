@@ -23,9 +23,9 @@ from .effects import visual_filters, overlay_position
 Progress = Callable[[int, str], None]
 
 
-def execute(args: list[str], stop: threading.Event | None = None):
+def execute(args: list[str], stop: threading.Event | None = None, cwd: Path | None = None):
     """Cancelable external render process; never run a shell command."""
-    process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, cwd=cwd)
     try:
         while True:
             if stop and stop.is_set():
@@ -62,6 +62,13 @@ def dependencies(items: list[Item]) -> list:
             stat = source.stat()
             record["source_size"] = stat.st_size
             record["source_mtime_ns"] = stat.st_mtime_ns
+            lut = record.get("effects", {}).get("lut_file")
+            if lut:
+                file = Path(lut)
+                if not file.is_file():
+                    raise FileNotFoundError(f"Missing color LUT file: {file}")
+                stat_lut = file.stat()
+                record["lut_stat"] = (stat_lut.st_size,stat_lut.st_mtime_ns)
         result.append(record)
     return result
 
@@ -176,6 +183,19 @@ def _one_section(project: StudioProject, start_ms: int, end_ms: int, output: Pat
         label = f"v{number}"
         filter_text = _video_filter(item, width, height, fps, duration,
                                     start_ms, end_ms)
+        lut_file = str(item.effects.get("lut_file") or "")
+        if lut_file:
+            selected = Path(lut_file)
+            if (not selected.is_file() or selected.suffix.lower() != ".cube"
+                    or selected.stat().st_size > 50*1024*1024):
+                raise ValueError(f"Invalid/missing .cube LUT: {selected}")
+            key = hashlib.sha256((str(selected.resolve())+str(selected.stat().st_mtime_ns)).encode()).hexdigest()[:18]
+            local_name = f"scene_lut_{key}.cube"
+            local_path = output.parent / local_name
+            if not local_path.is_file():
+                shutil.copyfile(selected, local_path)
+            filter_text = filter_text.replace(
+                "format=yuva420p",f"format=rgb24,lut3d=file={local_name}:interp=tetrahedral,format=yuva420p",1)
         graph.append(f"[{number}:v]{filter_text}[{label}]")
         target = f"base{number}"
         x_pos, y_pos = overlay_position(item.transition_in, item.transition_ms/1000,
@@ -199,7 +219,7 @@ def _one_section(project: StudioProject, start_ms: int, end_ms: int, output: Pat
              "-map", f"[{base}]", "-an", "-t", f"{duration:.6f}",
              "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
              "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output)]
-    execute(args, stop)
+    execute(args, stop, cwd=output.parent)
     if not output.is_file() or output.stat().st_size < 1000:
         raise RuntimeError("Render section is missing/empty")
 

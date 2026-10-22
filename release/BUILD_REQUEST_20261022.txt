@@ -1,5 +1,4 @@
-Owner-approved final Windows EXE+ZIP build request (2026-10-22).
-Single explicit release-build trigger for Rajudesktop independent branch.
-Offline SML complete local workspace. Original VPS_1 unchanged.
-Owner performs Windows PC functional/UAT; CI verifies packaged local server, GUI, installer and checksums.
-Source only commits after this marker do not trigger further automatic EXE builds.
+Owner-authorized final Windows EXE+ZIP build request (2026-10-22).
+Reissued once with bounded QtWebEngine runtime process check to avoid Windows Start-Process -Wait child-process hang.
+Only this explicit release marker triggers packaging; future source changes do not.
+Owner personally performs Windows PC UAT. VPS_1 apps remain untouched.

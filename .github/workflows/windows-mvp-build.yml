@@ -73,7 +73,14 @@ jobs:
         shell: pwsh
         run: |
           $exe = "dist/SceneDesktopStudio/SceneDesktopStudio.exe"
-          $proc = Start-Process -FilePath $exe -ArgumentList "--check-offline-sml-runtime" -Wait -PassThru
+          # Start-Process -Wait waits for a full Windows process tree, including
+          # Qt WebEngine helpers. Wait only for our EXE, with bounded timeout.
+          $proc = Start-Process -FilePath $exe -ArgumentList "--check-offline-sml-runtime" -PassThru
+          if (!$proc.WaitForExit(90000)) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            throw "Packaged SML import check timed out after 90 seconds"
+          }
+          $proc.Refresh()
           if ($proc.ExitCode -ne 0) { throw "Bundled SML backend/WebEngine import failure: $($proc.ExitCode)" }
           Write-Output "PACKAGED_OFFLINE_SML_IMPORT=PASS"
       - name: Verify packaged local SML server and original UI are functional

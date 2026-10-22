@@ -14,6 +14,13 @@ def main():
         if not all([WhisperModel,ctranslate2,av,tokenizers]):
             return 3
         return 0
+    if "--check-gpu-runtime" in sys.argv:
+        from PySide6.QtOpenGLWidgets import QOpenGLWidget
+        from OpenGL import GL
+        from scene_desktop.live_preview import OpenGLTimelineCanvas
+        if not all([QOpenGLWidget,GL,OpenGLTimelineCanvas]):
+            return 4
+        return 0
     from scene_desktop.app import main as start_gui
     return start_gui()
 

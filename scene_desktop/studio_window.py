@@ -8,6 +8,8 @@ import tempfile
 import threading
 import subprocess
 import uuid
+import os
+import platform
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal, QSize
 from PySide6.QtGui import QAction, QColor, QBrush, QPen, QPixmap, QIcon, QDesktopServices, QImageReader
@@ -19,7 +21,7 @@ from PySide6.QtWidgets import (
     QGraphicsView, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
     QPlainTextEdit, QProgressBar, QPushButton, QSlider, QSplitter,
-    QTabWidget, QVBoxLayout, QWidget, QAbstractItemView,
+    QTabWidget, QVBoxLayout, QWidget, QAbstractItemView, QStackedWidget,
 )
 from PySide6.QtCore import QStandardPaths
 
@@ -36,6 +38,7 @@ from .local_ai import plan_with_local_ai
 from .keyframes import set_keyframe,remove_keyframe
 from .effects import COLOR_LOOKS, MOTIONS, GRAINS, TRANSITIONS
 from .studio_render import render
+from .live_preview import OpenGLTimelineCanvas
 
 SCALE = 0.035       # 35 px per second
 LEFT = 135
@@ -306,8 +309,13 @@ class TimelineView(QGraphicsView):
             except StopIteration:
                 continue
         playhead_x = LEFT + self.editor.playhead_ms * SCALE
-        self.canvas.addLine(playhead_x, 0, playhead_x, TOP + rows * ROW,
+        self.playhead_line = self.canvas.addLine(playhead_x, 0, playhead_x, TOP + rows * ROW,
                             QPen(QColor("#f5c454"), 2))
+
+    def move_playhead(self,ms: int):
+        if hasattr(self,"playhead_line"):
+            x=LEFT+ms*SCALE
+            self.playhead_line.setLine(x,0,x,TOP+len(self.editor.project.tracks)*ROW)
 
 
 class StudioWindow(QMainWindow):
@@ -332,6 +340,9 @@ class StudioWindow(QMainWindow):
         self.worker: RenderThread | None = None
         self.preview_pending = False
         self._preview_output = None
+        self.gpu_canvas: OpenGLTimelineCanvas | None = None
+        self.gpu_active = False
+        self._gpu_user_selected = False
         self.last_export: Path | None = None
         self.setWindowTitle("Scene Desktop Studio — Unified Editor")
         self.resize(1530, 940)
@@ -362,6 +373,10 @@ class StudioWindow(QMainWindow):
         self.save_timer.timeout.connect(self.autosave)
         self.refresh_library()
         self.redraw_timeline()
+        # Headless Qt/CI has no reliable OpenGL. On interactive Windows use
+        # GPU live composition by default and fall back to accurate FFmpeg.
+        if platform.system()=="Windows" and os.environ.get("QT_QPA_PLATFORM","").lower()!="offscreen":
+            QTimer.singleShot(0, lambda: self.preview_backend.setCurrentIndex(0))
 
     def build_ui(self):
         self.setStyleSheet("""
@@ -401,11 +416,25 @@ class StudioWindow(QMainWindow):
         frame.addWidget(center)
         preview_panel = QWidget()
         preview_column = QVBoxLayout(preview_panel)
-        preview_column.addWidget(QLabel("<b>COMPOSITED LIVE PREVIEW</b> — cached FFmpeg scene renderer"))
+        preview_column.addWidget(QLabel("<b>LIVE TIMELINE PREVIEW</b> — GPU composition with FFmpeg-accurate fallback"))
+        backend_row = QHBoxLayout()
+        self.preview_backend = QComboBox()
+        self.preview_backend.addItems(["GPU Live — responsive visuals", "FFmpeg Accurate — full effects/audio"])
+        self.preview_backend.setCurrentIndex(1)
+        self.preview_backend.currentIndexChanged.connect(self.set_preview_backend)
+        backend_row.addWidget(self.preview_backend,1)
+        hardware = QPushButton("Preview Diagnostics")
+        hardware.clicked.connect(self.show_preview_diagnostics)
+        backend_row.addWidget(hardware)
+        preview_column.addLayout(backend_row)
+        self.preview_mode_status = QLabel("FFmpeg mode: composition exact; GPU mode adds low-latency visual scrubbing")
+        preview_column.addWidget(self.preview_mode_status)
+        self.preview_stack = QStackedWidget()
         self.video = QVideoWidget()
         self.video.setMinimumHeight(175)
         self.player.setVideoOutput(self.video)
-        preview_column.addWidget(self.video, 1)
+        self.preview_stack.addWidget(self.video)
+        preview_column.addWidget(self.preview_stack,1)
         controls = QHBoxLayout()
         play = QPushButton("▶ / ❚❚")
         play.clicked.connect(self.toggle_preview)
@@ -418,7 +447,7 @@ class StudioWindow(QMainWindow):
         self.clock = QLabel("00:00 / 00:00")
         controls.addWidget(self.clock)
         refresh = QPushButton("Refresh Preview")
-        refresh.clicked.connect(self.render_preview)
+        refresh.clicked.connect(self.refresh_preview)
         controls.addWidget(refresh)
         preview_column.addLayout(controls)
         center.addWidget(preview_panel)
@@ -1294,7 +1323,12 @@ class StudioWindow(QMainWindow):
     def mark_changed(self):
         self.redraw_timeline()
         self.save_timer.start()
-        self.preview_timer.start()
+        if self.gpu_active and self.gpu_canvas:
+            self.preview_timer.stop()
+            self.gpu_canvas.set_project(self.project)
+            self.gpu_canvas.seek(self.playhead_ms)
+        else:
+            self.preview_timer.start()
         self.setWindowTitle(f"Scene Desktop Studio — {self.project.title} •")
 
     def autosave(self):
@@ -1314,6 +1348,8 @@ class StudioWindow(QMainWindow):
             self.message("Cancel or complete render before switching projects")
             return
         self.player.stop()
+        if self.gpu_canvas:
+            self.gpu_canvas.pause()
         self.project = StudioProject()
         self.history = EditHistory(self.project)
         self.scenes = []
@@ -1337,6 +1373,9 @@ class StudioWindow(QMainWindow):
                 self._restore_scenes_from_project()
                 self.script.setPlainText("\n".join(x.text for x in self.scenes))
                 self.redraw_timeline()
+                if self.gpu_canvas:
+                    self.gpu_canvas.set_project(self.project)
+                    self.gpu_canvas.seek(0)
                 self.start_waveforms()
                 self.message(f"Opened {Path(path).name}")
             except Exception as exc:
@@ -1439,12 +1478,103 @@ class StudioWindow(QMainWindow):
         self.seek.blockSignals(False)
         self.clock.setText(f"{human(self.playhead_ms)} / {human(self.project.duration_ms)}")
 
+    def set_preview_backend(self, index: int):
+        if index != 0:
+            self.gpu_active = False
+            self.preview_timer.stop()
+            if self.gpu_canvas:
+                self.gpu_canvas.pause()
+            self.preview_stack.setCurrentWidget(self.video)
+            self.preview_mode_status.setText(
+                "FFmpeg Accurate — all final effects and mixed audio; preview caching applies")
+            return
+        if self.gpu_canvas is None:
+            try:
+                self.gpu_canvas = OpenGLTimelineCanvas(self)
+                self.gpu_canvas.positionChanged.connect(self._on_gpu_position)
+                self.gpu_canvas.rendererDetected.connect(self._on_gl_renderer)
+                self.gpu_canvas.previewError.connect(
+                    lambda msg:self.statusBar().showMessage("GPU preview: "+msg[:150]))
+                self.preview_stack.addWidget(self.gpu_canvas)
+            except (ImportError,RuntimeError) as exc:
+                self._fallback_from_gpu("GPU preview unavailable: "+str(exc))
+                return
+        self.player.stop()
+        self.preview_timer.stop()
+        self.gpu_active = True
+        self.preview_stack.setCurrentWidget(self.gpu_canvas)
+        self.gpu_canvas.set_project(self.project)
+        self.gpu_canvas.seek(self.playhead_ms)
+        self.preview_mode_status.setText(
+            "GPU Live — OpenGL layer composition; CPU decode; some effects and audio "
+            "require FFmpeg Accurate"
+        )
+        QTimer.singleShot(1200,self._verify_gpu_context)
+
+    def _fallback_from_gpu(self,reason: str):
+        self.gpu_active=False
+        self.preview_backend.blockSignals(True)
+        self.preview_backend.setCurrentIndex(1)
+        self.preview_backend.blockSignals(False)
+        if self.gpu_canvas:
+            self.gpu_canvas.pause()
+        self.preview_stack.setCurrentWidget(self.video)
+        self.preview_mode_status.setText(reason+" — FFmpeg Accurate selected")
+        self.statusBar().showMessage(reason)
+
+    def _verify_gpu_context(self):
+        if not self.gpu_active or not self.gpu_canvas:
+            return
+        if not self.gpu_canvas.isValid():
+            self._fallback_from_gpu("GPU/OpenGL context creation failed")
+            return
+        if not self.gpu_canvas.is_hardware():
+            self._fallback_from_gpu("GPU renderer unverified or software-only")
+
+    def _on_gl_renderer(self,renderer: str,vendor: str,hardware: bool):
+        label=("Hardware candidate" if hardware else "Software/unknown")
+        self.statusBar().showMessage(f"Live OpenGL: {label} | {vendor} | {renderer}")
+
+    def _on_gpu_position(self,position: int):
+        if not self.gpu_active:
+            return
+        self.playhead_ms=position
+        self.seek.blockSignals(True)
+        self.seek.setValue(position)
+        self.seek.blockSignals(False)
+        self.clock.setText(f"{human(position)} / {human(self.project.duration_ms)}")
+        self.timeline.move_playhead(position)
+
+    def show_preview_diagnostics(self):
+        if not self.gpu_canvas:
+            QMessageBox.information(self,"GPU Preview","Switch to GPU Live to inspect the actual OpenGL renderer")
+            return
+        stats=self.gpu_canvas.diagnostics()
+        result="\n".join(f"{key}: {value}" for key,value in stats.items())
+        QMessageBox.information(self,"GPU Preview Diagnostic (current PC)",result)
+
+    def refresh_preview(self):
+        if self.gpu_active and self.gpu_canvas:
+            self.gpu_canvas.set_project(self.project)
+            self.gpu_canvas.seek(self.playhead_ms)
+        else:
+            self.render_preview()
+
     def scrub(self):
         self.playhead_ms = self.seek.value()
-        self.redraw_timeline()
-        self.preview_timer.start()
+        if self.gpu_active and self.gpu_canvas:
+            self.gpu_canvas.seek(self.playhead_ms)
+        else:
+            self.redraw_timeline()
+            self.preview_timer.start()
 
     def toggle_preview(self):
+        if self.gpu_active and self.gpu_canvas:
+            if self.gpu_canvas.playing:
+                self.gpu_canvas.pause()
+            else:
+                self.gpu_canvas.play()
+            return
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         elif self._preview_output:
@@ -1453,6 +1583,9 @@ class StudioWindow(QMainWindow):
             self.render_preview()
 
     def render_preview(self):
+        if self.gpu_active and self.gpu_canvas:
+            self.gpu_canvas.seek(self.playhead_ms)
+            return
         if self.worker and self.worker.isRunning():
             self.preview_pending = True
             return
@@ -1554,4 +1687,6 @@ class StudioWindow(QMainWindow):
                 return
         self.autosave()
         self.player.stop()
+        if self.gpu_canvas:
+            self.gpu_canvas.shutdown()
         super().closeEvent(event)

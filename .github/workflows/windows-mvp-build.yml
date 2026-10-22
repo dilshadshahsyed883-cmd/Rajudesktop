@@ -44,6 +44,7 @@ jobs:
           --collect-all faster_whisper --collect-all ctranslate2
           --collect-all tokenizers --collect-all av
           --collect-all onnxruntime --collect-all huggingface_hub
+          --collect-all OpenGL --hidden-import PySide6.QtOpenGLWidgets
           launch.py
       - name: Verify Whisper dependency imports inside packaged EXE
         shell: pwsh
@@ -52,6 +53,13 @@ jobs:
           $proc = Start-Process -FilePath $exe -ArgumentList "--check-whisper-runtime" -Wait -PassThru
           if ($proc.ExitCode -ne 0) { throw "Packaged Whisper runtime is missing or broken (exit $($proc.ExitCode))" }
           Write-Output "PACKAGED_WHISPER_RUNTIME=PASS"
+      - name: Verify GPU preview runtime inside Windows EXE
+        shell: pwsh
+        run: |
+          $exe = "dist/SceneDesktopStudio/SceneDesktopStudio.exe"
+          $proc = Start-Process -FilePath $exe -ArgumentList "--check-gpu-runtime" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Packaged Qt/OpenGL backend missing (exit $($proc.ExitCode))" }
+          Write-Output "PACKAGED_GPU_PREVIEW_RUNTIME=PASS"
       - name: Smoke launch the packaged Windows GUI (no production machine)
         shell: pwsh
         run: |

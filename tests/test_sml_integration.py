@@ -123,6 +123,29 @@ class ClientTests(unittest.TestCase):
             self.assertTrue(all(method=="GET" for method,_ in Handler.seen))
             self.assertTrue(path.is_file())
 
+    def test_sml_background_worker_imports_and_approves_offline(self):
+        from scene_desktop.studio_window import SMLWorker
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            library=MediaLibrary(root/"catalog.sqlite3")
+            client=SMLClient(self.base,"test-token")
+            approved=client.search("forest","image")
+            saved=[]
+            worker=SMLWorker(self.base,"test-token",library,root/"sml-cache",
+                             "import",assets=approved)
+            worker.imported.connect(lambda count,errors:saved.append((count,errors)))
+            worker.run()
+            self.assertEqual(saved,[(1,[])])
+            imported=library.list(status="approved")
+            self.assertEqual(len(imported),1)
+            self.assertEqual(imported[0]["kind"],"image")
+            self.assertIn("forest",imported[0]["tags"])
+            self.assertIn("sml:IMG-TEST001",imported[0]["tags"])
+            self.assertEqual(len(library.sml_imports(client.url)),1)
+            self.assertEqual(worker._token,"")
+            self.assertTrue(Path(imported[0]["path"]).is_file())
+            self.assertTrue(all(method=="GET" for method,_ in Handler.seen))
+
     def test_reject_credentials_redirects_and_hash_mismatch_without_partial(self):
         for url in ("http://example.com:8147","https://user:secret@host",
                     "https://host/base?token=private","http://10.1.2.3",

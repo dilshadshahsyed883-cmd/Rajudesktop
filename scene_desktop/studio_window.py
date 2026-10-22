@@ -28,6 +28,8 @@ from PySide6.QtCore import QStandardPaths
 
 from .library import MediaLibrary
 from .sml_client import SMLClient, SMLAsset, SMLError, ordered_assets
+from .offline_sml_host import OfflineSMLService, make_local_webview
+from .offline_sml_bridge import sync_approved_media
 from .media import duration_ms, ffmpeg_path
 from .timeline import StudioProject, Item, EditHistory, save, load, VISUAL_TRACKS, AUDIO_TRACKS
 from .planner import create_scene_plan, match_media, append_scenes, Scene
@@ -153,6 +155,27 @@ class ImportThread(QThread):
             if count % 10 == 0:
                 self.progress.emit(count)
         self.completed.emit(count, errors[:16])
+
+
+class OfflineSMLIndexThread(QThread):
+    ready = Signal(dict)
+    progress = Signal(int, int)
+    failed = Signal(str)
+
+    def __init__(self, root: Path, library: MediaLibrary):
+        super().__init__()
+        self.root,self.library=root,library
+        self.cancel=threading.Event()
+
+    def run(self):
+        try:
+            result=sync_approved_media(
+                self.root,self.library,cancel=self.cancel,
+                progress=lambda current,total:self.progress.emit(current,total)
+            )
+            self.ready.emit(result)
+        except (OSError,ValueError,RuntimeError) as exc:
+            self.failed.emit(str(exc)[:200])
 
 
 class SMLWorker(QThread):
@@ -388,6 +411,11 @@ class StudioWindow(QMainWindow):
         self.scene_page = 0
         self.library = MediaLibrary(app_directory() / "catalog.sqlite3")
         self.sml_worker: SMLWorker | None = None
+        self.offline_sml_service=OfflineSMLService(app_directory()/"offline-sml",self)
+        self.offline_sml_view=None
+        self.offline_sml_index_thread: OfflineSMLIndexThread | None = None
+        self.offline_sml_service.ready.connect(self._offline_sml_ready)
+        self.offline_sml_service.failed.connect(self._offline_sml_failed)
         self.sml_results: list[SMLAsset] = []
         self.media_lookup = {}
         self.waveform_dir=app_directory() / "waveforms"
@@ -454,9 +482,11 @@ class StudioWindow(QMainWindow):
             QTabBar::tab{background:#253144;color:#d2dceb;padding:8px}
             QTabBar::tab:selected{background:#365c86}
         """)
-        main = QWidget()
-        self.setCentralWidget(main)
-        outer = QVBoxLayout(main)
+        self.workspace_tabs=QTabWidget()
+        self.setCentralWidget(self.workspace_tabs)
+        main=QWidget()
+        self.workspace_tabs.addTab(main,"Scene Editor")
+        outer=QVBoxLayout(main)
         toolrow = QHBoxLayout()
         for title, action in [("New", self.new_project), ("Open", self.open_project),
                               ("Save", self.save_project), ("Recover", self.recover_autosave),
@@ -478,7 +508,6 @@ class StudioWindow(QMainWindow):
         self.left = QTabWidget()
         frame.addWidget(self.left)
         self.build_library_panel()
-        self.build_sml_panel()
         self.build_scene_panel()
         center = QSplitter(Qt.Orientation.Vertical)
         frame.addWidget(center)
@@ -562,9 +591,102 @@ class StudioWindow(QMainWindow):
         frame.addWidget(right)
         self.build_inspector(right)
         frame.setSizes([320, 910, 300])
-        self.status = QLabel("MVP: local projects; no VPS/YouTube/Drive integration. All edits non-destructive.")
+        self.status = QLabel("Local Scene Editor + complete offline SML workspace. VPS_1 remains untouched.")
         outer.addWidget(self.status)
         self.statusBar().showMessage("Ready")
+        self.build_offline_sml_workspace()
+
+    def build_offline_sml_workspace(self):
+        panel=QWidget()
+        layout=QVBoxLayout(panel)
+        layout.addWidget(QLabel("<b>SELF MEDIA LIBRARY — COMPLETE OFFLINE DESKTOP WORKSPACE</b>"))
+        layout.addWidget(QLabel("Independent SML v2 backend/database on this PC. Dashboard, Input, Process, Library & Preview, "
+                                "Trash, Settings, AI and review controls mirror VPS_1. YouTube/Drive/proxy network operations disabled."))
+        controls=QHBoxLayout()
+        for title,callback in [
+            ("Start / Refresh local SML",self.start_offline_sml),
+            ("Stop local SML",self.stop_offline_sml),
+            ("Open Local SML Folder",self.open_offline_sml_folder),
+            ("Send Approved SML Media to Scene Editor",self.sync_offline_sml_media),
+        ]:
+            btn=QPushButton(title)
+            btn.clicked.connect(callback)
+            controls.addWidget(btn)
+        layout.addLayout(controls)
+        self.offline_sml_status=QLabel("Offline SML has not started. Uses local AppData only.")
+        layout.addWidget(self.offline_sml_status)
+        self.offline_sml_container=QVBoxLayout()
+        layout.addLayout(self.offline_sml_container,1)
+        self.workspace_tabs.addTab(panel,"Self Media Library (Offline)")
+        self.workspace_tabs.currentChanged.connect(self._offline_workspace_changed)
+
+    def _offline_workspace_changed(self,index: int):
+        if index==1:
+            self.start_offline_sml()
+
+    def start_offline_sml(self):
+        self.offline_sml_status.setText("Starting 127.0.0.1 offline SML backend…")
+        self.offline_sml_service.start()
+
+    def stop_offline_sml(self):
+        if self.offline_sml_view is not None:
+            self.offline_sml_view.setUrl(QUrl("about:blank"))
+            self.offline_sml_container.removeWidget(self.offline_sml_view)
+            self.offline_sml_view.deleteLater()
+            self.offline_sml_view=None
+        self.offline_sml_service.stop()
+        self.offline_sml_status.setText("Offline SML stopped; local database and media retained.")
+
+    def sync_offline_sml_media(self):
+        if self.offline_sml_index_thread and self.offline_sml_index_thread.isRunning():
+            self.statusBar().showMessage("Offline SML approved media sync still active")
+            return
+        self.offline_sml_index_thread=OfflineSMLIndexThread(
+            app_directory()/"offline-sml",self.library
+        )
+        self.offline_sml_index_thread.ready.connect(self._offline_sml_synced)
+        self.offline_sml_index_thread.progress.connect(
+            lambda current,total:self.offline_sml_status.setText(
+                f"Indexing approved SML media locally: {current}/{total}"
+            )
+        )
+        self.offline_sml_index_thread.failed.connect(self._offline_sml_failed)
+        self.offline_sml_index_thread.start()
+        self.offline_sml_status.setText("Linking approved PC-local SML images/videos to Scene Editor…")
+
+    def _offline_sml_synced(self,result: dict):
+        self.refresh_library()
+        self.redraw_timeline()
+        self.offline_sml_status.setText(
+            f"Editor media synced: {result.get('added',0)} newly linked, "
+            f"{result.get('skipped',0)} already indexed, "
+            f"{len(result.get('errors',[]))} errors; original SML assets retained."
+        )
+
+    def open_offline_sml_folder(self):
+        target=app_directory()/"offline-sml"
+        target.mkdir(parents=True,exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    def _offline_sml_failed(self,message: str):
+        self.offline_sml_status.setText(message)
+        self.statusBar().showMessage(message)
+
+    def _offline_sml_ready(self,url: str):
+        if self.offline_sml_view is not None:
+            self.offline_sml_view.setUrl(QUrl(url))
+            return
+        try:
+            self.offline_sml_view=make_local_webview(self.offline_sml_service.port,self)
+            self.offline_sml_container.addWidget(self.offline_sml_view)
+            self.offline_sml_status.setText(
+                "Connected to PC-local SML: full workspace active, all media and jobs stored offline."
+            )
+        except (ImportError,RuntimeError) as exc:
+            self.offline_sml_status.setText(
+                "Embedded browser unavailable: install PySide6-WebEngine. "
+                "Local backend is running; no external site required. "+str(exc)[:140]
+            )
 
     def build_library_panel(self):
         widget = QWidget()
@@ -2038,6 +2160,11 @@ class StudioWindow(QMainWindow):
             self._launch_export(Path(path).with_suffix(".mp4"))
 
     def closeEvent(self, event):
+        if self.offline_sml_index_thread and self.offline_sml_index_thread.isRunning():
+            self.offline_sml_index_thread.cancel.set()
+            if not self.offline_sml_index_thread.wait(5000):
+                event.ignore()
+                return
         if self.sml_worker and self.sml_worker.isRunning():
             self.message("SML transfer is still active; cancel or complete it before closing")
             event.ignore()
@@ -2079,4 +2206,5 @@ class StudioWindow(QMainWindow):
                 return
         if self.gpu_canvas:
             self.gpu_canvas.shutdown()
+        self.stop_offline_sml()
         super().closeEvent(event)

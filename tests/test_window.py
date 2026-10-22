@@ -19,8 +19,10 @@ class WindowTests(unittest.TestCase):
             with patch("scene_desktop.studio_window.app_directory",
                        return_value=__import__("pathlib").Path(tmp)):
                 window = StudioWindow()
-                self.assertEqual(window.left.count(), 3)
-                self.assertEqual(window.left.tabText(1), "SML Connection")
+                self.assertEqual(window.left.count(), 2)
+                self.assertEqual(window.workspace_tabs.count(), 2)
+                self.assertEqual(window.workspace_tabs.tabText(1), "Self Media Library (Offline)")
+                self.assertFalse(window.offline_sml_service.process)
                 self.assertEqual(len(window.project.tracks), 6)
                 self.assertIsNotNone(window.timeline.scene())
                 self.assertIsNotNone(window.player)

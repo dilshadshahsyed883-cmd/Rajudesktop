@@ -1,0 +1,30 @@
+name: Rajudesktop — feature source tests only (NO EXE)
+
+on:
+  push:
+    branches: ["feature/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-backend-and-editor:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+      SML_OFFLINE_ONLY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install runtime and source-test dependencies (no PyInstaller)
+        run: python -m pip install -r requirements.txt httpx
+      - name: Compile all app and SML source code
+        run: python -m compileall -q scene_desktop launch.py
+      - name: Run complete offline source-level tests (NO EXE OR ZIP)
+        run: python -m unittest discover -s tests -v

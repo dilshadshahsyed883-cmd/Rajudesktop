@@ -211,10 +211,9 @@ class QtPanelTests(unittest.TestCase):
             with patch.object(studio_window,"app_directory",return_value=Path(folder)):
                 window=StudioWindow()
                 try:
-                    self.assertEqual(window.left.tabText(1),"SML Connection")
-                    self.assertEqual(window.sml_token.echoMode(),QLineEdit.EchoMode.Password)
-                    self.assertFalse(window.sml_token.text())
-                    self.assertEqual(window.sml_list.count(),0)
+                    self.assertEqual(window.workspace_tabs.tabText(1),"Self Media Library (Offline)")
+                    self.assertIsNone(window.offline_sml_service.process)
+                    self.assertEqual(window.left.count(),2)
                 finally:
                     if window.thumbnail_thread and window.thumbnail_thread.isRunning():
                         window.thumbnail_thread.wait(10000)

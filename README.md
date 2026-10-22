@@ -6,13 +6,34 @@ Independent, local-first **scene planning + indexed media library + multitrack v
 
 There are two selectable preview modes: GPU Live (OpenGL-backed layered image/video/caption composition, asynchronous CPU PyAV decoding, bounded near-frame prefetch, and sliding audio-only mixed playback) and FFmpeg Accurate (the original short-section render preview for export-matched effects and sound). GPU Live automatically falls back if the OpenGL context cannot be verified as a hardware candidate. GPU **video decode is not implemented**; OpenGL textured compositing is an improvement over constant FFmpeg video re-render but does not guarantee smooth editing on every GPU. Color LUT, complex noise and effects fidelity remain more complete in FFmpeg Accurate. Preview Diagnostics shows the current device renderer and measured draw FPS. See docs/GPU_PREVIEW_ACCEPTANCE.md for explicit on-device performance, sync and visual comparison gates.
 
-## SML — approved-media local import (V2 Editor API)
+## Complete Self Media Library (SML) — 100% local desktop backend
 
-The **SML Connection** tab is a read-only client of the separate VPS_1 Self Media Library. It calls only the existing authenticated GET endpoints `/api/v1/media/inventory`, `/api/v1/media/search`, and `/api/v1/media/{video|image}/{id}/content`. Supply a reachable *authorized Tailscale service URL* such as `http://100.x.y.z:8147`, or an HTTPS gateway base such as `https://app.scenebuilder.online/self-media-library`, plus the existing SML Editor API token in the password-masked field. The token is held for this app session only: it is **never** committed, exported, written into project files, or stored in the local SQLite DB. An HTTPS gateway that requires browser session login may not support token-only desktop access; an approved private Tailscale Editor API route is preferred. This app does not bypass the gateway login.
+Open the new full-width **Self Media Library (Offline)** top-level workspace. It
+contains a separate, independent copy of the VPS_1 SML V2 backend and original
+SML HTML/CSS/JavaScript UI: Dashboard, Input (Videos/Images/Folder), Process,
+Library & Preview, Trash, Settings, AI metadata, source splitting, candidate
+review, bulk tags/approval, pair review and clip/image preview. Its standalone
+SQLite database, media, clips, thumbnails, AI queues and cache live entirely
+under this PC's Rajudesktop AppData/offline-sml directory. The backend runs
+only on 127.0.0.1; an embedded WebEngine browser restricts remote network
+requests. YouTube/Drive/Proxy controls remain recognizable but are disabled
+for offline-only use; they cannot work without the internet. CPU vision and
+speech AI inference require user-supplied local model files; there are no
+automatic model downloads.
 
-Search currently exposes **server-approved and locally available** video/images, keyword/description/filename query and media type. Server V2 caps results at 100 per search; filter the query for narrower matches. Multi-select; choose Server order / Videos first / Images first / alternating Video-Image / alternating Image-Video, optionally move an individual row Up/Down, and then choose Import Selected. Files transfer to app-owned local `sml-cache`, are SHA-256 checked against server metadata before being published, then appear in the independent indexed local media library as approved clips/images with tags and local SML provenance. They are available offline for the scene planner and editor. Cancellation keeps only verified complete local copies; original SML data is untouched. Imported local assets will **not** automatically update or delete when remote SML status changes. The desktop does not call reservations/commit/release or SML mutation endpoints and does not modify the production SML/VPS_1 database.
+Use **Send Approved SML Media to Scene Editor** to link approved, SHA-verified
+local clips/images into the separate desktop scene planner catalog. Original
+files and SML's own review decisions remain untouched. There is no VPS_1
+database access or token dependency. The earlier SML Connection read-only
+connector remains in source as a legacy optional implementation but is no
+longer shown as the active desktop SML workspace.
 
-SML collections/categories, server-wide pagination beyond 100, bulk remote approvals, automatic live mirroring, or remote edits are **not** part of this integration because the present authenticated Editor API does not expose those capabilities in a read-only contract. Connection and download testing against the actual VPS service needs separately authorized manual Windows/Tailscale UAT. The Windows CI verifies the exact V2 contract against a local fake HTTP server, not live credentials.
+See docs/OFFLINE_SML_DESKTOP.md for the complete feature list, data isolation,
+runtime dependencies and remaining source/Windows acceptance criteria.
+
+**Build policy:** Windows EXE/ZIP packaging is now manual-only via workflow
+dispatch. Normal feature commits only run source-level Windows tests and never
+package or deploy the app.
 
 ## Editing capabilities
 

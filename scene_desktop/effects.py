@@ -3,6 +3,7 @@
 These are parameterized color looks, not externally sourced .cube LUTs.
 """
 from __future__ import annotations
+from .keyframes import ffmpeg_expression
 
 # Twenty-three visually distinct built-in color looks. Key -> (brightness,
 # contrast, saturation, red-shift, green-shift, blue-shift).
@@ -59,13 +60,14 @@ def _move_expression(direction: str, frames: int) -> tuple[str, str]:
 
 
 def visual_filters(effects: dict, width: int, height: int, fps: int, duration: float,
-                   section_elapsed: float = 0) -> list[str]:
+                   section_elapsed: float = 0, keyframes: dict | None = None) -> list[str]:
     """Return FFmpeg filter expressions for a section of one video/image.
 
     Section elapsed is in seconds from clip start; use it for motion continuity.
     Never build a shell string.
     """
     effect = effects or {}
+    keyframes = keyframes or {}
     motion = str(effect.get("motion", "none"))
     if motion not in MOTIONS:
         raise ValueError("Unknown image/video motion")
@@ -82,7 +84,7 @@ def visual_filters(effects: dict, width: int, height: int, fps: int, duration: f
              f"scale={width}:{height}:force_original_aspect_ratio=increase",
              f"crop={width}:{height}", "setsar=1"]
 
-    if motion != "none" or zoom != 1:
+    if motion != "none" or zoom != 1 or keyframes.get("zoom"):
         overscan = max(zoom, 1.16 if motion != "none" else (1 if keyframes.get("zoom") else zoom))
         # Zooms below 100% use a black canvas instead of invalid negative crop.
         if overscan < 1:
@@ -92,7 +94,15 @@ def visual_filters(effects: dict, width: int, height: int, fps: int, duration: f
             ]
         else:
             chain.append(f"scale=trunc(iw*{overscan:.5f}/2)*2:trunc(ih*{overscan:.5f}/2)*2")
-            if motion in {"slow_push", "gentle_zoom", "ken_burns"}:
+            if keyframes.get("zoom"):
+                animation = ffmpeg_expression(keyframes["zoom"], zoom, fps,
+                                              round(section_elapsed*1000), variable="on")
+                chain.append(
+                    f"zoompan=z='{animation}':"
+                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                    f"d=1:s={width}x{height}:fps={fps}"
+                )
+            elif motion in {"slow_push", "gentle_zoom", "ken_burns"}:
                 # Continuous zoompan expressions; on counts rendered frames.
                 start_z = clamp(1.001 + frames_elapsed * .00055, 1, 1.29)
                 rate = .00055 if motion != "gentle_zoom" else .00025
@@ -114,7 +124,22 @@ def visual_filters(effects: dict, width: int, height: int, fps: int, duration: f
     lum = clamp(effect.get("brightness", 0), -1, 1) + raw[0]*strength
     contrast = clamp(effect.get("contrast", 1), 0, 3) + (raw[1]-1)*strength
     saturation = clamp(effect.get("saturation", 1), 0, 4) + (raw[2]-1)*strength
-    chain.append(f"eq=brightness={clamp(lum,-1,1):.5f}:contrast={clamp(contrast,0,3):.5f}:saturation={clamp(saturation,0,4):.5f}")
+    brightness_expr = ffmpeg_expression(keyframes.get("brightness",[]),
+                                        clamp(effect.get("brightness",0),-1,1),
+                                        fps,round(section_elapsed*1000))
+    saturation_expr = ffmpeg_expression(keyframes.get("saturation",[]),
+                                        clamp(effect.get("saturation",1),0,4),
+                                        fps,round(section_elapsed*1000))
+    if keyframes.get("brightness"):
+        brightness_expr = f"({brightness_expr}+{raw[0]*strength:.5f})"
+    else:
+        brightness_expr = f"{clamp(lum,-1,1):.5f}"
+    if keyframes.get("saturation"):
+        saturation_expr = f"({saturation_expr}+{(raw[2]-1)*strength:.5f})"
+    else:
+        saturation_expr = f"{clamp(saturation,0,4):.5f}"
+    chain.append(f"eq=brightness='{brightness_expr}':contrast={clamp(contrast,0,3):.5f}:"
+                 f"saturation='{saturation_expr}':eval=frame")
     if strength and any(raw[3:]):
         r, g, b = (clamp(v*strength, -.5,.5) for v in raw[3:])
         chain.append(f"colorbalance=rs={r:.5f}:gs={g:.5f}:bs={b:.5f}")

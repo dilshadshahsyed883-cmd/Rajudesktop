@@ -31,45 +31,80 @@ _IMAGE_EXT = {".png",".jpg",".jpeg",".webp",".bmp",".tiff"}
 _FRAME_STEP_MS = 40
 
 
-def _safe_video_frame(source: Path, millisecond: int, side: int) -> QImage:
-    """Decode a close frame at target *source* timestamp off the GUI thread.
+_decoders = __import__("threading").local()
 
-    The decoding is intentionally done only from a local path; never upload
-    source media. Seeking is keyframe aware and bounded to 90 decoded frames.
+
+def _safe_video_frame(source: Path, millisecond: int, side: int) -> QImage:
+    """Seek/reuse per-worker decoder to avoid reopening a video every frame.
+
+    Sequential playback normally decodes the next frame from a kept container.
+    Discontinuous seeks rebase at an FFmpeg keyframe. All PyAV objects live on
+    the same dedicated pool thread; no codec/container state is shared.
     """
     import av
-    with av.open(str(source)) as container:
-        stream = container.streams.video[0]
-        stream.thread_type = "AUTO"
-        seconds = max(0.,millisecond/1000.)
+    from collections import OrderedDict
+    if not hasattr(_decoders,"sessions"):
+        _decoders.sessions = OrderedDict()
+    sessions=_decoders.sessions
+    identity=str(source.resolve())
+    session=sessions.get(identity)
+    if session is None:
+        container=av.open(identity)
+        if not container.streams.video:
+            container.close()
+            raise ValueError(f"No video stream: {source.name}")
+        stream=container.streams.video[0]
+        stream.thread_type="AUTO"
+        session={"container":container,"stream":stream,"iterator":None,
+                 "last_ms":-1,"last_frame":None}
+        sessions[identity]=session
+        while len(sessions)>3:
+            _,stale=sessions.popitem(last=False)
+            stale["container"].close()
+    else:
+        sessions.move_to_end(identity)
+    target=max(0,int(millisecond))
+    container,stream=session["container"],session["stream"]
+    forward=0 <= target-session["last_ms"] <= 260 and session["last_frame"] is not None
+    if not forward:
         if stream.time_base:
-            offset = int(seconds/float(stream.time_base))
+            offset=int((target/1000)/float(stream.time_base))
             if stream.start_time is not None:
-                offset += int(stream.start_time)
+                offset+=int(stream.start_time)
             try:
                 container.seek(max(0,offset),backward=True,stream=stream)
-            except (ValueError,OSError,av.error.FFmpegError):
-                pass
-        nearest = None
-        for count,frame in enumerate(container.decode(stream)):
-            if count >= 90:
+            except Exception:
+                container.seek(0,stream=stream)
+        session["iterator"]=iter(container.decode(stream))
+        session["last_frame"]=None
+        session["last_ms"]=-1
+    best=session["last_frame"] if forward else None
+    frames=session["iterator"]
+    for count in range(95):
+        try:
+            frame=next(frames)
+        except StopIteration:
+            break
+        best=frame
+        if frame.pts is None or stream.time_base is None:
+            if count>0:
                 break
-            nearest = frame
-            if frame.pts is None or stream.time_base is None:
-                if count:
-                    break
-                continue
-            current = float(frame.pts*stream.time_base)
-            if current >= seconds-0.016:
-                break
-        if nearest is None:
-            raise ValueError("Unable to decode requested source frame")
-        width,height = nearest.width, nearest.height
-        factor = min(1., side/max(1,width,height))
-        tw,th=max(2,round(width*factor)),max(2,round(height*factor))
-        reduced = nearest.reformat(width=tw,height=th,format="rgb24")
-        buffer = reduced.to_ndarray(format="rgb24").tobytes()
-        return QImage(buffer,tw,th,tw*3,QImage.Format.Format_RGB888).copy()
+            continue
+        absolute=float(frame.pts*stream.time_base)*1000
+        session["last_ms"]=int(absolute)
+        if absolute >= target-10:
+            break
+    if best is None:
+        raise ValueError("Unable to decode requested source frame")
+    session["last_frame"]=best
+    if session["last_ms"] < 0:
+        session["last_ms"]=target
+    width,height=best.width,best.height
+    factor=min(1.,side/max(1,width,height))
+    tw,th=max(2,round(width*factor)),max(2,round(height*factor))
+    reduced=best.reformat(width=tw,height=th,format="rgb24")
+    buffer=reduced.to_ndarray(format="rgb24").tobytes()
+    return QImage(buffer,tw,th,tw*3,QImage.Format.Format_RGB888).copy()
 
 
 def _safe_still_frame(source: Path, unused: int, side: int) -> QImage:

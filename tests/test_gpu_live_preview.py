@@ -33,6 +33,11 @@ class FrameDecodeTests(TestCase):
             self.assertFalse(frame.isNull())
             self.assertEqual((frame.width(),frame.height()),(320,180))
             self.assertLessEqual(max(frame.width(),frame.height()),360)
+            # Forward sequential read and back-seek must not return null/stale images.
+            after=_safe_video_frame(clip,1100,360)
+            backwards=_safe_video_frame(clip,200,360)
+            self.assertFalse(after.isNull())
+            self.assertFalse(backwards.isNull())
 
     def test_bounded_lru_cache_async(self):
         ffmpeg=ffmpeg_path()

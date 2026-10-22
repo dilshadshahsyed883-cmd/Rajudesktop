@@ -135,7 +135,8 @@ def _sections(project: StudioProject, start_ms: int, end_ms: int, max_ms: int = 
 def _video_filter(item: Item, width: int, height: int, fps: int, duration: float,
                   relative_start: int, relative_end: int) -> str:
     elapsed = max(0., (relative_start - item.start_ms)/1000)
-    chain = visual_filters(item.effects, width, height, fps, duration, elapsed)
+    chain = visual_filters(item.effects, width, height, fps, duration, elapsed,
+                           keyframes=item.keyframes)
     if item.transition_in in {"fade", "dissolve"} and item.transition_ms:
         passed = max(0, relative_start - item.start_ms)
         if passed < item.transition_ms:

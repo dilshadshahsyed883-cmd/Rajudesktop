@@ -30,6 +30,7 @@ from .planner import create_scene_plan, match_media, append_scenes, Scene
 from .captions import import_srt, export_srt
 from .resources import probe
 from .local_ai import plan_with_local_ai
+from .keyframes import set_keyframe,remove_keyframe
 from .effects import COLOR_LOOKS, MOTIONS, GRAINS, TRANSITIONS
 from .studio_render import render
 
@@ -540,6 +541,21 @@ class StudioWindow(QMainWindow):
         rb = QPushButton("Replace Clip with Selected Library Media")
         rb.clicked.connect(self.replace_selected)
         lay.addWidget(rb)
+        lay.addWidget(QLabel("<b>CLIP KEYFRAMES</b>"))
+        self.keyframe_property = QComboBox()
+        self.keyframe_property.addItems(["zoom","brightness","saturation"])
+        lay.addWidget(self.keyframe_property)
+        keys_row = QHBoxLayout()
+        key_add = QPushButton("◇ Add at playhead")
+        key_add.clicked.connect(self.add_keyframe)
+        keys_row.addWidget(key_add)
+        key_delete = QPushButton("Delete keyframe")
+        key_delete.clicked.connect(self.delete_keyframe)
+        keys_row.addWidget(key_delete)
+        lay.addLayout(keys_row)
+        self.keyframes_info = QLabel("Select clip to animate zoom / brightness / saturation")
+        self.keyframes_info.setWordWrap(True)
+        lay.addWidget(self.keyframes_info)
         self.details = QLabel()
         self.details.setWordWrap(True)
         lay.addWidget(self.details)
@@ -933,6 +949,56 @@ class StudioWindow(QMainWindow):
         self.source_audio_check.setChecked(bool(obj.effects.get("source_audio",False)))
         self.transition.setCurrentText(obj.transition_in)
         self.caption_text.setText(obj.text)
+        count = sum(len(v) for v in obj.keyframes.values())
+        self.keyframes_info.setText(f"{count} saved clip-local animation keyframes")
+
+    def add_keyframe(self):
+        if not self.selected_id:
+            self.message("Select a timeline clip for keyframe editing")
+            return
+        clip = self.project.item(self.selected_id)
+        if clip.kind not in {"image","video"}:
+            self.message("Zoom/color keyframes require image or video clips")
+            return
+        at = self.playhead_ms - clip.start_ms
+        if not 0 <= at <= clip.duration_ms:
+            self.message("Move playhead inside the selected clip to add a keyframe")
+            return
+        prop = self.keyframe_property.currentText()
+        value = {
+            "zoom": self.zoom_spin.value()/100,
+            "brightness": self.brightness_spin.value()/100,
+            "saturation": self.saturation_spin.value()/100,
+        }[prop]
+        try:
+            changed = set_keyframe(clip.keyframes,prop,int(at),value,clip.duration_ms)
+            self.history.checkpoint()
+            clip.keyframes = changed
+            self.project.revision += 1
+            self.mark_changed()
+            self.message(f"Saved {prop} keyframe at {at/1000:.2f}s of selected clip")
+        except ValueError as exc:
+            QMessageBox.warning(self,"Invalid keyframe",str(exc))
+
+    def delete_keyframe(self):
+        if not self.selected_id:
+            return
+        clip = self.project.item(self.selected_id)
+        prop = self.keyframe_property.currentText()
+        frames = clip.keyframes.get(prop,[])
+        if not frames:
+            self.message("No keyframes for this property")
+            return
+        labels = [f"{x['at_ms']/1000:.3f}s | {x['value']:.3f}" for x in frames]
+        choice, yes = QInputDialog.getItem(
+            self,"Remove a clip keyframe","Choose keyframe",labels,0,False
+        )
+        if yes:
+            at = frames[labels.index(choice)]["at_ms"]
+            self.history.checkpoint()
+            clip.keyframes = remove_keyframe(clip.keyframes,prop,at)
+            self.project.revision += 1
+            self.mark_changed()
 
     def apply_inspector(self):
         if not self.selected_id:

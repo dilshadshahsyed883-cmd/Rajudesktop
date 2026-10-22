@@ -56,6 +56,7 @@ class Item:
     fade_out_ms: int = 0
     text: str = ""
     caption_style: dict = field(default_factory=dict)
+    keyframes: dict = field(default_factory=dict)
 
     @property
     def duration_ms(self) -> int:
@@ -87,6 +88,8 @@ class Item:
             raise ValueError("Unknown grain style")
         if self.kind != "video" and self.effects.get("source_audio", False):
             raise ValueError("Only video sources can opt into embedded audio")
+        from .keyframes import validate_keyframes
+        validate_keyframes(self.keyframes, self.duration_ms)
         if self.fade_in_ms + self.fade_out_ms > self.duration_ms * 2:
             raise ValueError("Fade exceeds item duration")
 
@@ -203,6 +206,18 @@ class StudioProject:
         right.in_ms = left.in_ms + offset
         right.transition_in, right.transition_ms = "cut", 0
         left.out_ms = right.in_ms
+        if left.keyframes:
+            from .keyframes import value_at
+            before, after = {}, {}
+            for prop, frames in left.keyframes.items():
+                before[prop] = [dict(k) for k in frames if k["at_ms"] < offset]
+                after[prop] = [dict(k,at_ms=k["at_ms"]-offset) for k in frames
+                               if k["at_ms"] > offset]
+                if frames:
+                    boundary = value_at(frames, offset, float(frames[0]["value"]))
+                    before[prop].append({"at_ms":offset,"value":boundary})
+                    after[prop].insert(0,{"at_ms":0,"value":boundary})
+            left.keyframes, right.keyframes = before, after
         self.items.append(right)
         self.validate()
         self.revision += 1

@@ -83,7 +83,7 @@ def visual_filters(effects: dict, width: int, height: int, fps: int, duration: f
              f"crop={width}:{height}", "setsar=1"]
 
     if motion != "none" or zoom != 1:
-        overscan = max(zoom, 1.16 if motion != "none" else zoom)
+        overscan = max(zoom, 1.16 if motion != "none" else (1 if keyframes.get("zoom") else zoom))
         # Zooms below 100% use a black canvas instead of invalid negative crop.
         if overscan < 1:
             chain += [

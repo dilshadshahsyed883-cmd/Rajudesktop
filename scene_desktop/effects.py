@@ -45,9 +45,9 @@ def clamp(value, low, high):
     return max(low, min(high, float(value)))
 
 
-def _move_expression(direction: str, frames: int) -> tuple[str, str]:
-    # This uses FFmpeg crop x/y variables evaluated once per output frame.
-    frac = f"(n/({frames}+n))"
+def _move_expression(direction: str, frames: int, elapsed_frames: int = 0) -> tuple[str, str]:
+    # The global clip frame number MUST continue across independent chunks.
+    frac = f"min(1\\,max(0\\,(n+{elapsed_frames})/{max(1,frames)}))"
     if direction in {"pan_left", "reframe_left"}:
         return f"(iw-ow)*(1-{frac})", "(ih-oh)/2"
     if direction in {"pan_right", "reframe_right"}:
@@ -60,7 +60,8 @@ def _move_expression(direction: str, frames: int) -> tuple[str, str]:
 
 
 def visual_filters(effects: dict, width: int, height: int, fps: int, duration: float,
-                   section_elapsed: float = 0, keyframes: dict | None = None) -> list[str]:
+                   section_elapsed: float = 0, keyframes: dict | None = None,
+                   clip_total_ms: int | None = None) -> list[str]:
     """Return FFmpeg filter expressions for a section of one video/image.
 
     Section elapsed is in seconds from clip start; use it for motion continuity.
@@ -78,7 +79,9 @@ def visual_filters(effects: dict, width: int, height: int, fps: int, duration: f
     if grain_kind not in GRAINS:
         raise ValueError("Unknown noise style")
     zoom = clamp(effect.get("zoom", 1), .5, 3)
-    frame_count = max(1, round((duration + section_elapsed) * fps))
+    total_seconds = (clip_total_ms/1000 if clip_total_ms is not None
+                     else duration + section_elapsed)
+    frame_count = max(1, round(total_seconds * fps))
     frames_elapsed = max(0, round(section_elapsed * fps))
     chain = ["setpts=PTS-STARTPTS", f"fps={fps}",
              f"scale={width}:{height}:force_original_aspect_ratio=increase",
@@ -103,16 +106,15 @@ def visual_filters(effects: dict, width: int, height: int, fps: int, duration: f
                     f"d=1:s={width}x{height}:fps={fps}"
                 )
             elif motion in {"slow_push", "gentle_zoom", "ken_burns"}:
-                # Continuous zoompan expressions; on counts rendered frames.
-                start_z = clamp(1.001 + frames_elapsed * .00055, 1, 1.29)
+                # z is a pure function of clip time, independent of chunk start.
                 rate = .00055 if motion != "gentle_zoom" else .00025
                 chain.append(
-                    f"zoompan=z='min(zoom+{rate:.6f}\\,1.30)':"
+                    f"zoompan=z='min(1.30\\,1.001+{rate:.6f}*(on+{frames_elapsed}))':"
                     f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                     f"d=1:s={width}x{height}:fps={fps}"
                 )
             else:
-                x, y = _move_expression(motion, frame_count)
+                x, y = _move_expression(motion, frame_count, frames_elapsed)
                 chain.append(f"crop={width}:{height}:x='{x}':y='{y}'")
     if effect.get("mirror"):
         chain.append("hflip")

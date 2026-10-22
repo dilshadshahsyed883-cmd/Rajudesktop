@@ -136,23 +136,48 @@ def _sections(project: StudioProject, start_ms: int, end_ms: int, max_ms: int = 
 
 def _video_filter(item: Item, width: int, height: int, fps: int, duration: float,
                   relative_start: int, relative_end: int) -> str:
+    """Frame-continuous fades and motions across arbitrary safe chunk edges."""
     elapsed = max(0., (relative_start - item.start_ms)/1000)
     chain = visual_filters(item.effects, width, height, fps, duration, elapsed,
-                           keyframes=item.keyframes)
-    if item.transition_in in {"fade", "dissolve"} and item.transition_ms:
-        passed = max(0, relative_start - item.start_ms)
-        if passed < item.transition_ms:
-            # The next section begins at a source-time edit boundary. Alpha
-            # fades start on the incoming clip; never substitute a generic fade.
-            length = item.transition_ms/1000
-            chain.append(f"fade=t=in:st=0:d={length:.4f}:alpha={1 if item.transition_in=='dissolve' else 0}")
-    if item.fade_in_ms and relative_start == item.start_ms:
-        chain.append(f"fade=t=in:st=0:d={item.fade_in_ms/1000:.4f}:alpha=1")
-    if item.fade_out_ms:
-        fade_start = item.end_ms - item.fade_out_ms
-        if relative_start <= fade_start < relative_end:
-            chain.append(f"fade=t=out:st={(fade_start-relative_start)/1000:.4f}:d={item.fade_out_ms/1000:.4f}:alpha=1")
-    chain.append(f"trim=duration={duration:.4f}")
+                           keyframes=item.keyframes, clip_total_ms=item.duration_ms)
+    local_time = f"(T+{elapsed:.6f})"
+    alpha_parts = []
+    # Fade-in/volume envelopes use absolute clip elapsed time, not segment-local T.
+    if item.transition_in == "dissolve" and item.transition_ms:
+        if relative_start < item.start_ms + item.transition_ms:
+            alpha_parts.append(
+                f"min(1,max(0,{local_time}/{item.transition_ms/1000:.6f}))"
+            )
+    if item.fade_in_ms and relative_start < item.start_ms + item.fade_in_ms:
+        alpha_parts.append(
+            f"min(1,max(0,{local_time}/{item.fade_in_ms/1000:.6f}))"
+        )
+    if item.fade_out_ms and relative_end > item.end_ms - item.fade_out_ms:
+        remaining = f"({item.duration_ms/1000:.6f}-{local_time})"
+        alpha_parts.append(
+            f"min(1,max(0,{remaining}/{item.fade_out_ms/1000:.6f}))"
+        )
+    # "fade" is deliberately not the same as "dissolve": fade rises from
+    # black on the incoming layer, dissolve shows the underlying layer.
+    black_fade = (item.transition_in == "fade" and item.transition_ms
+                  and relative_start < item.start_ms + item.transition_ms)
+    if alpha_parts or black_fade:
+        # GEQ's T is seconds since this segment began. Chunks use clip-global
+        # elapsed, so no opacity/motion jump at a caption or chunk boundary.
+        alpha_expr = "*".join(alpha_parts) if alpha_parts else "1"
+        quote = lambda expr: expr.replace(",", r"\,")
+        lum = "p(X,Y)"
+        cb = cr = "p(X,Y)"
+        if black_fade:
+            factor = f"min(1,max(0,{local_time}/{item.transition_ms/1000:.6f}))"
+            lum = f"16+(p(X,Y)-16)*{factor}"
+            cb = f"128+(p(X,Y)-128)*{factor}"
+            cr = cb
+        chain.append(
+            f"geq=lum='{quote(lum)}':cb='{quote(cb)}':cr='{quote(cr)}':"
+            f"a='{quote(f'alpha(X,Y)*({alpha_expr})')}'"
+        )
+    chain.append(f"trim=duration={duration:.6f}")
     return ",".join(chain)
 
 

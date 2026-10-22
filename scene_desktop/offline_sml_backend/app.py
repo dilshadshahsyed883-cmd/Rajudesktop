@@ -45,10 +45,19 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def db() -> sqlite3.Connection:
+from contextlib import contextmanager
+
+
+@contextmanager
+def db():
+    """Commit/rollback AND close immediately (mandatory on Windows)."""
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db() -> None:

@@ -25,9 +25,20 @@ from .ai_engine import MODEL,VERSION,model_ready
 
 
 def now():return datetime.now(timezone.utc).isoformat()
+from contextlib import contextmanager
+
+
+@contextmanager
 def connect(root):
-    c=sqlite3.connect(Path(root)/'library.db',timeout=30);c.row_factory=sqlite3.Row
-    c.execute('PRAGMA busy_timeout=30000');return c
+    """AI queries must never retain Windows SQLite file handles."""
+    c=sqlite3.connect(Path(root)/'library.db',timeout=30)
+    c.row_factory=sqlite3.Row
+    try:
+        c.execute('PRAGMA busy_timeout=30000')
+        with c:
+            yield c
+    finally:
+        c.close()
 
 def unpack(value,default=None):
     try:return json.loads(value) if value else default

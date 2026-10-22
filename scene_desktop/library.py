@@ -29,6 +29,14 @@ class MediaLibrary:
             );
             CREATE INDEX IF NOT EXISTS media_hash ON media(sha256);
             CREATE INDEX IF NOT EXISTS media_status ON media(status);
+            CREATE TABLE IF NOT EXISTS sml_imports (
+              server_url TEXT NOT NULL, remote_id TEXT NOT NULL,
+              media_id TEXT NOT NULL, remote_sha256 TEXT NOT NULL,
+              remote_type TEXT NOT NULL, source_id TEXT NOT NULL,
+              import_order INTEGER NOT NULL, imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY(server_url, remote_id)
+            );
+            CREATE INDEX IF NOT EXISTS sml_import_media ON sml_imports(media_id);
             """)
 
     @contextmanager
@@ -164,6 +172,30 @@ class MediaLibrary:
                 "pad=320:180:(ow-iw)/2:(oh-ih)/2", str(output)]
         subprocess.run(cmd, check=True, timeout=45, capture_output=True)
         return output
+
+    def record_sml_import(self, server_url: str, asset, media_id: str,
+                          position: int) -> None:
+        """Store desktop-only provenance without modifying remote SML."""
+        with self._lock, self._db() as conn:
+            conn.execute("""INSERT INTO sml_imports
+                (server_url, remote_id, media_id, remote_sha256,
+                 remote_type, source_id, import_order)
+                VALUES (?,?,?,?,?,?,?)
+                ON CONFLICT(server_url,remote_id) DO UPDATE SET
+                  media_id=excluded.media_id,remote_sha256=excluded.remote_sha256,
+                  remote_type=excluded.remote_type,source_id=excluded.source_id,
+                  import_order=excluded.import_order,
+                  imported_at=CURRENT_TIMESTAMP""",
+                (server_url, asset.id, media_id, asset.sha256, asset.kind,
+                 asset.source_id, int(position)))
+
+    def sml_imports(self, server_url: str) -> list[dict]:
+        with self._lock, self._db() as conn:
+            rows=conn.execute(
+                "SELECT * FROM sml_imports WHERE server_url=? ORDER BY import_order,imported_at",
+                (server_url,)
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def summary(self) -> dict:
         rows = self.list()

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QStandardPaths
 
 from .library import MediaLibrary
+from .sml_client import SMLClient, SMLAsset, SMLError
 from .media import duration_ms, ffmpeg_path
 from .timeline import StudioProject, Item, EditHistory, save, load, VISUAL_TRACKS, AUDIO_TRACKS
 from .planner import create_scene_plan, match_media, append_scenes, Scene
@@ -152,6 +153,59 @@ class ImportThread(QThread):
             if count % 10 == 0:
                 self.progress.emit(count)
         self.completed.emit(count, errors[:16])
+
+
+class SMLWorker(QThread):
+    found = Signal(object, object)
+    imported = Signal(int, list)
+    stage = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, base: str, token: str, library: MediaLibrary, cache: Path,
+                 mode: str, *, query: str = "", kind: str = "all",
+                 assets: list[SMLAsset] | None = None):
+        super().__init__()
+        self.base, self._token = base, token
+        self.library, self.cache, self.mode = library, cache, mode
+        self.query, self.kind = query, kind
+        self.assets = list(assets or [])
+        self.cancel_flag = threading.Event()
+
+    def run(self):
+        try:
+            client = SMLClient(self.base, self._token)
+            if self.mode == "search":
+                inventory = client.inventory()
+                assets = client.search(self.query, self.kind)
+                self.found.emit(assets, inventory)
+            elif self.mode == "import":
+                count, errors = 0, []
+                for position, asset in enumerate(self.assets):
+                    if self.cancel_flag.is_set():
+                        break
+                    try:
+                        self.stage.emit(f"SML import {position+1}/{len(self.assets)}: {asset.name}")
+                        file = client.download(asset, self.cache, self.cancel_flag)
+                        rec = self.library.ingest(file)
+                        existing_tags = rec["tags"]
+                        tags = list(dict.fromkeys(
+                            [*existing_tags, *asset.keywords, "sml",
+                             "sml:"+asset.id, "sml-source:"+asset.source_id]
+                        ))
+                        self.library.set_tags(rec["id"], tags)
+                        self.library.set_status([rec["id"]], "approved")
+                        self.library.record_sml_import(client.url, asset, rec["id"], position)
+                        count += 1
+                    except Exception as exc:
+                        # No secret/API URL is ever included in errors.
+                        errors.append(f"{asset.id}: {str(exc)[:130]}")
+                self.imported.emit(count, errors[:20])
+            else:
+                raise ValueError("Unknown SML action")
+        except Exception as exc:
+            self.failed.emit(str(exc)[:250])
+        finally:
+            self._token = ""
 
 
 class ThumbnailThread(QThread):
@@ -333,6 +387,8 @@ class StudioWindow(QMainWindow):
         self.scenes: list[Scene] = []
         self.scene_page = 0
         self.library = MediaLibrary(app_directory() / "catalog.sqlite3")
+        self.sml_worker: SMLWorker | None = None
+        self.sml_results: list[SMLAsset] = []
         self.media_lookup = {}
         self.waveform_dir=app_directory() / "waveforms"
         self.waveform_thread: WaveformThread | None = None
@@ -422,6 +478,7 @@ class StudioWindow(QMainWindow):
         self.left = QTabWidget()
         frame.addWidget(self.left)
         self.build_library_panel()
+        self.build_sml_panel()
         self.build_scene_panel()
         center = QSplitter(Qt.Orientation.Vertical)
         frame.addWidget(center)
@@ -547,6 +604,144 @@ class StudioWindow(QMainWindow):
         self.counts = QLabel()
         lay.addWidget(self.counts)
         self.left.addTab(widget, "Media Library")
+
+    def build_sml_panel(self):
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.addWidget(QLabel("<b>SML CONNECTION — READ-ONLY</b>"))
+        layout.addWidget(QLabel(
+            "Uses the existing SML V2 Editor API. Search approved local-available "
+            "media and download selected copies. Nothing is uploaded or edited on VPS_1."
+        ))
+        self.sml_url = QLineEdit()
+        self.sml_url.setPlaceholderText(
+            "Tailscale URL, e.g. http://100.x.y.z:8147 or authorized HTTPS /self-media-library"
+        )
+        layout.addWidget(self.sml_url)
+        self.sml_token = QLineEdit()
+        self.sml_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.sml_token.setPlaceholderText("X-SML-Editor-Token — session-only, never saved")
+        layout.addWidget(self.sml_token)
+        query_row = QHBoxLayout()
+        self.sml_query = QLineEdit()
+        self.sml_query.setPlaceholderText("Keywords, description, filename")
+        query_row.addWidget(self.sml_query)
+        self.sml_kind = QComboBox()
+        self.sml_kind.addItems(["All", "Videos", "Images"])
+        query_row.addWidget(self.sml_kind)
+        layout.addLayout(query_row)
+        btns=QHBoxLayout()
+        for label, method in [
+            ("Connect & Search", self.search_sml),
+            ("Import Selected", self.import_sml_selected),
+            ("Cancel Transfer", self.cancel_sml),
+        ]:
+            button=QPushButton(label)
+            button.clicked.connect(method)
+            btns.addWidget(button)
+        layout.addLayout(btns)
+        layout.addWidget(QLabel(
+            "Select one or multiple assets; change order before importing "
+            "(the list order determines desktop import priority)."
+        ))
+        self.sml_list=QListWidget()
+        self.sml_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        layout.addWidget(self.sml_list, 1)
+        order=QHBoxLayout()
+        for label, value in [("Move Up", -1), ("Move Down", 1)]:
+            button=QPushButton(label)
+            button.clicked.connect(
+                lambda _checked=False, step=value:self.move_sml_selection(step)
+            )
+            order.addWidget(button)
+        layout.addLayout(order)
+        self.sml_stats=QLabel("Not connected. Approved-media search only (maximum 100 per query).")
+        self.sml_stats.setWordWrap(True)
+        layout.addWidget(self.sml_stats)
+        self.left.addTab(panel, "SML Connection")
+
+    def _start_sml_worker(self, mode: str, **kwargs):
+        if self.sml_worker and self.sml_worker.isRunning():
+            self.message("SML request already in progress")
+            return
+        try:
+            # Validate URL/token before starting a worker; never log credentials.
+            client=SMLClient(self.sml_url.text(), self.sml_token.text())
+        except SMLError as exc:
+            QMessageBox.warning(self, "SML Connection", str(exc))
+            return
+        self.sml_worker=SMLWorker(client.url, self.sml_token.text(),
+                                  self.library, app_directory()/"sml-cache",
+                                  mode, **kwargs)
+        self.sml_worker.found.connect(self._sml_found)
+        self.sml_worker.imported.connect(self._sml_imported)
+        self.sml_worker.stage.connect(self.message)
+        self.sml_worker.failed.connect(
+            lambda reason:self.sml_stats.setText("SML: " + reason))
+        self.sml_worker.start()
+
+    def search_sml(self):
+        selected=["all","video","image"][self.sml_kind.currentIndex()]
+        self._start_sml_worker("search", query=self.sml_query.text(), kind=selected)
+
+    def _sml_found(self, assets, counts):
+        self.sml_results=assets
+        self.sml_list.clear()
+        for asset in assets:
+            line=QListWidgetItem(
+                f"{'VIDEO' if asset.kind=='video' else 'IMAGE'}  |  {asset.name}  "
+                f"|  {', '.join(asset.keywords[:5])}  |  {asset.id}"
+            )
+            line.setData(Qt.ItemDataRole.UserRole, asset.id)
+            self.sml_list.addItem(line)
+        vid=counts.get("video",{})
+        img=counts.get("image",{})
+        self.sml_stats.setText(
+            f"SML approved: videos {vid.get('approved',0)}, "
+            f"images {img.get('approved',0)} | "
+            f"{len(assets)} searchable/available results (server limit 100). "
+            "Filter keywords to narrow results."
+        )
+
+    def move_sml_selection(self, step: int):
+        items=self.sml_list.selectedItems()
+        if len(items)!=1:
+            self.message("Select one SML asset to change its import order")
+            return
+        row=self.sml_list.row(items[0])
+        target=row+step
+        if target<0 or target>=self.sml_list.count():
+            return
+        self.sml_list.takeItem(row)
+        self.sml_list.insertItem(target,items[0])
+        self.sml_list.clearSelection()
+        self.sml_list.setCurrentItem(items[0])
+
+    def import_sml_selected(self):
+        selected={item.data(Qt.ItemDataRole.UserRole)
+                  for item in self.sml_list.selectedItems()}
+        assets_by_id={item.id:item for item in self.sml_results}
+        # Preserve the current visible list order explicitly.
+        ordered=[]
+        for row in range(self.sml_list.count()):
+            ident=self.sml_list.item(row).data(Qt.ItemDataRole.UserRole)
+            if ident in selected and ident in assets_by_id:
+                ordered.append(assets_by_id[ident])
+        if not ordered:
+            self.message("Select approved SML video/image assets before importing")
+            return
+        self._start_sml_worker("import", assets=ordered)
+
+    def cancel_sml(self):
+        if self.sml_worker and self.sml_worker.isRunning():
+            self.sml_worker.cancel_flag.set()
+            self.message("SML transfer cancellation requested; verified copies remain")
+        else:
+            self.message("No SML transfer running")
+
+    def _sml_imported(self, count: int, errors: list):
+        self.refresh_library()
+        self.message(f"SML imported {count} approved media assets to local library", errors)
 
     def build_scene_panel(self):
         widget = QWidget()
@@ -1833,6 +2028,11 @@ class StudioWindow(QMainWindow):
             self._launch_export(Path(path).with_suffix(".mp4"))
 
     def closeEvent(self, event):
+        if self.sml_worker and self.sml_worker.isRunning():
+            self.message("SML transfer is still active; cancel or complete it before closing")
+            event.ignore()
+            return
+        self.sml_token.clear()
         if self.worker and self.worker.isRunning():
             self.message("Finish export/preview before closing the Studio")
             event.ignore()

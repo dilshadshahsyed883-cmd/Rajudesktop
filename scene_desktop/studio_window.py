@@ -761,9 +761,11 @@ class StudioWindow(QMainWindow):
         self.message("Local AI scene plan requested; current media remains unchanged")
 
     def _ai_plan_ready(self, scenes):
+        self.history.checkpoint()
         self.scenes = scenes
         self.scene_page = 0
         self.populate_scenes()
+        self._persist_scenes()
         self.message(f"AI proposed {len(scenes)} scenes — approval required before timeline placement")
 
     def import_script(self):
@@ -774,10 +776,33 @@ class StudioWindow(QMainWindow):
             except Exception as exc:
                 QMessageBox.warning(self, "Script import", str(exc))
 
+    def _persist_scenes(self, immediate: bool = False):
+        self.project.scenes = [asdict(scene) for scene in self.scenes]
+        self.project.revision += 1
+        if immediate:
+            self.autosave()
+        else:
+            self.save_timer.start()
+
+    def _restore_scenes_from_project(self):
+        self.scenes = []
+        for record in self.project.scenes:
+            if not isinstance(record,dict):
+                continue
+            try:
+                self.scenes.append(Scene(**{k:v for k,v in record.items()
+                                           if k in Scene.__dataclass_fields__}))
+            except (ValueError,TypeError):
+                continue
+        self.scene_page = 0
+        self.populate_scenes()
+
     def plan_scenes(self):
+        self.history.checkpoint()
         self.scenes = create_scene_plan(self.script.toPlainText())
         self.scene_page = 0
         self.populate_scenes()
+        self._persist_scenes()
         self.message(f"Planned {len(self.scenes)} editable scenes (timing estimate, not speech timestamps)")
 
     def populate_scenes(self):
@@ -805,6 +830,7 @@ class StudioWindow(QMainWindow):
         self.populate_scenes()
 
     def approve_scene_page(self):
+        self.history.checkpoint()
         first = self.scene_page*5
         approved = 0
         for scene in self.scenes[first:first+5]:
@@ -813,15 +839,18 @@ class StudioWindow(QMainWindow):
                 scene.locked = True
                 approved += 1
         self.populate_scenes()
+        self._persist_scenes(immediate=True)
         self.message(f"Approved {approved} current-page media/scene assignments; review next five")
 
     def match_scenes(self):
+        self.history.checkpoint()
         policies = ["local_first", "local_only", "alternate", "video_only", "image_only"]
         self.scenes = match_media(self.scenes, self.library,
                                   policies[self.source_policy.currentIndex()],
                                   self.reuse.isChecked(),
                                   auto_approve=self.scene_auto_approve.isChecked())
         self.populate_scenes()
+        self._persist_scenes()
         self.message(f"{sum(s.approved for s in self.scenes)}/{len(self.scenes)} scenes matched approved media")
 
     def choose_scene_media(self, item):
@@ -835,6 +864,7 @@ class StudioWindow(QMainWindow):
         names = [x["name"] for x in candidates]
         name, accepted = QInputDialog.getItem(self, "Choose scene media", "Approved asset", names, 0, False)
         if accepted and name:
+            self.history.checkpoint()
             rec = next(x for x in candidates if x["name"] == name)
             scene = self.scenes[index]
             scene.media_id, scene.media_path, scene.media_kind = rec["id"], rec["path"], rec["kind"]
@@ -842,6 +872,7 @@ class StudioWindow(QMainWindow):
             scene.locked = True
             scene.match_reason = "Manually selected and locked"
             self.populate_scenes()
+            self._persist_scenes(immediate=True)
 
     def place_scenes(self):
         if not self.scenes:
@@ -1250,11 +1281,13 @@ class StudioWindow(QMainWindow):
 
     def undo(self):
         self.project = self.history.undo()
+        self._restore_scenes_from_project()
         self.selected_id = ""
         self.mark_changed()
 
     def redo(self):
         self.project = self.history.redo()
+        self._restore_scenes_from_project()
         self.selected_id = ""
         self.mark_changed()
 
@@ -1288,6 +1321,7 @@ class StudioWindow(QMainWindow):
         self.project_path = None
         self.playhead_ms = 0
         self.script.setPlainText("")
+        self.populate_scenes()
         self.mark_changed()
 
     def open_project(self):
@@ -1300,6 +1334,8 @@ class StudioWindow(QMainWindow):
                 self.project_path = Path(path)
                 self.selected_id = ""
                 self.playhead_ms = 0
+                self._restore_scenes_from_project()
+                self.script.setPlainText("\n".join(x.text for x in self.scenes))
                 self.redraw_timeline()
                 self.start_waveforms()
                 self.message(f"Opened {Path(path).name}")

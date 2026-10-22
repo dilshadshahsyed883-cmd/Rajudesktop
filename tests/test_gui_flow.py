@@ -55,6 +55,19 @@ class EditorFlowTests(unittest.TestCase):
                     win.project_path=root/"edit.sds2"
                     win.save_project()
                     self.assertEqual(len(load(win.project_path).items),1)
+                    win.script.setPlainText("A quiet forest scene.")
+                    win.plan_scenes()
+                    win.match_scenes()
+                    self.assertEqual(len(win.scenes),1)
+                    self.assertFalse(win.scenes[0].approved)
+                    win.approve_scene_page()
+                    self.assertTrue(win.scenes[0].approved)
+                    win.save_project()
+                    restored=load(win.project_path)
+                    self.assertTrue(restored.scenes[0]["approved"])
+                    self.assertTrue(restored.scenes[0]["locked"])
+                    win._restore_scenes_from_project()
+                    self.assertTrue(win.scenes[0].approved)
                     payload={"words":[
                         {"word":"Hello","start":0.1,"end":0.4},
                         {"word":"creator","start":0.45,"end":0.85}

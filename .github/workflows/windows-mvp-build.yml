@@ -1,7 +1,12 @@
 name: Scene Desktop Studio — Windows integration, package and manual delivery
 
-# Builds are owner-initiated only. Feature commits never package an EXE.
+# Owner-authorized ONE-TIME release: only the exact marker file triggers
+# packaging on push; all other feature commits run source tests, not PyInstaller.
 on:
+  push:
+    branches: ["feature/full-desktop-studio-unified-20261022"]
+    paths:
+      - "release/BUILD_REQUEST_20261022.txt"
   workflow_dispatch:
 
 permissions:
@@ -43,6 +48,12 @@ jobs:
           --collect-all tokenizers --collect-all av
           --collect-all onnxruntime --collect-all huggingface_hub
           --collect-all OpenGL --hidden-import PySide6.QtOpenGLWidgets
+          --collect-all scene_desktop.offline_sml_backend
+          --add-data "scene_desktop/offline_sml_backend/static;scene_desktop/offline_sml_backend/static"
+          --hidden-import PySide6.QtWebEngineWidgets
+          --hidden-import PySide6.QtWebEngineCore
+          --collect-all fastapi --collect-all uvicorn
+          --collect-all PIL --collect-all multipart
           launch.py
       - name: Verify Whisper dependency imports inside packaged EXE
         shell: pwsh
@@ -58,6 +69,50 @@ jobs:
           $proc = Start-Process -FilePath $exe -ArgumentList "--check-gpu-runtime" -Wait -PassThru
           if ($proc.ExitCode -ne 0) { throw "Packaged Qt/OpenGL backend missing (exit $($proc.ExitCode))" }
           Write-Output "PACKAGED_GPU_PREVIEW_RUNTIME=PASS"
+      - name: Verify offline SML runtime embedded inside Windows EXE
+        shell: pwsh
+        run: |
+          $exe = "dist/SceneDesktopStudio/SceneDesktopStudio.exe"
+          $proc = Start-Process -FilePath $exe -ArgumentList "--check-offline-sml-runtime" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Bundled SML backend/WebEngine import failure: $($proc.ExitCode)" }
+          Write-Output "PACKAGED_OFFLINE_SML_IMPORT=PASS"
+      - name: Verify packaged local SML server and original UI are functional
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "dist/SceneDesktopStudio/SceneDesktopStudio.exe").Path
+          $data = Join-Path $env:RUNNER_TEMP "final-offline-sml-server-test"
+          $port = Get-Random -Minimum 45000 -Maximum 59999
+          $arguments = '--offline-sml-server --port {0} --data-dir "{1}"' -f $port, $data
+          $proc = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru
+          try {
+            $health = $null
+            for ($attempt = 0; $attempt -lt 55; $attempt++) {
+              Start-Sleep -Milliseconds 500
+              $proc.Refresh()
+              if ($proc.HasExited) { throw "Packaged SML server exited: $($proc.ExitCode)" }
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/__sml_desktop_health" -TimeoutSec 2
+                if ($health.ok -eq $true) { break }
+              }
+              catch { }
+            }
+            if ($health.ok -ne $true -or $health.mode -ne "offline-local") {
+              throw "Bundled local SML health was not available"
+            }
+            $index = Invoke-WebRequest -Uri "http://127.0.0.1:$port/self-media-library/" -TimeoutSec 10
+            if ($index.StatusCode -ne 200 -or !$index.Content.Contains('page-dashboard')) {
+              throw "Original SML dashboard missing in packaged EXE"
+            }
+            $api = Invoke-RestMethod -Uri "http://127.0.0.1:$port/self-media-library/api/health" -TimeoutSec 10
+            if (!$api.ok -or $api.storage_mode -ne "desktop_offline") {
+              throw "Desktop SML local API not initialized"
+            }
+            Write-Output "PACKAGED_SML_LOCAL_SERVER_UI_API=PASS"
+          }
+          finally {
+            $proc.Refresh()
+            if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+          }
       - name: Smoke launch the packaged Windows GUI (no production machine)
         shell: pwsh
         run: |

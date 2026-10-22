@@ -1475,7 +1475,8 @@ class StudioWindow(QMainWindow):
     def _on_media_status(self, status):
         # Automatically continue playback into the following cached preview
         # window; never confuse a paused player with end-of-timeline.
-        if status == QMediaPlayer.MediaStatus.EndOfMedia and self.project.duration_ms > 0:
+        if (not self.gpu_active and status == QMediaPlayer.MediaStatus.EndOfMedia
+                and self.project.duration_ms > 0):
             nxt = self._preview_start + self.player.duration()
             if nxt + 100 < self.project.duration_ms:
                 self.playhead_ms = nxt
@@ -1711,6 +1712,10 @@ class StudioWindow(QMainWindow):
     def _preview_ready(self, filename: str):
         self._preview_output = filename
         self._prune_preview_files(filename)
+        if self.gpu_active:
+            # Completed stale FFmpeg visual proxies must not play audio behind GPU mode.
+            self.player.stop()
+            return
         self.player.stop()
         self.player.setSource(QUrl.fromLocalFile(filename))
         self.player.play()
@@ -1731,7 +1736,8 @@ class StudioWindow(QMainWindow):
     def _preview_finish(self):
         if self.preview_pending:
             self.preview_pending = False
-            self.preview_timer.start()
+            if not self.gpu_active:
+                self.preview_timer.start()
 
     def open_last_export(self):
         if self.last_export and self.last_export.is_file():

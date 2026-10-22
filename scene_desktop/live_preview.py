@@ -31,80 +31,62 @@ _IMAGE_EXT = {".png",".jpg",".jpeg",".webp",".bmp",".tiff"}
 _FRAME_STEP_MS = 40
 
 
-_decoders = __import__("threading").local()
+def _safe_video_batch(source: Path, millisecond: int, side: int) -> dict[int,QImage]:
+    """Decode a short run of nearby frames, then close the source immediately.
 
-
-def _safe_video_frame(source: Path, millisecond: int, side: int) -> QImage:
-    """Seek/reuse per-worker decoder to avoid reopening a video every frame.
-
-    Sequential playback normally decodes the next frame from a kept container.
-    Discontinuous seeks rebase at an FFmpeg keyframe. All PyAV objects live on
-    the same dedicated pool thread; no codec/container state is shared.
+    One seek yields up to eight adjacent preview frames without leaving locked
+    input files on Windows. The decoder never persists PyAV file handles.
     """
     import av
-    from collections import OrderedDict
-    if not hasattr(_decoders,"sessions"):
-        _decoders.sessions = OrderedDict()
-    sessions=_decoders.sessions
-    identity=str(source.resolve())
-    session=sessions.get(identity)
-    if session is None:
-        container=av.open(identity)
+    start=max(0,int(millisecond))
+    found={}
+    with av.open(str(source)) as container:
         if not container.streams.video:
-            container.close()
             raise ValueError(f"No video stream: {source.name}")
         stream=container.streams.video[0]
         stream.thread_type="AUTO"
-        session={"container":container,"stream":stream,"iterator":None,
-                 "last_ms":-1,"last_frame":None}
-        sessions[identity]=session
-        while len(sessions)>3:
-            _,stale=sessions.popitem(last=False)
-            stale["container"].close()
-    else:
-        sessions.move_to_end(identity)
-    target=max(0,int(millisecond))
-    container,stream=session["container"],session["stream"]
-    forward=0 <= target-session["last_ms"] <= 260 and session["last_frame"] is not None
-    if not forward:
         if stream.time_base:
-            offset=int((target/1000)/float(stream.time_base))
+            offset=int((start/1000)/float(stream.time_base))
             if stream.start_time is not None:
                 offset+=int(stream.start_time)
             try:
                 container.seek(max(0,offset),backward=True,stream=stream)
             except Exception:
                 container.seek(0,stream=stream)
-        session["iterator"]=iter(container.decode(stream))
-        session["last_frame"]=None
-        session["last_ms"]=-1
-    best=session["last_frame"] if forward else None
-    frames=session["iterator"]
-    for count in range(95):
-        try:
-            frame=next(frames)
-        except StopIteration:
-            break
-        best=frame
-        if frame.pts is None or stream.time_base is None:
-            if count>0:
+        first=None
+        for count,frame in enumerate(container.decode(stream)):
+            if count>150:
                 break
-            continue
-        absolute=float(frame.pts*stream.time_base)*1000
-        session["last_ms"]=int(absolute)
-        if absolute >= target-10:
-            break
-    if best is None:
-        raise ValueError("Unable to decode requested source frame")
-    session["last_frame"]=best
-    if session["last_ms"] < 0:
-        session["last_ms"]=target
-    width,height=best.width,best.height
-    factor=min(1.,side/max(1,width,height))
-    tw,th=max(2,round(width*factor)),max(2,round(height*factor))
-    reduced=best.reformat(width=tw,height=th,format="rgb24")
-    buffer=reduced.to_ndarray(format="rgb24").tobytes()
-    return QImage(buffer,tw,th,tw*3,QImage.Format.Format_RGB888).copy()
+            current=(
+                round(float(frame.pts*stream.time_base)*1000)
+                if frame.pts is not None and stream.time_base else start
+            )
+            if current < start-22:
+                continue
+            first=frame
+            if current>=start-22:
+                break
+        if first is None:
+            raise ValueError("Unable to decode requested source frame")
+        frames=__import__("itertools").chain((first,),container.decode(stream))
+        for index,frame in enumerate(frames):
+            if index>=8:
+                break
+            width,height=frame.width,frame.height
+            factor=min(1.,side/max(1,width,height))
+            tw,th=max(2,round(width*factor)),max(2,round(height*factor))
+            resized=frame.reformat(width=tw,height=th,format="rgb24")
+            pixels=resized.to_ndarray(format="rgb24").tobytes()
+            found[round(start/_FRAME_STEP_MS)+index]=(
+                QImage(pixels,tw,th,tw*3,QImage.Format.Format_RGB888).copy()
+            )
+    return found
+
+
+def _safe_video_frame(source: Path, millisecond: int, side: int) -> QImage:
+    """Compatibility probe for one frame; same file-release guarantee."""
+    batch=_safe_video_batch(source,millisecond,side)
+    return next(iter(batch.values()))
 
 
 def _safe_still_frame(source: Path, unused: int, side: int) -> QImage:
@@ -151,7 +133,7 @@ class BoundedFrameProvider:
             source=Path(key[0])
             if source.is_file():
                 ms=key[2]*_FRAME_STEP_MS
-                func=_safe_still_frame if item.kind=="image" else _safe_video_frame
+                func=_safe_still_frame if item.kind=="image" else _safe_video_batch
                 self.pending[key]=self.executor.submit(func,source,ms,PREVIEW_MAX_SIDE)
         return key,None
 
@@ -164,22 +146,29 @@ class BoundedFrameProvider:
                 continue
             del self.pending[key]
             try:
-                frame=task.result()
-                if frame.isNull():
-                    continue
+                decoded=task.result()
+                rows=({key:decoded} if isinstance(decoded,QImage) else
+                      {(key[0],key[1],bucket):image
+                       for bucket,image in decoded.items()})
             except Exception as exc:
                 self.known_errors[key[0]]=str(exc)[:160]
                 changed=True
                 continue
-            size=cache_size(frame)
-            if size > self.max_bytes:
-                continue
-            while self.frames and self.size_bytes+size>self.max_bytes:
-                _,old=self.frames.popitem(last=False)
-                self.size_bytes-=cache_size(old)
-            self.frames[key]=frame
-            self.size_bytes+=size
-            changed=True
+            for frame_key,frame in rows.items():
+                if frame.isNull():
+                    continue
+                size=cache_size(frame)
+                if size > self.max_bytes:
+                    continue
+                while self.frames and self.size_bytes+size>self.max_bytes:
+                    _,old=self.frames.popitem(last=False)
+                    self.size_bytes-=cache_size(old)
+                if frame_key in self.frames:
+                    self.size_bytes-=cache_size(self.frames[frame_key])
+                self.frames[frame_key]=frame
+                self.frames.move_to_end(frame_key)
+                self.size_bytes+=size
+                changed=True
         if changed:
             self.changed()
 

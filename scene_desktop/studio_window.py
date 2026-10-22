@@ -10,6 +10,7 @@ import subprocess
 import uuid
 import os
 import platform
+import time
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal, QSize
 from PySide6.QtGui import QAction, QColor, QBrush, QPen, QPixmap, QIcon, QDesktopServices, QImageReader
@@ -39,6 +40,7 @@ from .keyframes import set_keyframe,remove_keyframe
 from .effects import COLOR_LOOKS, MOTIONS, GRAINS, TRANSITIONS
 from .studio_render import render
 from .live_preview import OpenGLTimelineCanvas
+from .gpu_audio import GPUAudioMixThread,has_timeline_audio,audio_active_between,audio_window
 
 SCALE = 0.035       # 35 px per second
 LEFT = 135
@@ -342,6 +344,15 @@ class StudioWindow(QMainWindow):
         self._preview_output = None
         self.gpu_canvas: OpenGLTimelineCanvas | None = None
         self.gpu_active = False
+        self.gpu_audio_output=QAudioOutput(self)
+        self.gpu_audio_player=QMediaPlayer(self)
+        self.gpu_audio_player.setAudioOutput(self.gpu_audio_output)
+        self.gpu_audio_player.mediaStatusChanged.connect(self._on_gpu_audio_loaded)
+        self.gpu_audio_job: GPUAudioMixThread | None = None
+        self.gpu_audio_generation=0
+        self.gpu_audio_range=(0,0)
+        self.gpu_audio_file=""
+        self._gpu_audio_last_sync=0.
         self._gpu_user_selected = False
         self.last_export: Path | None = None
         self.setWindowTitle("Scene Desktop Studio — Unified Editor")
@@ -1325,6 +1336,7 @@ class StudioWindow(QMainWindow):
         self.save_timer.start()
         if self.gpu_active and self.gpu_canvas:
             self.preview_timer.stop()
+            self._stop_gpu_audio()
             self.gpu_canvas.set_project(self.project)
             self.gpu_canvas.seek(self.playhead_ms)
         else:
@@ -1480,6 +1492,7 @@ class StudioWindow(QMainWindow):
 
     def set_preview_backend(self, index: int):
         if index != 0:
+            self._stop_gpu_audio()
             self.gpu_active = False
             self.preview_timer.stop()
             if self.gpu_canvas:
@@ -1492,6 +1505,7 @@ class StudioWindow(QMainWindow):
             try:
                 self.gpu_canvas = OpenGLTimelineCanvas(self)
                 self.gpu_canvas.positionChanged.connect(self._on_gpu_position)
+                self.gpu_canvas.playbackStopped.connect(self.gpu_audio_player.stop)
                 self.gpu_canvas.rendererDetected.connect(self._on_gl_renderer)
                 self.gpu_canvas.previewError.connect(
                     lambda msg:self.statusBar().showMessage("GPU preview: "+msg[:150]))
@@ -1506,12 +1520,13 @@ class StudioWindow(QMainWindow):
         self.gpu_canvas.set_project(self.project)
         self.gpu_canvas.seek(self.playhead_ms)
         self.preview_mode_status.setText(
-            "GPU Live — OpenGL layer composition; CPU decode; some effects and audio "
-            "require FFmpeg Accurate"
+            "GPU Live — OpenGL visuals, CPU decode and independently mixed audio; "
+            "use FFmpeg Accurate for complete effects parity"
         )
         QTimer.singleShot(1200,self._verify_gpu_context)
 
     def _fallback_from_gpu(self,reason: str):
+        self._stop_gpu_audio()
         self.gpu_active=False
         self.preview_backend.blockSignals(True)
         self.preview_backend.setCurrentIndex(1)
@@ -1544,12 +1559,91 @@ class StudioWindow(QMainWindow):
         self.seek.blockSignals(False)
         self.clock.setText(f"{human(position)} / {human(self.project.duration_ms)}")
         self.timeline.move_playhead(position)
+        if (self.gpu_canvas and self.gpu_canvas.playing and
+                has_timeline_audio(self.project)):
+            left,right=self.gpu_audio_range
+            if not left <= position < right-100:
+                self._queue_gpu_audio(position)
+            elif (self.gpu_audio_player.playbackState()
+                    == QMediaPlayer.PlaybackState.PlayingState and
+                    time.monotonic()-self._gpu_audio_last_sync>.7):
+                target=max(0,position-left)
+                if abs(self.gpu_audio_player.position()-target)>260:
+                    self.gpu_audio_player.setPosition(target)
+                self._gpu_audio_last_sync=time.monotonic()
+
+    def _stop_gpu_audio(self):
+        self.gpu_audio_generation+=1
+        self.gpu_audio_player.stop()
+        self.gpu_audio_range=(0,0)
+        self.gpu_audio_file=""
+        if self.gpu_audio_job and self.gpu_audio_job.isRunning():
+            self.gpu_audio_job.stop_event.set()
+
+    def _queue_gpu_audio(self,start_ms: int):
+        if not self.gpu_active or not has_timeline_audio(self.project):
+            return
+        if self.gpu_audio_job and self.gpu_audio_job.isRunning():
+            return
+        start,end=audio_window(self.project,start_ms)
+        if not audio_active_between(self.project,start,end):
+            # Treat a silent gap as a covered window, so no busy polling.
+            self.gpu_audio_range=(start,end)
+            return
+        self.gpu_audio_generation+=1
+        target=app_directory() / "gpu-preview-audio" / (uuid.uuid4().hex+".m4a")
+        thread=GPUAudioMixThread(self.project,start_ms,target,self.gpu_audio_generation)
+        self.gpu_audio_job=thread
+        thread.ready.connect(self._on_gpu_audio_ready)
+        thread.failed.connect(lambda err:self.statusBar().showMessage(
+            "GPU audio preview unavailable: "+err[:180]))
+        thread.finished.connect(self._on_gpu_audio_finished)
+        thread.start()
+
+    def _on_gpu_audio_finished(self):
+        if (self.gpu_active and self.gpu_canvas and self.gpu_canvas.playing
+                and has_timeline_audio(self.project)):
+            left,right=self.gpu_audio_range
+            if not left<=self.playhead_ms<right-100:
+                QTimer.singleShot(50,lambda:self._queue_gpu_audio(self.playhead_ms))
+
+    def _on_gpu_audio_ready(self,filename: str,start: int,end: int,generation: int):
+        if generation!=self.gpu_audio_generation or not self.gpu_active:
+            return
+        self.gpu_audio_range=(start,end)
+        self.gpu_audio_file=filename
+        self.gpu_audio_player.stop()
+        self.gpu_audio_player.setSource(QUrl.fromLocalFile(filename))
+        self._prune_gpu_audio_files(filename)
+
+    def _on_gpu_audio_loaded(self,status):
+        if (status not in (QMediaPlayer.MediaStatus.LoadedMedia,
+                           QMediaPlayer.MediaStatus.BufferedMedia)
+                or not self.gpu_active or not self.gpu_canvas
+                or not self.gpu_canvas.playing):
+            return
+        left,right=self.gpu_audio_range
+        if left<=self.playhead_ms<right:
+            self.gpu_audio_player.setPosition(self.playhead_ms-left)
+            self.gpu_audio_player.play()
+
+    def _prune_gpu_audio_files(self,active_file: str):
+        directory=app_directory() / "gpu-preview-audio"
+        files=sorted(directory.glob("*.m4a"),key=lambda p:p.stat().st_mtime)
+        for stale in files[:-8]:
+            if str(stale)!=active_file and stale.is_file() and not stale.is_symlink():
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
 
     def show_preview_diagnostics(self):
         if not self.gpu_canvas:
             QMessageBox.information(self,"GPU Preview","Switch to GPU Live to inspect the actual OpenGL renderer")
             return
         stats=self.gpu_canvas.diagnostics()
+        stats["audio"]=("20-second sliding FFmpeg mix, aligned to GPU playhead"
+                         if has_timeline_audio(self.project) else "no active audio tracks")
         result="\n".join(f"{key}: {value}" for key,value in stats.items())
         QMessageBox.information(self,"GPU Preview Diagnostic (current PC)",result)
 
@@ -1563,7 +1657,10 @@ class StudioWindow(QMainWindow):
     def scrub(self):
         self.playhead_ms = self.seek.value()
         if self.gpu_active and self.gpu_canvas:
+            self._stop_gpu_audio()
             self.gpu_canvas.seek(self.playhead_ms)
+            if self.gpu_canvas.playing:
+                self._queue_gpu_audio(self.playhead_ms)
         else:
             self.redraw_timeline()
             self.preview_timer.start()
@@ -1572,8 +1669,15 @@ class StudioWindow(QMainWindow):
         if self.gpu_active and self.gpu_canvas:
             if self.gpu_canvas.playing:
                 self.gpu_canvas.pause()
+                self.gpu_audio_player.pause()
             else:
                 self.gpu_canvas.play()
+                left,right=self.gpu_audio_range
+                if (self.gpu_audio_file and left<=self.playhead_ms<right):
+                    self.gpu_audio_player.setPosition(self.playhead_ms-left)
+                    self.gpu_audio_player.play()
+                else:
+                    self._queue_gpu_audio(self.playhead_ms)
             return
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
@@ -1687,6 +1791,12 @@ class StudioWindow(QMainWindow):
                 return
         self.autosave()
         self.player.stop()
+        self._stop_gpu_audio()
+        if self.gpu_audio_job and self.gpu_audio_job.isRunning():
+            if not self.gpu_audio_job.wait(5000):
+                self.message("Audio preview is stopping; close when it finishes")
+                event.ignore()
+                return
         if self.gpu_canvas:
             self.gpu_canvas.shutdown()
         super().closeEvent(event)

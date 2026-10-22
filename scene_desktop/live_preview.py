@@ -25,7 +25,7 @@ from .timeline import StudioProject
 from .live_preview_math import (active_layers, active_captions, placement_for,
                                 cache_size, classify_gl_renderer,
                                 MAX_CACHE_BYTES, PREVIEW_MAX_SIDE,
-                                MAX_PARALLEL_DECODERS)
+                                MAX_PARALLEL_DECODERS,percentile_95)
 
 _IMAGE_EXT = {".png",".jpg",".jpeg",".webp",".bmp",".tiff"}
 _FRAME_STEP_MS = 40
@@ -208,6 +208,12 @@ class OpenGLTimelineCanvas(QOpenGLWidget):
         self._provider=BoundedFrameProvider(self.update)
         self._pixmaps: OrderedDict[tuple,QPixmap]=OrderedDict()
         self._presented=deque(maxlen=180)
+        self._media_ready=deque(maxlen=180)
+        self._seek_samples=deque(maxlen=120)
+        self._seek_started=None
+        self._last_ready_bucket=-1
+        self._draw_frames=0
+        self._complete_frames=0
         self._renderer=""
         self._vendor=""
         self._hardware=False
@@ -246,6 +252,8 @@ class OpenGLTimelineCanvas(QOpenGLWidget):
 
     def seek(self, at_ms: int):
         self.position_ms=max(0,min(int(at_ms),self.project.duration_ms))
+        self._seek_started=monotonic()
+        self._last_ready_bucket=-1
         if self.playing:
             self._anchor=self.position_ms
             self._clock.restart()
@@ -290,12 +298,21 @@ class OpenGLTimelineCanvas(QOpenGLWidget):
         fps=0.
         if len(times)>=2 and times[-1]>times[0]:
             fps=(len(times)-1)/(times[-1]-times[0])
+        ready=list(self._media_ready)
+        ready_fps=(
+            (len(ready)-1)/(ready[-1]-ready[0])
+            if len(ready)>=2 and ready[-1]>ready[0] else 0.
+        )
         return {
             "surface": "QOpenGLWidget / Qt GPU-backed QPainter",
             "renderer":self._renderer or "Not initialized",
             "vendor":self._vendor or "Unknown",
             "hardware_renderer_candidate":self.is_hardware(),
             "measured_draw_fps":round(fps,1),
+            "actual_media_ready_fps":round(ready_fps,1),
+            "complete_frame_percent":round(100*self._complete_frames/max(1,self._draw_frames),1),
+            "p95_seek_to_media_ready_ms":round(percentile_95(list(self._seek_samples)),1),
+            "observed_seek_samples":len(self._seek_samples),
             "frame_cache_mib":round(self._provider.size_bytes/1024**2,1),
             "decode_jobs_pending":len(self._provider.pending),
             "media_errors":list(self._provider.known_errors.values())[:5],
@@ -373,10 +390,13 @@ class OpenGLTimelineCanvas(QOpenGLWidget):
                 h=canvas.width()/project_ratio
                 frame=QRectF(0,(canvas.height()-h)/2,canvas.width(),h)
             painter.fillRect(frame,QColor("#05080c"))
-            for item in active_layers(self.project,self.position_ms):
+            layers=active_layers(self.project,self.position_ms)
+            ready_layers=0
+            for item in layers:
                 key,img=self._provider.get(item,self.position_ms)
                 if img is None:
                     continue
+                ready_layers+=1
                 pix=self._get_pixmap(key,img)
                 pos=placement_for(item,self.position_ms,self.project.width,
                                   self.project.height)
@@ -403,11 +423,22 @@ class OpenGLTimelineCanvas(QOpenGLWidget):
                     painter.fillRect(dst,c)
                 painter.restore()
             self._draw_captions(painter,frame)
-            if not active_layers(self.project,self.position_ms):
+            if not layers:
                 painter.setPen(QColor("#9faec0"))
                 painter.drawText(frame,Qt.AlignmentFlag.AlignCenter,
                                  "GPU Preview — add media to the timeline")
-            self._presented.append(monotonic())
+            now=monotonic()
+            self._presented.append(now)
+            self._draw_frames+=1
+            if layers and ready_layers==len(layers):
+                self._complete_frames+=1
+                bucket=round(self.position_ms/max(1,1000/self.project.fps))
+                if bucket!=self._last_ready_bucket:
+                    self._media_ready.append(now)
+                    self._last_ready_bucket=bucket
+                if self._seek_started is not None:
+                    self._seek_samples.append((now-self._seek_started)*1000)
+                    self._seek_started=None
         except Exception as exc:
             self._draw_errors+=1
             if self._draw_errors<3:

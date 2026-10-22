@@ -122,3 +122,11 @@ def active_captions(project, at_ms: int) -> list:
 
 def cache_size(image) -> int:
     return max(0, int(image.width())*int(image.height())*4)
+
+
+def percentile_95(values: list[float]) -> float:
+    """Nearest-rank p95; explicit empty samples are unmeasured."""
+    if not values:
+        return 0.0
+    ordered=sorted(values)
+    return float(ordered[max(0, __import__("math").ceil(.95*len(ordered))-1)])

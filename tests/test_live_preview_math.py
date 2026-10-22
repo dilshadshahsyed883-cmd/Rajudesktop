@@ -2,7 +2,7 @@ import unittest
 from scene_desktop.timeline import StudioProject
 from scene_desktop.live_preview_math import (
     active_layers,active_captions,placement_for,classify_gl_renderer,
-    MAX_CACHE_BYTES,PREVIEW_MAX_SIDE
+    MAX_CACHE_BYTES,PREVIEW_MAX_SIDE,percentile_95
 )
 
 
@@ -38,3 +38,6 @@ class LivePreviewMathTests(unittest.TestCase):
         self.assertEqual(classify_gl_renderer(""),"unknown")
         self.assertLess(PREVIEW_MAX_SIDE,1920)
         self.assertGreater(MAX_CACHE_BYTES,24*1024*1024)
+        self.assertEqual(percentile_95([]),0)
+        self.assertEqual(percentile_95([100,200,300,400,500,600,700,800,900,1000]),1000)
+        self.assertEqual(percentile_95([50,30,20]),50)

@@ -192,6 +192,7 @@ class StudioWindow(QMainWindow):
         self.selected_id = ""
         self.playhead_ms = 0
         self.scenes: list[Scene] = []
+        self.scene_page = 0
         self.library = MediaLibrary(app_directory() / "catalog.sqlite3")
         self.project.media_db = str(self.library.database)
         self.thumbnail_thread: ThumbnailThread | None = None
@@ -346,6 +347,9 @@ class StudioWindow(QMainWindow):
         self.script = QPlainTextEdit()
         self.script.setPlaceholderText("Paste narration script or paragraphs here...")
         lay.addWidget(self.script)
+        script_import = QPushButton("Import Script TXT")
+        script_import.clicked.connect(self.import_script)
+        lay.addWidget(script_import)
         policy = QHBoxLayout()
         self.source_policy = QComboBox()
         self.source_policy.addItems(["Local First", "Local Only", "Alternate Image/Video", "Video Only", "Image Only"])
@@ -353,6 +357,8 @@ class StudioWindow(QMainWindow):
         self.reuse = QCheckBox("Allow media reuse")
         policy.addWidget(self.reuse)
         lay.addLayout(policy)
+        self.scene_auto_approve = QCheckBox("Auto-approve all matched scenes (optional)")
+        lay.addWidget(self.scene_auto_approve)
         for title, cb in [("1. Generate timed scene plan", self.plan_scenes),
                           ("2. Match approved library assets", self.match_scenes),
                           ("3. Place approved scenes on timeline", self.place_scenes)]:
@@ -362,6 +368,19 @@ class StudioWindow(QMainWindow):
         self.scene_list = QListWidget()
         self.scene_list.itemDoubleClicked.connect(self.choose_scene_media)
         lay.addWidget(self.scene_list, 1)
+        pages = QHBoxLayout()
+        prev = QPushButton("← Previous 5")
+        prev.clicked.connect(self.previous_scene_page)
+        pages.addWidget(prev)
+        self.scene_page_info = QLabel("0 scenes")
+        pages.addWidget(self.scene_page_info)
+        next_page = QPushButton("Next 5 →")
+        next_page.clicked.connect(self.next_scene_page)
+        pages.addWidget(next_page)
+        lay.addLayout(pages)
+        approve = QPushButton("Approve & Lock Current 5 Scenes")
+        approve.clicked.connect(self.approve_scene_page)
+        lay.addWidget(approve)
         self.left.addTab(widget, "Scene Builder")
 
     def build_inspector(self, host: QWidget):
@@ -507,29 +526,66 @@ class StudioWindow(QMainWindow):
         QMessageBox.information(self, "Exact Duplicate Review",
                                 description or "No identical file hashes found. No files were deleted.")
 
+    def import_script(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Import narration script", "", "Plain text (*.txt)")
+        if path:
+            try:
+                self.script.setPlainText(Path(path).read_text(encoding="utf-8-sig"))
+            except Exception as exc:
+                QMessageBox.warning(self, "Script import", str(exc))
+
     def plan_scenes(self):
         self.scenes = create_scene_plan(self.script.toPlainText())
+        self.scene_page = 0
         self.populate_scenes()
         self.message(f"Planned {len(self.scenes)} editable scenes (timing estimate, not speech timestamps)")
 
     def populate_scenes(self):
         self.scene_list.clear()
-        for idx, s in enumerate(self.scenes):
+        if not self.scenes:
+            self.scene_page_info.setText("0 scenes")
+            return
+        self.scene_page = max(0, min(self.scene_page, (len(self.scenes)-1)//5))
+        first = self.scene_page*5
+        for idx, scene in enumerate(self.scenes[first:first+5], start=first):
             self.scene_list.addItem(
-                f"{idx+1:03d} {human(s.start_ms)} {s.text[:45]}\n"
-                f"{'✓' if s.approved else '…'} {Path(s.media_path).name if s.media_path else 'No media'} · {s.match_reason[:50]}"
+                f"{idx+1:03d} {human(scene.start_ms)} {scene.text[:45]}\n"
+                f"{'✓ approved' if scene.approved else '● pending'} "
+                f"{Path(scene.media_path).name if scene.media_path else 'No media'} · "
+                f"{scene.match_reason[:55]}"
             )
+        self.scene_page_info.setText(f"{first+1}–{min(len(self.scenes),first+5)} / {len(self.scenes)}")
+
+    def previous_scene_page(self):
+        self.scene_page = max(0, self.scene_page-1)
+        self.populate_scenes()
+
+    def next_scene_page(self):
+        self.scene_page = min(max(0,(len(self.scenes)-1)//5), self.scene_page+1)
+        self.populate_scenes()
+
+    def approve_scene_page(self):
+        first = self.scene_page*5
+        approved = 0
+        for scene in self.scenes[first:first+5]:
+            if scene.media_path:
+                scene.approved = True
+                scene.locked = True
+                approved += 1
+        self.populate_scenes()
+        self.message(f"Approved {approved} current-page media/scene assignments; review next five")
 
     def match_scenes(self):
         policies = ["local_first", "local_only", "alternate", "video_only", "image_only"]
         self.scenes = match_media(self.scenes, self.library,
                                   policies[self.source_policy.currentIndex()],
-                                  self.reuse.isChecked())
+                                  self.reuse.isChecked(),
+                                  auto_approve=self.scene_auto_approve.isChecked())
         self.populate_scenes()
         self.message(f"{sum(s.approved for s in self.scenes)}/{len(self.scenes)} scenes matched approved media")
 
     def choose_scene_media(self, item):
-        index = self.scene_list.row(item)
+        index = self.scene_page*5 + self.scene_list.row(item)
         if index >= len(self.scenes):
             return
         candidates = self.library.list(status="approved")

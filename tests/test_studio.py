@@ -60,8 +60,10 @@ class StudioModelTests(unittest.TestCase):
             self.assertEqual(len(scenes), 2)
             match_media(scenes, lib, allow_reuse=False)
             self.assertEqual(scenes[0].media_id, forest["id"])
-            self.assertTrue(scenes[0].approved)
+            self.assertFalse(scenes[0].approved, "Scene-level review required by default")
             self.assertNotEqual(scenes[0].media_id, scenes[1].media_id)
+            for scene in scenes:
+                scene.approved = bool(scene.media_path)
             p = StudioProject()
             self.assertEqual(append_scenes(p, scenes), 2)
             self.assertEqual(len(p.scenes), 2)

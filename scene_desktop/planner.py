@@ -86,7 +86,7 @@ def create_scene_plan(script: str, narration_duration_ms: int = 0,
 
 
 def match_media(scenes: list[Scene], library: MediaLibrary, mode: str = "local_first",
-                allow_reuse: bool = False) -> list[Scene]:
+                allow_reuse: bool = False, auto_approve: bool = False) -> list[Scene]:
     """Approved assets first; candidate assets never silently assumed approved."""
     if mode not in {"local_first", "video_only", "image_only", "alternate", "local_only"}:
         raise ValueError("Unknown media selection policy")
@@ -120,8 +120,11 @@ def match_media(scenes: list[Scene], library: MediaLibrary, mode: str = "local_f
         options.sort(key=lambda row: (-row[0], row[1]))
         score, _, chosen, tokens = options[0]
         scene.media_id, scene.media_path, scene.media_kind = chosen["id"], chosen["path"], chosen["kind"]
-        scene.approved = True
-        scene.match_reason = "matched: " + ",".join(tokens) if tokens else "approved local media; weak keyword match"
+        scene.approved = auto_approve
+        scene.match_reason = (
+            ("Auto-approved" if auto_approve else "Awaiting scene approval") +
+            ("; matched: " + ",".join(tokens) if tokens else "; weak keyword match")
+        )
         used.add(chosen["id"])
     return scenes
 

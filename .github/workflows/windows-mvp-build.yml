@@ -1,0 +1,47 @@
+name: Windows desktop MVP — test and build
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-app:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+      - name: Install pinned-range build dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Model and real FFmpeg export tests
+        run: python -m unittest discover -s tests -v
+      - name: Compile application sources
+        run: python -m compileall -q scene_desktop launch.py
+      - name: Package a portable Windows app folder
+        run: pyinstaller --noconfirm --clean --onedir --windowed --name SceneDesktopStudio --collect-all imageio_ffmpeg launch.py
+      - name: Verify bundled executable and write manifest
+        shell: pwsh
+        run: |
+          if (!(Test-Path dist/SceneDesktopStudio/SceneDesktopStudio.exe)) { throw "Windows executable missing" }
+          $sha = (Get-FileHash dist/SceneDesktopStudio/SceneDesktopStudio.exe -Algorithm SHA256).Hash
+          $info = @{ build_sha = "$env:GITHUB_SHA"; executable_sha256 = $sha; project = "Rajudesktop Scene Desktop Studio"; install = "Manual Tailscale only"; note = "Source-video audio not exported in MVP" }
+          $info | ConvertTo-Json | Set-Content dist/SceneDesktopStudio/build-manifest.json -Encoding UTF8
+          Compress-Archive -Path dist/SceneDesktopStudio -DestinationPath SceneDesktopStudio-windows-x64.zip -CompressionLevel Optimal
+          (Get-FileHash SceneDesktopStudio-windows-x64.zip -Algorithm SHA256).Hash | Set-Content SceneDesktopStudio-windows-x64.zip.sha256 -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SceneDesktopStudio-windows-x64-${{ github.sha }}
+          path: |
+            SceneDesktopStudio-windows-x64.zip
+            SceneDesktopStudio-windows-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14

@@ -20,6 +20,7 @@ from .media import ffmpeg_path
 from .timeline import StudioProject, Item, VISUAL_TRACKS, AUDIO_TRACKS
 from .effects import visual_filters, overlay_position
 from .word_captions import ass_for_section
+from .chunk_pipeline import plan_chunks, ChunkStore
 
 Progress = Callable[[int, str], None]
 
@@ -77,7 +78,7 @@ def dependencies(items: list[Item]) -> list:
 def section_key(project: StudioProject, items: list[Item], start_ms: int, end_ms: int,
                 width: int, height: int, fps: int) -> str:
     payload = {
-        "engine": 3,
+        "engine": 5,
         "dims": [width, height, fps],
         "section": [start_ms, end_ms],
         "items": dependencies(items),
@@ -165,8 +166,9 @@ def _text_for_filter(value: str) -> str:
 
 def _one_section(project: StudioProject, start_ms: int, end_ms: int, output: Path,
                  width: int, height: int, fps: int,
-                 stop: threading.Event | None) -> None:
-    duration = (end_ms - start_ms) / 1000
+                 stop: threading.Event | None, frames: int | None = None) -> None:
+    frame_total = frames if frames is not None else max(1, round((end_ms-start_ms)*fps/1000))
+    duration = frame_total / fps
     video = _visual_items(project, start_ms, end_ms)
     captions = _caption_items(project, start_ms, end_ms)
     args = [ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
@@ -225,7 +227,7 @@ def _one_section(project: StudioProject, start_ms: int, end_ms: int, output: Pat
         graph.append(f"[{base}]ass=filename={ass_path.name}[karaoke]")
         base = "karaoke"
     args += ["-filter_complex", ";".join(graph),
-             "-map", f"[{base}]", "-an", "-t", f"{duration:.6f}",
+             "-map", f"[{base}]", "-an", "-frames:v", str(frame_total),
              "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
              "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output)]
     execute(args, stop, cwd=output.parent)
@@ -265,6 +267,7 @@ def _mix_audio(project: StudioProject, destination: Path,
         filters.append(",".join(chain))
     refs = "".join(f"[a{i}]" for i in range(len(items)))
     filters.append(f"{refs}amix=inputs={len(items)}:duration=longest:normalize=0,"
+                   f"apad=whole_dur={(last-first)/1000:.4f},"
                    f"atrim=duration={(last-first)/1000:.4f}[mixed]")
     args += ["-filter_complex", ";".join(filters), "-map", "[mixed]",
              "-c:a", "aac", "-b:a", "192k", str(destination)]
@@ -319,6 +322,7 @@ def verify_scratch_room(output: Path, reserve_bytes: int = 512 * 1024**2) -> Non
 def render(project: StudioProject, dest: str | Path, *,
            cache_dir: str | Path | None = None, preview: bool = False,
            window: tuple[int, int] | None = None,
+           preview_side: int = 540, max_chunk_ms: int = 5000,
            progress: Progress | None = None,
            stop: threading.Event | None = None) -> Path:
     """Render new output. Reuse unchanged sections based on content/input fingerprints.
@@ -341,32 +345,51 @@ def render(project: StudioProject, dest: str | Path, *,
         raise ValueError("Preview/export range too short")
     width, height = project.width, project.height
     if preview:
-        scale = min(1, 540 / max(width, height))
+        if preview_side not in (360, 540, 720, 960):
+            raise ValueError("Preview size must be 360, 540, 720 or 960")
+        scale = min(1, preview_side / max(width, height))
         width = max(2, round(width * scale / 2) * 2)
         height = max(2, round(height * scale / 2) * 2)
     fps = project.fps
-    all_parts = _sections(project, start_ms, end_ms)
+    all_parts = plan_chunks(project, start_ms, end_ms, max_ms=max_chunk_ms)
     if not all_parts:
         raise ValueError("No visible timeline range")
     with tempfile.TemporaryDirectory(prefix=".scene-work-", dir=output.parent) as scratch:
         root = Path(scratch)
         persistent = Path(cache_dir).expanduser() if cache_dir else root / "segments"
-        persistent.mkdir(parents=True, exist_ok=True)
+        store = ChunkStore(persistent)
+        plans = []
+        for part in all_parts:
+            relevant = (_visual_items(project, part.start_ms, part.end_ms)
+                        + _caption_items(project, part.start_ms, part.end_ms))
+            signature = section_key(project, relevant, part.start_ms,
+                                    part.end_ms, width, height, fps)
+            plans.append((part, signature))
+        signatures = [key for _, key in plans]
+        verified = []
+        if cache_dir and not preview:
+            store.checkpoint(output, signatures, verified, "rendering")
         chunks = []
-        for index, (left, right) in enumerate(all_parts):
-            relevant = _visual_items(project, left, right) + _caption_items(project, left, right)
-            key = section_key(project, relevant, left, right, width, height, fps)
-            section = persistent / (key + ".mp4")
-            if not section.exists() or section.stat().st_size < 1000:
+        for index, (part, key) in enumerate(plans):
+            if stop and stop.is_set():
+                raise RuntimeError("Render cancelled; committed chunks retained for resume")
+            if store.valid(key, part):
+                section = store.section_path(key)
+                reused = True
+            else:
                 staging = root / f"{index:04d}.mp4"
-                _one_section(project, left, right, staging, width, height, fps, stop)
-                if section.exists():
-                    section.unlink()
-                shutil.copyfile(staging, section)
+                _one_section(project, part.start_ms, part.end_ms, staging,
+                             width, height, fps, stop, frames=part.frames)
+                section = store.commit(key, part, staging)
+                reused = False
             chunks.append(section)
+            verified.append(key)
+            if cache_dir and not preview:
+                store.checkpoint(output, signatures, verified, "rendering")
             if progress:
-                progress(5 + int((index+1)/len(all_parts)*75),
-                         f"Rendering {index+1}/{len(all_parts)} (cached where possible)")
+                progress(5 + int((index + 1) / len(plans) * 75),
+                         f"Chunk {index+1}/{len(plans)}: {'reused' if reused else 'rendered'} "
+                         f"({len(verified)}/{len(signatures)} saved for restart)")
         joined = root / "visual.mp4"
         _concat(chunks, joined, stop)
         result = joined
@@ -378,7 +401,7 @@ def render(project: StudioProject, dest: str | Path, *,
                 execute([ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-nostdin",
                          "-y", "-i", str(joined), "-i", str(audio),
                          "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "copy",
-                         "-t", f"{(end_ms-start_ms)/1000:.4f}",
+                         "-t", f"{sum(part.frames for part in all_parts)/fps:.6f}",
                          "-movflags", "+faststart", str(narrated)], stop)
                 result = narrated
         if stop and stop.is_set():
@@ -389,6 +412,8 @@ def render(project: StudioProject, dest: str | Path, *,
         published = root / "publish.mp4"
         shutil.copyfile(result, published)
         os.replace(published, output)
+        if cache_dir and not preview:
+            store.checkpoint(output, signatures, verified, "complete")
         if cache_dir:
             prune_render_cache(persistent, protected=tuple(chunks))
         if progress:

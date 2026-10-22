@@ -176,17 +176,19 @@ class RenderThread(QThread):
     progress = Signal(int, str)
 
     def __init__(self, project: StudioProject, dest: Path, cache: Path,
-                 preview: bool = False, window=None):
+                 preview: bool = False, window=None, preview_side: int = 360):
         super().__init__()
         self.snapshot = StudioProject.from_dict(project.to_dict())
         self.dest, self.cache = dest, cache
         self.preview, self.window = preview, window
+        self.preview_side = preview_side
         self.stop = threading.Event()
 
     def run(self):
         try:
             result = render(self.snapshot, self.dest, cache_dir=self.cache,
                             preview=self.preview, window=self.window,
+                            preview_side=self.preview_side,
                             progress=lambda n, s: self.progress.emit(n, s),
                             stop=self.stop)
             self.done.emit(str(result))
@@ -384,10 +386,7 @@ class StudioWindow(QMainWindow):
         self.save_timer.timeout.connect(self.autosave)
         self.refresh_library()
         self.redraw_timeline()
-        # Headless Qt/CI has no reliable OpenGL. On interactive Windows use
-        # GPU live composition by default and fall back to accurate FFmpeg.
-        if platform.system()=="Windows" and os.environ.get("QT_QPA_PLATFORM","").lower()!="offscreen":
-            QTimer.singleShot(0, lambda: self.preview_backend.setCurrentIndex(0))
+        # CPU-first is the safe default; GPU Live is an optional manual choice.
 
     def build_ui(self):
         self.setStyleSheet("""
@@ -430,15 +429,22 @@ class StudioWindow(QMainWindow):
         preview_column.addWidget(QLabel("<b>LIVE TIMELINE PREVIEW</b> — GPU composition with FFmpeg-accurate fallback"))
         backend_row = QHBoxLayout()
         self.preview_backend = QComboBox()
-        self.preview_backend.addItems(["GPU Live — responsive visuals", "FFmpeg Accurate — full effects/audio"])
+        self.preview_backend.addItems(["GPU Live — optional hardware", "CPU Proxy — accurate effects/audio"])
         self.preview_backend.setCurrentIndex(1)
         self.preview_backend.currentIndexChanged.connect(self.set_preview_backend)
         backend_row.addWidget(self.preview_backend,1)
+        self.cpu_profile = QComboBox()
+        self.cpu_profile.addItem("360p · Low CPU", 360)
+        self.cpu_profile.addItem("540p · Balanced", 540)
+        self.cpu_profile.addItem("720p · Detailed", 720)
+        self.cpu_profile.setCurrentIndex(0)
+        self.cpu_profile.currentIndexChanged.connect(self.preview_quality_changed)
+        backend_row.addWidget(self.cpu_profile)
         hardware = QPushButton("Preview Diagnostics")
         hardware.clicked.connect(self.show_preview_diagnostics)
         backend_row.addWidget(hardware)
         preview_column.addLayout(backend_row)
-        self.preview_mode_status = QLabel("FFmpeg mode: composition exact; GPU mode adds low-latency visual scrubbing")
+        self.preview_mode_status = QLabel("CPU Proxy 360p: cached FFmpeg + audio; full-resolution export remains unchanged")
         preview_column.addWidget(self.preview_mode_status)
         self.preview_stack = QStackedWidget()
         self.video = QVideoWidget()
@@ -1491,6 +1497,10 @@ class StudioWindow(QMainWindow):
         self.seek.blockSignals(False)
         self.clock.setText(f"{human(self.playhead_ms)} / {human(self.project.duration_ms)}")
 
+    def preview_quality_changed(self, _index: int):
+        if not self.gpu_active:
+            self.preview_timer.start()
+
     def set_preview_backend(self, index: int):
         if index != 0:
             self._stop_gpu_audio()
@@ -1499,8 +1509,9 @@ class StudioWindow(QMainWindow):
             if self.gpu_canvas:
                 self.gpu_canvas.pause()
             self.preview_stack.setCurrentWidget(self.video)
+            side=self.cpu_profile.currentData()
             self.preview_mode_status.setText(
-                "FFmpeg Accurate — all final effects and mixed audio; preview caching applies")
+                f"CPU Proxy {side}p (long side): FFmpeg effects/audio; export stays full-resolution")
             return
         if self.gpu_canvas is None:
             try:
@@ -1702,12 +1713,14 @@ class StudioWindow(QMainWindow):
         filename = app_directory() / "previews" / (uuid.uuid4().hex + ".mp4")
         filename.parent.mkdir(parents=True, exist_ok=True)
         cache = app_directory() / "segment-cache"
-        self.worker = RenderThread(self.project, filename, cache, preview=True, window=(start,end))
+        self.worker = RenderThread(self.project, filename, cache, preview=True,
+                                   window=(start,end),
+                                   preview_side=int(self.cpu_profile.currentData() or 360))
         self.worker.done.connect(self._preview_ready)
         self.worker.failed.connect(lambda err: self.message("Preview: " + err[:180]))
         self.worker.finished.connect(self._preview_finish)
         self.worker.start()
-        self.message("Rendering preview segment...")
+        self.message(f"CPU proxy {self.cpu_profile.currentData()}p preview (cached chunks)...")
 
     def _preview_ready(self, filename: str):
         self._preview_output = filename
@@ -1762,7 +1775,7 @@ class StudioWindow(QMainWindow):
             return
         out = Path(path).with_suffix(".mp4")
         self.worker = RenderThread(self.project, out, app_directory() / "segment-cache")
-        self.worker.progress.connect(lambda n, msg: self.message(f"{n}% — {msg}"))
+        self.worker.progress.connect(lambda n, msg: self.message(f"Export {n}% | {msg}"))
         self.worker.done.connect(self._on_export_done)
         self.worker.failed.connect(lambda msg: QMessageBox.warning(self, "Export error", msg))
         self.worker.start()

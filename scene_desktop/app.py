@@ -1,10 +1,9 @@
-"""GUI startup entry point for Scene Desktop Studio."""
+"""Native Scene Desktop Studio GUI application."""
 from __future__ import annotations
-
 import sys
-
 from PySide6.QtWidgets import QApplication
-from .window import EditorWindow
+
+from .studio_window import StudioWindow
 
 
 def main() -> int:
@@ -12,7 +11,7 @@ def main() -> int:
     app.setApplicationName("Scene Desktop Studio")
     app.setOrganizationName("Rajudesktop")
     app.setStyle("Fusion")
-    window = EditorWindow()
+    window = StudioWindow()
     window.show()
     return app.exec()
 

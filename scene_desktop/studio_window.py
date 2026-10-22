@@ -38,7 +38,7 @@ from .resources import probe
 from .local_ai import plan_with_local_ai
 from .keyframes import set_keyframe,remove_keyframe
 from .effects import COLOR_LOOKS, MOTIONS, GRAINS, TRANSITIONS
-from .studio_render import render
+from .studio_render import render, resumable_exports
 from .live_preview import OpenGLTimelineCanvas
 from .gpu_audio import GPUAudioMixThread,has_timeline_audio,audio_active_between,audio_window
 
@@ -407,6 +407,7 @@ class StudioWindow(QMainWindow):
                               ("Relink Media", self.relink_media),
                               ("PC Resources", self.show_resources), ("Undo", self.undo),
                               ("Redo", self.redo), ("Export MP4", self.export_video),
+                              ("Resume Export", self.resume_export),
                               ("Open Last Video", self.open_last_export)]:
             b = QPushButton(title)
             b.clicked.connect(action)
@@ -1765,21 +1766,71 @@ class StudioWindow(QMainWindow):
                                 "Use Open Last Video to play the MP4.")
         self.message("Export complete: " + dest)
 
+    def _launch_export(self, out: Path):
+        if self.worker and self.worker.isRunning():
+            self.message("Preview/export already active")
+            return
+        self.worker = RenderThread(self.project, out,
+                                   app_directory() / "segment-cache")
+        self.worker.progress.connect(
+            lambda n,msg:self.message(f"Export {n}% | {msg}"))
+        self.worker.done.connect(self._on_export_done)
+        self.worker.failed.connect(self._on_export_failure)
+        self.worker.start()
+        self.message("Export processing — verified chunks survive interruption; "
+                     "original files stay untouched")
+
+    def _on_export_failure(self, error: str):
+        if "cancelled" in error.casefold():
+            self.message("Export paused safely. Click Resume Export to reuse "
+                         "completed verified chunks.")
+        else:
+            QMessageBox.warning(self, "Export error", error)
+
+    def resume_export(self):
+        if self.worker and self.worker.isRunning():
+            self.message("Finish or cancel current render before resuming")
+            return
+        try:
+            candidates = resumable_exports(
+                self.project, app_directory() / "segment-cache"
+            )
+        except (OSError,ValueError) as exc:
+            QMessageBox.warning(self,"Resume check",str(exc))
+            return
+        if not candidates:
+            self.message("No compatible interrupted export for the current project. "
+                         "Open or recover that project, then retry.")
+            return
+        dest=candidates[0]
+        if len(candidates)>1:
+            options=[str(p) for p in candidates]
+            chosen, accepted=QInputDialog.getItem(
+                self,"Resume interrupted export","Previous output:",options,0,False
+            )
+            if not accepted:
+                return
+            dest=Path(chosen)
+        answer=QMessageBox.question(
+            self,"Resume verified chunks",
+            f"Resume this interrupted export?\n{dest}\n\n"
+            "Existing verified visual chunks will be reused. "
+            "Changed/missing chunks and final audio will be rebuilt.",
+            QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        if answer==QMessageBox.StandardButton.Yes:
+            self._launch_export(dest)
+
     def export_video(self):
         if self.worker and self.worker.isRunning():
             self.message("Preview/export already active")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Export new video version", "",
-                                               "MP4 Video (*.mp4)")
-        if not path:
-            return
-        out = Path(path).with_suffix(".mp4")
-        self.worker = RenderThread(self.project, out, app_directory() / "segment-cache")
-        self.worker.progress.connect(lambda n, msg: self.message(f"Export {n}% | {msg}"))
-        self.worker.done.connect(self._on_export_done)
-        self.worker.failed.connect(lambda msg: QMessageBox.warning(self, "Export error", msg))
-        self.worker.start()
-        self.message("Export started; original media will not be modified")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export new video version", "", "MP4 Video (*.mp4)"
+        )
+        if path:
+            self._launch_export(Path(path).with_suffix(".mp4"))
 
     def closeEvent(self, event):
         if self.worker and self.worker.isRunning():

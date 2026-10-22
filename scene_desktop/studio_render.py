@@ -344,6 +344,49 @@ def verify_scratch_room(output: Path, reserve_bytes: int = 512 * 1024**2) -> Non
         raise RuntimeError("Insufficient free disk for rendering: keep at least 512 MiB free")
 
 
+def resumable_exports(project: StudioProject, cache_dir: str | Path) -> list[Path]:
+    """Find unfinished jobs compatible with the *current* editor timeline.
+
+    This uses exact section signatures (including source file timestamps)
+    rather than believing a stale manifest or reusing a previous project's
+    outputs. The caller must still explicitly confirm the destination path.
+    """
+    project.validate()
+    if project.duration_ms < 100:
+        return []
+    cache = Path(cache_dir).expanduser().resolve()
+    jobs = cache / "render-jobs"
+    if not jobs.is_dir():
+        return []
+    plan = plan_chunks(project, 0, project.duration_ms)
+    signatures = [
+        section_key(project, _visual_items(project, p.start_ms, p.end_ms)
+                    + _caption_items(project, p.start_ms, p.end_ms),
+                    p.start_ms, p.end_ms, project.width, project.height,
+                    project.fps)
+        for p in plan
+    ]
+    results = []
+    for entry in sorted(jobs.glob("*.json"), key=lambda x: x.stat().st_mtime,
+                        reverse=True):
+        if entry.is_symlink() or not entry.is_file():
+            continue
+        try:
+            data = json.loads(entry.read_text(encoding="utf-8"))
+            if (data.get("schema") != 1 or data.get("state") != "rendering"
+                    or data.get("planned") != signatures):
+                continue
+            output = Path(data["output"]).expanduser().resolve()
+            if output.suffix.lower() != ".mp4" or output.exists():
+                continue
+            if ChunkStore(cache).job_path(output) != entry.resolve():
+                continue
+            results.append(output)
+        except (ValueError, TypeError, KeyError, OSError, json.JSONDecodeError):
+            continue
+    return results
+
+
 def render(project: StudioProject, dest: str | Path, *,
            cache_dir: str | Path | None = None, preview: bool = False,
            window: tuple[int, int] | None = None,

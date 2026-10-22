@@ -9,7 +9,7 @@ from pathlib import Path
 
 from scene_desktop.chunk_pipeline import ChunkStore, plan_chunks
 from scene_desktop.media import ffmpeg_path
-from scene_desktop.studio_render import render
+from scene_desktop.studio_render import render, resumable_exports
 from scene_desktop.timeline import StudioProject
 
 
@@ -56,6 +56,11 @@ class ChunkResumeTests(unittest.TestCase):
             self.assertFalse((root/"first.mp4").exists())
             store=ChunkStore(cache)
             self.assertTrue(list(store.receipts.glob("*.json")))
+            self.assertEqual(resumable_exports(p,cache),[root/"first.mp4"])
+            incompatible=StudioProject(width=480,height=270,fps=24)
+            incompatible.add(str(second),"image","v1",7500)
+            self.assertEqual(resumable_exports(incompatible,cache),[])
+
             resumptions=[]
             output=render(p,root/"first.mp4",cache_dir=cache,max_chunk_ms=4000,
                           progress=lambda _pct,message:resumptions.append(message))
@@ -63,6 +68,8 @@ class ChunkResumeTests(unittest.TestCase):
             self.assertTrue(any("reused" in m for m in resumptions))
             receipt=json.loads(store.job_path(output).read_text(encoding="utf-8"))
             self.assertEqual(receipt["state"],"complete")
+            self.assertNotIn(root/"first.mp4",resumable_exports(p,cache))
+
             self.assertEqual(len(receipt["verified"]),len(receipt["planned"]))
             # Source data must not be deleted by chunk cache.
             self.assertTrue(original.is_file())

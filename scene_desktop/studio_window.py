@@ -29,6 +29,7 @@ from .timeline import StudioProject, Item, EditHistory, save, load, VISUAL_TRACK
 from .planner import create_scene_plan, match_media, append_scenes, Scene
 from .captions import import_srt, export_srt
 from .resources import probe
+from .local_ai import plan_with_local_ai
 from .effects import COLOR_LOOKS, MOTIONS, GRAINS, TRANSITIONS
 from .studio_render import render
 
@@ -53,6 +54,21 @@ def app_directory() -> Path:
     root = Path(value or str(Path.home() / ".scene-desktop-studio"))
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+class AIPlanThread(QThread):
+    ready = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, script: str, model: str):
+        super().__init__()
+        self.script, self.model = script, model
+
+    def run(self):
+        try:
+            self.ready.emit(plan_with_local_ai(self.script, self.model))
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
 
 class ImportThread(QThread):
@@ -237,6 +253,7 @@ class StudioWindow(QMainWindow):
         self.project.media_db = str(self.library.database)
         self.thumbnail_thread: ThumbnailThread | None = None
         self.import_thread: ImportThread | None = None
+        self.ai_thread: AIPlanThread | None = None
         self.worker: RenderThread | None = None
         self.preview_pending = False
         self._preview_output = None
@@ -414,6 +431,14 @@ class StudioWindow(QMainWindow):
         script_import = QPushButton("Import Script TXT")
         script_import.clicked.connect(self.import_script)
         lay.addWidget(script_import)
+        ai_row = QHBoxLayout()
+        self.ai_model = QLineEdit()
+        self.ai_model.setPlaceholderText("Optional installed local Ollama model name")
+        ai_row.addWidget(self.ai_model)
+        ai_button = QPushButton("AI Scene Plan")
+        ai_button.clicked.connect(self.plan_ai_scenes)
+        ai_row.addWidget(ai_button)
+        lay.addLayout(ai_row)
         policy = QHBoxLayout()
         self.source_policy = QComboBox()
         self.source_policy.addItems(["Local First", "Local Only", "Alternate Image/Video", "Video Only", "Image Only"])
@@ -609,6 +634,22 @@ class StudioWindow(QMainWindow):
         description = "\n".join(" / ".join(x["name"] for x in g) for g in groups[:12])
         QMessageBox.information(self, "Exact Duplicate Review",
                                 description or "No identical file hashes found. No files were deleted.")
+
+    def plan_ai_scenes(self):
+        if self.ai_thread and self.ai_thread.isRunning():
+            self.message("Local AI plan is already running")
+            return
+        self.ai_thread = AIPlanThread(self.script.toPlainText(), self.ai_model.text())
+        self.ai_thread.ready.connect(self._ai_plan_ready)
+        self.ai_thread.failed.connect(lambda error: self.message("Local AI: " + error[:250]))
+        self.ai_thread.start()
+        self.message("Local AI scene plan requested; current media remains unchanged")
+
+    def _ai_plan_ready(self, scenes):
+        self.scenes = scenes
+        self.scene_page = 0
+        self.populate_scenes()
+        self.message(f"AI proposed {len(scenes)} scenes — approval required before timeline placement")
 
     def import_script(self):
         path, _ = QFileDialog.getOpenFileName(self, "Import narration script", "", "Plain text (*.txt)")
@@ -1172,6 +1213,10 @@ class StudioWindow(QMainWindow):
     def closeEvent(self, event):
         if self.worker and self.worker.isRunning():
             self.message("Finish export/preview before closing the Studio")
+            event.ignore()
+            return
+        if self.ai_thread and self.ai_thread.isRunning():
+            self.message("Local AI planning is active; close after it completes")
             event.ignore()
             return
         if self.import_thread and self.import_thread.isRunning():

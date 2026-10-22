@@ -15,7 +15,7 @@ from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QGraphicsItem, QGraphicsRectItem, QGraphicsScene, QGraphicsSimpleTextItem,
+    QGraphicsItem, QGraphicsRectItem, QGraphicsPixmapItem, QGraphicsScene, QGraphicsSimpleTextItem,
     QGraphicsView, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
     QPlainTextEdit, QProgressBar, QPushButton, QSlider, QSplitter,
@@ -30,6 +30,7 @@ from .planner import create_scene_plan, match_media, append_scenes, Scene
 from .captions import import_srt, export_srt
 from .word_captions import import_word_json
 from .speech import transcribe_local
+from .waveforms import generate_waveform, waveform_path
 from .resources import probe
 from .local_ai import plan_with_local_ai
 from .keyframes import set_keyframe,remove_keyframe
@@ -77,6 +78,22 @@ class SpeechThread(QThread):
             self.ready.emit(payload)
         except Exception as exc:
             self.failed.emit(str(exc))
+
+
+class WaveformThread(QThread):
+    ready = Signal(str)
+
+    def __init__(self,paths: list[str],cache_dir: Path):
+        super().__init__()
+        self.paths,self.cache_dir=paths,cache_dir
+
+    def run(self):
+        for path in self.paths[:30]:
+            try:
+                generate_waveform(path,self.cache_dir)
+                self.ready.emit(path)
+            except (RuntimeError,OSError,ValueError,subprocess.SubprocessError):
+                continue
 
 
 class AIPlanThread(QThread):
@@ -186,6 +203,35 @@ class ClipBlock(QGraphicsRectItem):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
+        if item.kind == "audio":
+            try:
+                image=waveform_path(item.asset,editor.waveform_dir)
+                if image.is_file():
+                    pix=QPixmap(str(image)).scaled(
+                        max(16,round(self.rect().width())-4),24,
+                        Qt.AspectRatioMode.IgnoreAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    picture=QGraphicsPixmapItem(pix,self)
+                    picture.setPos(2,18)
+                    picture.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            except OSError:
+                pass
+        elif item.kind in {"image","video"}:
+            if item.kind=="image":
+                candidate=item.asset
+            else:
+                record=editor.media_lookup.get(str(Path(item.asset).resolve()))
+                candidate=str(editor.library.cache / (record["sha256"][:20]+".jpg")) if record else ""
+            if candidate and Path(candidate).is_file():
+                pix=QPixmap(candidate).scaled(
+                    min(90,max(20,round(self.rect().width())-6)),34,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                picture=QGraphicsPixmapItem(pix,self)
+                picture.setPos(3,10)
+                picture.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         name = item.text[:35] if item.kind == "text" else Path(item.asset).name[:32]
         label = QGraphicsSimpleTextItem(name or "(caption)", self)
         label.setBrush(QBrush(QColor("#ffffff")))
@@ -273,6 +319,9 @@ class StudioWindow(QMainWindow):
         self.scenes: list[Scene] = []
         self.scene_page = 0
         self.library = MediaLibrary(app_directory() / "catalog.sqlite3")
+        self.media_lookup = {}
+        self.waveform_dir=app_directory() / "waveforms"
+        self.waveform_thread: WaveformThread | None = None
         self.project.media_db = str(self.library.database)
         self.thumbnail_thread: ThumbnailThread | None = None
         self.import_thread: ImportThread | None = None
@@ -850,6 +899,7 @@ class StudioWindow(QMainWindow):
         self.history.checkpoint()
         self.project.add(path, "audio", tracks[selected], dur, start_ms=self.playhead_ms)
         self.mark_changed()
+        self.start_waveforms()
 
     def transcribe_voice(self):
         if self.speech_thread and self.speech_thread.isRunning():
@@ -1001,7 +1051,20 @@ class StudioWindow(QMainWindow):
         self.mark_changed()
         self.message(f"{track.name}: lock={track.locked}, mute={track.muted}, visible={track.visible}")
 
+    def start_waveforms(self):
+        if self.waveform_thread and self.waveform_thread.isRunning():
+            return
+        sources = sorted({x.asset for x in self.project.items if x.kind=="audio"
+                          and Path(x.asset).is_file()})
+        pending = [src for src in sources if not waveform_path(src,self.waveform_dir).exists()]
+        if pending:
+            self.waveform_thread = WaveformThread(pending,self.waveform_dir)
+            self.waveform_thread.ready.connect(lambda _path:self.timeline.redraw())
+            self.waveform_thread.start()
+
     def redraw_timeline(self):
+        self.media_lookup = {str(Path(r["path"]).resolve()):r
+                             for r in self.library.list()}
         self.timeline.redraw()
         self.seek.setMaximum(max(0, self.project.duration_ms))
         self.clock.setText(f"{human(self.playhead_ms)} / {human(self.project.duration_ms)}")
@@ -1228,6 +1291,7 @@ class StudioWindow(QMainWindow):
                 self.selected_id = ""
                 self.playhead_ms = 0
                 self.redraw_timeline()
+                self.start_waveforms()
                 self.message(f"Opened {Path(path).name}")
             except Exception as exc:
                 QMessageBox.warning(self, "Cannot open", str(exc))
@@ -1432,6 +1496,11 @@ class StudioWindow(QMainWindow):
             self.message("Media import is active; complete or cancel import before exiting")
             event.ignore()
             return
+        if self.waveform_thread and self.waveform_thread.isRunning():
+            if not self.waveform_thread.wait(5000):
+                self.message("Audio waveforms are still building")
+                event.ignore()
+                return
         if self.thumbnail_thread and self.thumbnail_thread.isRunning():
             if not self.thumbnail_thread.wait(5000):
                 self.message("Thumbnails are still building; close after they finish")

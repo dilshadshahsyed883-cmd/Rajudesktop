@@ -64,7 +64,7 @@ class ClipEngine:
         from tokenizers import Tokenizer
         if not model_ready(folder):raise RuntimeError('Local visual model not installed')
         self.np=np;folder=Path(folder)
-        from ai_text import SpeechEngine
+        from .ai_text import SpeechEngine
         self.speech=SpeechEngine(folder.parent/"speech_models")
         options=ort.SessionOptions();options.intra_op_num_threads=2;options.inter_op_num_threads=1
         options.log_severity_level=3
@@ -119,7 +119,7 @@ class ClipEngine:
                     if contact_path:contact_images.append(ImageOps.pad(im,(240,160)))
                     vec=self.embed_image(im);vectors.append(vec)
                     measures=quality_metrics(im,np)
-                    from ai_text import recognize_text
+                    from .ai_text import recognize_text
                     ocr_results.append(recognize_text(im,at))
                     fields={}
                     for group,labels in CATEGORIES.items():

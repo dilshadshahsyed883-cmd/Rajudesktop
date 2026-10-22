@@ -9,8 +9,8 @@ import subprocess
 import time
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, Field
-from media_integrity import sha256_file
-from media_catalog import probe_video
+from .media_integrity import sha256_file
+from .media_catalog import probe_video
 
 
 class Choice(BaseModel):

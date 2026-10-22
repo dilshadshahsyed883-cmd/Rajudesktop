@@ -21,8 +21,8 @@ import threading
 import time
 from urllib.parse import quote
 
-from media_catalog import probe_video
-from sml_proxy_profiles import active_url as sml_active_proxy_url
+from .media_catalog import probe_video
+from .sml_proxy_profiles import active_url as sml_active_proxy_url
 
 # Video Merger's actual production per-app state path (production/runtime.py).
 VIDEO_PROXY_FILE = Path(

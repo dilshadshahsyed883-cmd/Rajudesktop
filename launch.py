@@ -32,7 +32,7 @@ def main():
         if not args:
             return 6
         data=configure_backend(Path(args[0]))
-        from ai_workspace import run_worker
+        from scene_desktop.offline_sml_backend.ai_workspace import run_worker
         return run_worker(data)
     from scene_desktop.app import main as start_gui
     return start_gui()

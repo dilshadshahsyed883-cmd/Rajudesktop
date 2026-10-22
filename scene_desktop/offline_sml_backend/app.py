@@ -17,8 +17,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from media_integrity import sha256_file, score_clip
-from media_catalog import probe_video
+from .media_integrity import sha256_file, score_clip
+from .media_catalog import probe_video
 
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("SML_DATA_ROOT", str(ROOT / "data"))).expanduser()
@@ -375,7 +375,7 @@ def process_source(source_id: str) -> None:
             return
         if failed_segments:
             raise RuntimeError(f"{failed_segments} clip segments failed; all source media retained")
-        from local_library import create_review
+        from .local_library import create_review
         create_review(db, now_iso, source_id, created_ids)
         with db() as c:
             c.execute("UPDATE sources SET status='completed',stage='awaiting_pair_selection',progress=100,clip_count=?,drive_state='disabled',updated_at=? WHERE id=?", (len(created_ids), now_iso(), source_id))
@@ -432,7 +432,7 @@ def clip_to_dict(c: sqlite3.Row, conn: sqlite3.Connection) -> dict:
 @app.on_event("startup")
 def startup() -> None:
     init_db()
-    from local_library import initialize
+    from .local_library import initialize
     with db() as c: initialize(c)
 
 
@@ -527,7 +527,7 @@ def update_keywords(clip_id: str, body: KeywordUpdate):
         for k in cleaned[:60]:
             c.execute("INSERT INTO clip_keywords(clip_id,keyword,source,confidence,created_at) VALUES (?,?,?,?,?)", (clip_id, k, "manual", 1.0, ts))
         c.execute("UPDATE clips SET updated_at=? WHERE id=?", (ts, clip_id))
-    from ai_workspace import manual_patch
+    from .ai_workspace import manual_patch
     manual_patch(DATA, "video", clip_id, {"keywords": cleaned})
     schedule_metadata_sync([clip_id])
     return {"ok": True, "keywords": cleaned}
@@ -562,7 +562,7 @@ def bulk_status(body: BulkStatus):
         raise HTTPException(400, "Select between 1 and 500 clips")
     ts = now_iso()
     updated, skipped = [], []
-    from local_library import guard_manual, protect
+    from .local_library import guard_manual, protect
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         for cid in ids:
@@ -592,7 +592,7 @@ def bulk_trash_clips(body: ClipSelection):
     ids = list(dict.fromkeys(body.ids))
     if not ids or len(ids) > 500:
         raise HTTPException(400, "Select between 1 and 500 clips")
-    from local_library import guard_manual, protect
+    from .local_library import guard_manual, protect
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         for ident in ids:
@@ -610,7 +610,7 @@ def bulk_trash_clips(body: ClipSelection):
 def trash_clip(clip_id: str):
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
-        from local_library import guard_manual, protect
+        from .local_library import guard_manual, protect
         if not c.execute("SELECT 1 FROM clips WHERE id=? AND deleted_at IS NULL", (clip_id,)).fetchone():
             raise HTTPException(404, "Clip not found or already in Trash")
         guard_manual(c, 'video', [clip_id]); protect(c, 'video', [clip_id])
@@ -623,7 +623,7 @@ def trash_clip(clip_id: str):
 def restore_clip(clip_id: str):
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
-        from local_library import protect
+        from .local_library import protect
         protect(c, 'video', [clip_id])
         row=c.execute('SELECT local_selection FROM clips WHERE id=?',(clip_id,)).fetchone()
         if row and row['local_selection']=='discarded':raise HTTPException(409, 'Discarded clip content was removed')
@@ -634,7 +634,7 @@ def restore_clip(clip_id: str):
 
 @app.delete("/api/clips/{clip_id}/permanent")
 def permanent_delete(clip_id: str):
-    from local_library import erase
+    from .local_library import erase
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
         erase(DATA,c,'video',[clip_id],now_iso)
@@ -643,7 +643,7 @@ def permanent_delete(clip_id: str):
 
 @app.post("/api/clips/{clip_id}/reanalyze")
 def reanalyze(clip_id: str):
-    from ai_workspace import enqueue, locate
+    from .ai_workspace import enqueue, locate
     locate(DATA, "video", clip_id)
     app.state.ai_workspace.require_ready()
     job = enqueue(DATA, "analyze", "video", clip_id)
@@ -749,7 +749,7 @@ def start_processing(source_id: str):
 
 @app.post("/api/sources/{source_id}/manual-cleanup")
 def manual_cleanup_source(source_id: str):
-    from local_library import finalize
+    from .local_library import finalize
     return finalize(DATA, db, now_iso, source_id)
 
 
@@ -796,16 +796,16 @@ def update_settings(body: SettingsUpdate):
     return {"ok": True}
 
 # Additive V2 media, image ingestion, and editor API. V1 records/routes remain intact.
-from media_extensions import register_media_extensions
+from .media_extensions import register_media_extensions
 register_media_extensions(app, data_dir=DATA, db=db, now_iso=now_iso,
                           get_settings_map=get_settings_map, setting_true=setting_true,
                           source_dir=SOURCES_DIR)
 
 # Advanced AI remains an additive, isolated service within the independent app.
-from ai_engine import model_ready
-from ai_workspace import register_ai_workspace
+from .ai_engine import model_ready
+from .ai_workspace import register_ai_workspace
 # Local lifecycle callback retries deferred cleanup after jobs finish.
-from local_library import finalize
+from .local_library import finalize
 def local_housekeeping():
     with db() as c:
         ids=[r[0] for r in c.execute("SELECT source_id FROM local_reviews WHERE state='pending'")]
@@ -813,7 +813,7 @@ def local_housekeeping():
         try: finalize(DATA, db, now_iso, ident)
         except Exception: pass  # Retain all protected media; owner can retry explicitly.
 register_ai_workspace(app, DATA, housekeeping_callback=local_housekeeping)
-from local_library import register as register_local_library
+from .local_library import register as register_local_library
 register_local_library(app, DATA, db, now_iso)
 (DATA / 'ai_previews').mkdir(exist_ok=True)
 app.mount('/media/ai-previews', StaticFiles(directory=DATA / 'ai_previews'), name='ai-previews')

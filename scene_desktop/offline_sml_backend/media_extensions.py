@@ -20,10 +20,10 @@ from urllib.parse import urlsplit
 from fastapi import File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from media_integrity import sha256_file
-from media_catalog import probe_video, safe_origin, classify_orientation
-from video_merger_downloader import download_youtube_video, proxy_available
-import sml_proxy_profiles
+from .media_integrity import sha256_file
+from .media_catalog import probe_video, safe_origin, classify_orientation
+from .video_merger_downloader import download_youtube_video, proxy_available
+from . import sml_proxy_profiles
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
@@ -362,7 +362,7 @@ def register_media_extensions(app, *, data_dir, db, now_iso, get_settings_map,
         for ident in ids:
             if not conn.execute("SELECT 1 FROM image_assets WHERE id=? AND deleted_at IS NULL", (ident,)).fetchone():
                 raise HTTPException(404, "Image not found or already in Trash: " + ident)
-        from local_library import guard_manual, protect
+        from .local_library import guard_manual, protect
         guard_manual(conn, "image", ids)
         protect(conn, "image", ids)
         return ids
@@ -401,7 +401,7 @@ def register_media_extensions(app, *, data_dir, db, now_iso, get_settings_map,
                 conn.execute("UPDATE image_assets SET keywords_json=?,updated_at=? WHERE id=?",
                              (json.dumps(tags), stamp, ident))
                 changed.append((ident, tags))
-        from ai_workspace import manual_patch
+        from .ai_workspace import manual_patch
         for ident, tags in changed:
             manual_patch(root, "image", ident, {"keywords": tags})
         return {"ok": True, "updated": len(changed)}
@@ -421,7 +421,7 @@ def register_media_extensions(app, *, data_dir, db, now_iso, get_settings_map,
         with db() as conn:
             conn.execute('BEGIN IMMEDIATE')
             if body.status is not None:
-                from local_library import protect
+                from .local_library import protect
                 protect(conn,'image',[asset_id])
             row = conn.execute("SELECT * FROM image_assets WHERE id=? AND deleted_at IS NULL", (asset_id,)).fetchone()
             if not row:
@@ -435,7 +435,7 @@ def register_media_extensions(app, *, data_dir, db, now_iso, get_settings_map,
                           (body.description if body.description is not None else row["description"])[:1000],
                           (body.display_name if body.display_name is not None else row["original_name"])[:200],
                           now_iso(),asset_id))
-        from ai_workspace import manual_patch
+        from .ai_workspace import manual_patch
         fields={}
         if body.keywords is not None:fields["keywords"]=tags
         if body.description is not None:fields["description"]=body.description
@@ -446,7 +446,7 @@ def register_media_extensions(app, *, data_dir, db, now_iso, get_settings_map,
     def trash_image(asset_id: str):
         with db() as conn:
             conn.execute('BEGIN IMMEDIATE')
-            from local_library import busy, protect
+            from .local_library import busy, protect
             busy(conn); protect(conn,'image',[asset_id])
             cur = conn.execute("UPDATE image_assets SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
                                (now_iso(),now_iso(),asset_id))
@@ -458,7 +458,7 @@ def register_media_extensions(app, *, data_dir, db, now_iso, get_settings_map,
     def restore_image(asset_id: str):
         with db() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            from local_library import guard_manual, protect
+            from .local_library import guard_manual, protect
             guard_manual(conn, "image", [asset_id])
             protect(conn, "image", [asset_id])
             cur = conn.execute("UPDATE image_assets SET deleted_at=NULL,updated_at=? WHERE id=? AND deleted_at IS NOT NULL",

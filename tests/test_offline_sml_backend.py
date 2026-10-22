@@ -64,7 +64,7 @@ class OfflineSMLServiceTests(unittest.TestCase):
         from scene_desktop.offline_sml_backend.server import create_app
         with tempfile.TemporaryDirectory() as tmp:
             app=create_app(Path(tmp)/"offline-sml",41337)
-            with TestClient(app,base_url="http://127.0.0.1:41337") as client:
+            with TestClient(app,base_url="http://127.0.0.1:41337",client=("127.0.0.1",31337)) as client:
                 health=client.get("/__sml_desktop_health")
                 self.assertEqual(health.status_code,200)
                 self.assertEqual(health.json()["mode"],"offline-local")

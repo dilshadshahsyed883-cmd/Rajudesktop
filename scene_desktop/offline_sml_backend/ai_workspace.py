@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime,timezone
 from fastapi import File,HTTPException,Query,UploadFile
 from pydantic import BaseModel,Field
-from ai_engine import MODEL,VERSION,model_ready
+from .ai_engine import MODEL,VERSION,model_ready
 
 
 def now():return datetime.now(timezone.utc).isoformat()
@@ -163,7 +163,7 @@ def manual_patch(root,media_type,media_id,patch,expected_revision=None):
 
 
 def run_worker(root):
-    from ai_engine import ClipEngine
+    from .ai_engine import ClipEngine
     root=Path(root)
     with try_lock(root/'.ai-worker.lock') as acquired:
         if not acquired:return
@@ -298,7 +298,7 @@ class Workspace:
             'worker_running':bool(self.process and self.process.poll() is None),'counts':counts,'jobs':jobs,
             'threads':2,'max_worker_rss_mb':1536,'max_catalog':5000,'max_batch':int(config.get('ai_batch_limit','32')),
             'job_timeout_seconds':int(config.get('ai_job_timeout','120')),
-            'ocr_available':bool(__import__('shutil').which('tesseract')),'speech_available':__import__('ai_text').speech_ready(self.root/'speech_models'),
+            'ocr_available':bool(__import__('shutil').which('tesseract')),'speech_available':__import__('scene_desktop.offline_sml_backend.ai_text', fromlist=['*']).speech_ready(self.root/'speech_models'),
             'unsupported':['face identity','face clustering (disabled)','camera motion inference','subject bounding boxes'],
             'score_note':'CLIP candidate-relative suggestions, not calibrated probabilities. Review actions/mood/lighting.',
             'drive_cleanup':'Blocked when Drive disabled; original media and models retained'}

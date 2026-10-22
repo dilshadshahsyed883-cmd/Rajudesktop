@@ -60,7 +60,7 @@ def create_app(data_dir: str | Path, port: int):
     from fastapi import FastAPI, Request
     from fastapi.responses import JSONResponse
     root=configure_backend(data_dir)
-    from app import app as sml_app
+    from .app import app as sml_app
 
     outer=FastAPI(title="Rajudesktop Offline SML",docs_url=None,
                   redoc_url=None,openapi_url=None)

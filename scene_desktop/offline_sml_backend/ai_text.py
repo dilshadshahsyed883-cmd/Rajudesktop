@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
-from ai_engine import digest
+from .ai_engine import digest
 
 SPEECH_MODEL='Systran/faster-whisper-tiny'
 SPEECH_REVISION='d90ca5fe260221311c53c58e660288d3deb8d356'

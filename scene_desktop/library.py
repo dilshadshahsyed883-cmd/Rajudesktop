@@ -1,6 +1,7 @@
 """Local media catalog, thumbnails, approvals, tags and exact duplicate review."""
 from __future__ import annotations
 from pathlib import Path
+from contextlib import contextmanager
 import hashlib
 import json
 import sqlite3
@@ -30,11 +31,16 @@ class MediaLibrary:
             CREATE INDEX IF NOT EXISTS media_status ON media(status);
             """)
 
+    @contextmanager
     def _db(self):
         conn = sqlite3.connect(self.database, timeout=20)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=20000")
-        return conn
+        try:
+            conn.execute("PRAGMA busy_timeout=20000")
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     @staticmethod
     def digest(path: Path) -> str:

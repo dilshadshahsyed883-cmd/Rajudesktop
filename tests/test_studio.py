@@ -45,8 +45,9 @@ class StudioModelTests(unittest.TestCase):
             root = Path(folder)
             exe = ffmpeg_path()
             for name in ["forest.png", "city.png"]:
+                tone = "red" if name == "forest.png" else "green"
                 subprocess.run([exe, "-y", "-hide_banner", "-loglevel", "error",
-                                "-f", "lavfi", "-i", "color=c=red:s=80x80",
+                                "-f", "lavfi", "-i", f"color=c={tone}:s=80x80",
                                 "-frames:v", "1", str(root / name)],
                                check=True, timeout=45)
             lib = MediaLibrary(root / "library.sqlite3")

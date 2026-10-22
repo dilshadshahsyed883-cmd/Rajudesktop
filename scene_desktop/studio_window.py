@@ -128,7 +128,7 @@ class TimelineView(QGraphicsView):
         self.editor = editor
         self.canvas = QGraphicsScene(self)
         self.setScene(self.canvas)
-        self.setRenderHint(self.renderHints())
+        self.setRenderHints(self.renderHints())
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setMinimumHeight(260)
         self.setStyleSheet("background:#171e28; border:1px solid #354256;")
@@ -184,6 +184,8 @@ class StudioWindow(QMainWindow):
         self.audio = QAudioOutput(self)
         self.player = QMediaPlayer(self)
         self.player.setAudioOutput(self.audio)
+        self._preview_start = 0
+        self.player.positionChanged.connect(self._on_preview_position)
         self.build_ui()
         self.preview_timer = QTimer(self)
         self.preview_timer.setSingleShot(True)
@@ -264,6 +266,9 @@ class StudioWindow(QMainWindow):
             b = QPushButton(title)
             b.clicked.connect(action)
             commands.addWidget(b)
+        cancel = QPushButton("Cancel Render / Preview")
+        cancel.clicked.connect(self.cancel_render)
+        commands.addWidget(cancel)
         tl.addLayout(commands)
         center.addWidget(timeline_panel)
         center.setSizes([380, 410])
@@ -279,7 +284,7 @@ class StudioWindow(QMainWindow):
         widget = QWidget()
         lay = QVBoxLayout(widget)
         top = QHBoxLayout()
-        for title, cb in [("Import Files", self.import_files), ("Import Folder", self.import_folder)]:
+        for title, cb in [("Import Files", self.import_files), ("Import Folder", self.import_folder), ("Add Audio", self.add_audio)]:
             b = QPushButton(title)
             b.clicked.connect(cb)
             top.addWidget(b)
@@ -736,6 +741,22 @@ class StudioWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "Save error", str(exc))
 
+    def cancel_render(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.stop.set()
+            self.message("Cancelling current render safely...")
+        else:
+            self.message("No active render job")
+
+    def _on_preview_position(self, ms: int):
+        if not self._preview_output or not self.project.duration_ms:
+            return
+        self.playhead_ms = min(self.project.duration_ms, self._preview_start + ms)
+        self.seek.blockSignals(True)
+        self.seek.setValue(self.playhead_ms)
+        self.seek.blockSignals(False)
+        self.clock.setText(f"{human(self.playhead_ms)} / {human(self.project.duration_ms)}")
+
     def scrub(self):
         self.playhead_ms = self.seek.value()
         self.redraw_timeline()
@@ -756,6 +777,7 @@ class StudioWindow(QMainWindow):
         if self.project.duration_ms < 100:
             return
         start = max(0, min(self.playhead_ms, self.project.duration_ms - 100))
+        self._preview_start = start
         end = min(self.project.duration_ms, start + 4000)
         filename = app_directory() / "previews" / (uuid.uuid4().hex + ".mp4")
         filename.parent.mkdir(parents=True, exist_ok=True)

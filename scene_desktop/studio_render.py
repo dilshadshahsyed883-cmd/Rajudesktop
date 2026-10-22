@@ -219,8 +219,11 @@ def _one_section(project: StudioProject, start_ms: int, end_ms: int, output: Pat
 
 
 def _mix_audio(project: StudioProject, destination: Path,
-               stop: threading.Event | None) -> Path | None:
-    items = _audio_items(project)
+               stop: threading.Event | None,
+               window: tuple[int,int] | None = None) -> Path | None:
+    """Mix narration, SFX and music, including a short preview audio window."""
+    first, last = window if window else (0, project.duration_ms)
+    items = [i for i in _audio_items(project) if i.start_ms < last and i.end_ms > first]
     if not items:
         return None
     exe = ffmpeg_path()
@@ -229,15 +232,25 @@ def _mix_audio(project: StudioProject, destination: Path,
     for index, item in enumerate(items):
         if not Path(item.asset).is_file():
             raise FileNotFoundError(item.asset)
-        args += ["-i", item.asset]
-        filters.append(f"[{index}:a:0]atrim=start={item.in_ms/1000:.4f}:"
-                       f"end={item.out_ms/1000:.4f},asetpts=PTS-STARTPTS,"
-                       f"aformat=sample_rates=48000:channel_layouts=stereo,"
-                       f"volume={item.volume:.4f},"
-                       f"adelay={item.start_ms}:all=1[a{index}]")
+        actual_start = max(item.start_ms, first)
+        actual_end = min(item.end_ms, last)
+        seek = (item.in_ms + actual_start - item.start_ms) / 1000
+        span = (actual_end - actual_start) / 1000
+        args += ["-ss", f"{seek:.5f}", "-t", f"{span:.5f}", "-i", item.asset]
+        chain = [f"[{index}:a:0]asetpts=PTS-STARTPTS",
+                 "aformat=sample_rates=48000:channel_layouts=stereo",
+                 f"volume={item.volume:.4f}"]
+        # Fades are applied relative to the source clip's timeline start/end.
+        if item.fade_in_ms and actual_start == item.start_ms:
+            chain.append(f"afade=t=in:st=0:d={item.fade_in_ms/1000:.4f}")
+        fade_at = item.end_ms - item.fade_out_ms
+        if item.fade_out_ms and actual_start <= fade_at < actual_end:
+            chain.append(f"afade=t=out:st={(fade_at-actual_start)/1000:.4f}:d={item.fade_out_ms/1000:.4f}")
+        chain.append(f"adelay={actual_start-first}:all=1[a{index}]")
+        filters.append(",".join(chain))
     refs = "".join(f"[a{i}]" for i in range(len(items)))
     filters.append(f"{refs}amix=inputs={len(items)}:duration=longest:normalize=0,"
-                   f"atrim=duration={project.duration_ms/1000:.4f}[mixed]")
+                   f"atrim=duration={(last-first)/1000:.4f}[mixed]")
     args += ["-filter_complex", ";".join(filters), "-map", "[mixed]",
              "-c:a", "aac", "-b:a", "192k", str(destination)]
     execute(args, stop)
@@ -310,16 +323,17 @@ def render(project: StudioProject, dest: str | Path, *,
         joined = root / "visual.mp4"
         _concat(chunks, joined, stop)
         result = joined
-        if not preview and _audio_items(project):
+        if _audio_items(project):
             audio = root / "mixed.m4a"
-            _mix_audio(project, audio, stop)
-            narrated = root / "full.mp4"
-            execute([ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-nostdin",
-                     "-y", "-i", str(joined), "-i", str(audio),
-                     "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "copy",
-                     "-t", f"{project.duration_ms/1000:.4f}",
-                     "-movflags", "+faststart", str(narrated)], stop)
-            result = narrated
+            audio_result = _mix_audio(project, audio, stop, (start_ms, end_ms))
+            if audio_result:
+                narrated = root / "full.mp4"
+                execute([ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-nostdin",
+                         "-y", "-i", str(joined), "-i", str(audio),
+                         "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "copy",
+                         "-t", f"{(end_ms-start_ms)/1000:.4f}",
+                         "-movflags", "+faststart", str(narrated)], stop)
+                result = narrated
         if stop and stop.is_set():
             raise RuntimeError("Render cancelled")
         if not result.is_file() or result.stat().st_size < 1000:

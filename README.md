@@ -2,6 +2,10 @@
 
 Independent, local-first **scene planning + indexed media library + multitrack video editor**. Windows application source and distributable are hosted ONLY in this repository. No existing VPS_1, Haseeb, Bilal, Scene Builder or SML deployments are modified.
 
+## Interactive preview architecture (GPU candidate)
+
+There are two selectable preview modes: GPU Live (OpenGL-backed layered image/video/caption composition, asynchronous CPU PyAV decoding, bounded near-frame prefetch, and sliding audio-only mixed playback) and FFmpeg Accurate (the original short-section render preview for export-matched effects and sound). GPU Live automatically falls back if the OpenGL context cannot be verified as a hardware candidate. GPU **video decode is not implemented**; OpenGL textured compositing is an improvement over constant FFmpeg video re-render but does not guarantee smooth editing on every GPU. Color LUT, complex noise and effects fidelity remain more complete in FFmpeg Accurate. Preview Diagnostics shows the current device renderer and measured draw FPS. See docs/GPU_PREVIEW_ACCEPTANCE.md for explicit on-device performance, sync and visual comparison gates.
+
 ## Editing capabilities
 
 - Local media library: file/folder import (background indexing), searchable thumbnails, selected/video/image counts, tags, exact duplicates, candidate/approved/rejected review and approval.

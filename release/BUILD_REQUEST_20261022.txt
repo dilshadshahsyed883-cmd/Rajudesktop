@@ -1,0 +1,5 @@
+Owner-approved final Windows EXE+ZIP build request (2026-10-22).
+Single explicit release-build trigger for Rajudesktop independent branch.
+Offline SML complete local workspace. Original VPS_1 unchanged.
+Owner performs Windows PC functional/UAT; CI verifies packaged local server, GUI, installer and checksums.
+Source only commits after this marker do not trigger further automatic EXE builds.

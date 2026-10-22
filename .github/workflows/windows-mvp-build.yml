@@ -65,6 +65,26 @@ jobs:
           Copy-Item docs/THIRD_PARTY_NOTICES.txt dist/SceneDesktopStudio/THIRD_PARTY_NOTICES.txt
           Compress-Archive -Path dist/SceneDesktopStudio -DestinationPath SceneDesktopStudio-windows-x64.zip -CompressionLevel Optimal
           (Get-FileHash SceneDesktopStudio-windows-x64.zip -Algorithm SHA256).Hash | Set-Content SceneDesktopStudio-windows-x64.zip.sha256 -Encoding ascii
+      - name: Validate manual installer and app-only rollback on Windows CI runner
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "scene-manual-installer-test"
+          $installerArgs = @{
+            ArtifactZip = "SceneDesktopStudio-windows-x64.zip"
+            ChecksumFile = "SceneDesktopStudio-windows-x64.zip.sha256"
+            InstallRoot = $root
+            SkipLaunchSmoke = $true
+          }
+          & ./Install-SceneDesktop.ps1 @installerArgs
+          if (!(Test-Path (Join-Path $root "current/SceneDesktopStudio.exe"))) { throw "Installer missing EXE" }
+          New-Item -ItemType Directory -Path (Join-Path $root "project-data") -Force | Out-Null
+          "PRESERVE" | Set-Content (Join-Path $root "project-data/project.txt")
+          & ./Install-SceneDesktop.ps1 @installerArgs
+          if (!(Test-Path (Join-Path $root "project-data/project.txt"))) { throw "Installer touched project data" }
+          if (!(Get-ChildItem (Join-Path $root "backups") -Directory)) { throw "App release backup absent" }
+          $receipt = Get-Content (Join-Path $root "last-install.json") -Raw | ConvertFrom-Json
+          if ($receipt.result -ne "MANUAL_INSTALL_PASS") { throw "No install receipt" }
+          Write-Output "CI_ONLY_MANUAL_INSTALL_AND_BACKUP=PASS"
       - uses: actions/upload-artifact@v4
         with:
           name: SceneDesktopStudio-windows-x64-${{ github.sha }}

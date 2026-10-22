@@ -28,6 +28,22 @@ jobs:
         run: python -m compileall -q scene_desktop launch.py
       - name: Package a portable Windows app folder
         run: pyinstaller --noconfirm --clean --onedir --windowed --name SceneDesktopStudio --collect-all imageio_ffmpeg launch.py
+      - name: Smoke launch the packaged Windows GUI (no production machine)
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $exe = "dist/SceneDesktopStudio/SceneDesktopStudio.exe"
+          if (!(Test-Path $exe)) { throw "Build executable missing" }
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
+            Start-Sleep -Seconds 6
+            $process.Refresh()
+            if ($process.HasExited) { throw "Packaged app crashed on launch (exit $($process.ExitCode))" }
+            Write-Output "HEADLESS_WINDOWS_GUI_LAUNCH=PASS"
+          }
+          finally {
+            if (!$process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+          }
       - name: Verify bundled executable and write manifest
         shell: pwsh
         run: |

@@ -27,6 +27,7 @@ from .library import MediaLibrary
 from .media import duration_ms, ffmpeg_path
 from .timeline import StudioProject, Item, EditHistory, save, load, VISUAL_TRACKS, AUDIO_TRACKS
 from .planner import create_scene_plan, match_media, append_scenes, Scene
+from .captions import import_srt, export_srt
 from .studio_render import render
 
 SCALE = 0.035       # 35 px per second
@@ -186,7 +187,6 @@ class StudioWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.project = StudioProject()
-        self.project.media_db = str(self.library.database)
         self.history = EditHistory(self.project)
         self.project_path: Path | None = None
         self.selected_id = ""
@@ -284,7 +284,9 @@ class StudioWindow(QMainWindow):
         commands = QHBoxLayout()
         for title, action in [("Add selected media", self.add_selected_media),
                               ("Split", self.split_item), ("Delete", self.delete_item),
-                              ("Add caption", self.add_caption)]:
+                              ("Add caption", self.add_caption),
+                              ("Import SRT", self.import_subtitles),
+                              ("Export SRT", self.export_subtitles)]:
             b = QPushButton(title)
             b.clicked.connect(action)
             commands.addWidget(b)
@@ -669,6 +671,30 @@ class StudioWindow(QMainWindow):
         self.history.checkpoint()
         self.project.add(path, "audio", tracks[selected], dur, start_ms=self.playhead_ms)
         self.mark_changed()
+
+    def import_subtitles(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Import timed captions", "", "SubRip subtitles (*.srt)")
+        if not path:
+            return
+        self.history.checkpoint()
+        try:
+            count = import_srt(self.project, path)
+        except Exception as exc:
+            self.project = self.history.undo()
+            self.history.project = self.project
+            QMessageBox.warning(self, "Subtitle import error", str(exc))
+            return
+        self.mark_changed()
+        self.message(f"Imported {count} timed captions")
+
+    def export_subtitles(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Export editable captions", "", "SubRip subtitles (*.srt)")
+        if path:
+            try:
+                export_srt(self.project, Path(path).with_suffix(".srt"))
+                self.message(f"Captions exported: {path}")
+            except Exception as exc:
+                QMessageBox.warning(self, "Subtitle export", str(exc))
 
     def add_caption(self):
         text, ok = QInputDialog.getMultiLineText(self, "Caption", "Caption shown at the playhead")

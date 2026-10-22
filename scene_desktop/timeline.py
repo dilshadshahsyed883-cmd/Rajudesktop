@@ -16,8 +16,8 @@ VERSION = 2
 VISUAL_TRACKS = {"video", "overlay", "image"}
 AUDIO_TRACKS = {"narration", "music", "sfx", "audio"}
 KINDS = {"video", "image", "audio", "text"}
-EFFECTS = {"zoom", "mirror", "brightness", "contrast", "saturation", "grain", "opacity", "rotate", "blur", "speed"}
-TRANSITIONS = {"cut", "fade", "dissolve"}
+EFFECTS = {"zoom", "mirror", "brightness", "contrast", "saturation", "grain", "grain_style", "opacity", "rotate", "blur", "motion", "look", "look_intensity", "source_audio"}
+TRANSITIONS = {"cut", "fade", "dissolve", "slide_left", "slide_right", "slide_up", "slide_down"}
 MIN_DURATION_MS = 100
 
 
@@ -78,6 +78,15 @@ class Item:
             raise ValueError("Item requires a media source")
         if not isinstance(self.effects, dict) or set(self.effects).difference(EFFECTS):
             raise ValueError("Unsupported effect")
+        from .effects import COLOR_LOOKS, MOTIONS, GRAINS
+        if self.effects.get("look", "neutral") not in COLOR_LOOKS:
+            raise ValueError("Unknown color look")
+        if self.effects.get("motion", "none") not in MOTIONS:
+            raise ValueError("Unknown motion")
+        if self.effects.get("grain_style", "film") not in GRAINS:
+            raise ValueError("Unknown grain style")
+        if self.kind != "video" and self.effects.get("source_audio", False):
+            raise ValueError("Only video sources can opt into embedded audio")
         if self.fade_in_ms + self.fade_out_ms > self.duration_ms * 2:
             raise ValueError("Fade exceeds item duration")
 

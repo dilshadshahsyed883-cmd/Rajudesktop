@@ -29,6 +29,7 @@ from .timeline import StudioProject, Item, EditHistory, save, load, VISUAL_TRACK
 from .planner import create_scene_plan, match_media, append_scenes, Scene
 from .captions import import_srt, export_srt
 from .resources import probe
+from .effects import COLOR_LOOKS, MOTIONS, GRAINS, TRANSITIONS
 from .studio_render import render
 
 SCALE = 0.035       # 35 px per second
@@ -208,7 +209,16 @@ class StudioWindow(QMainWindow):
         self.player.setAudioOutput(self.audio)
         self._preview_start = 0
         self.player.positionChanged.connect(self._on_preview_position)
+        self.player.mediaStatusChanged.connect(self._on_media_status)
         self.build_ui()
+        for label, key, callback in [
+            ("Save", "Ctrl+S", self.save_project), ("Undo", "Ctrl+Z", self.undo),
+            ("Redo", "Ctrl+Shift+Z", self.redo), ("Export", "Ctrl+E", self.export_video),
+        ]:
+            action = QAction(label, self)
+            action.setShortcut(key)
+            action.triggered.connect(callback)
+            self.addAction(action)
         self.preview_timer = QTimer(self)
         self.preview_timer.setSingleShot(True)
         self.preview_timer.setInterval(650)
@@ -406,6 +416,19 @@ class StudioWindow(QMainWindow):
         form.addRow("Zoom %", self.zoom_spin)
         self.mirror_check = QCheckBox("Horizontal Mirror")
         form.addRow("Mirror", self.mirror_check)
+        self.motion_select = QComboBox()
+        self.motion_select.addItems(sorted(MOTIONS))
+        form.addRow("Image/Video motion", self.motion_select)
+        self.look_select = QComboBox()
+        self.look_select.addItems(list(COLOR_LOOKS))
+        form.addRow("Color look (23)", self.look_select)
+        self.look_strength_spin = self._spin(0, 100, 100)
+        form.addRow("Look strength %", self.look_strength_spin)
+        self.noise_select = QComboBox()
+        self.noise_select.addItems(sorted(GRAINS))
+        form.addRow("Grain/Noise style", self.noise_select)
+        self.source_audio_check = QCheckBox("Include original video audio")
+        form.addRow("Source audio", self.source_audio_check)
         self.grain_spin = self._spin(0, 40, 0)
         form.addRow("Film grain", self.grain_spin)
         self.brightness_spin = self._spin(-100, 100, 0)
@@ -413,7 +436,7 @@ class StudioWindow(QMainWindow):
         self.saturation_spin = self._spin(0, 400, 100)
         form.addRow("Saturation %", self.saturation_spin)
         self.transition = QComboBox()
-        self.transition.addItems(["cut", "fade", "dissolve"])
+        self.transition.addItems(sorted(TRANSITIONS))
         form.addRow("Transition in", self.transition)
         self.trans_spin = self._spin(0, 5, 0)
         form.addRow("Transition sec", self.trans_spin)
@@ -738,10 +761,16 @@ class StudioWindow(QMainWindow):
                              (self.saturation_spin, float(obj.effects.get("saturation",1))*100),
                              (self.trans_spin, obj.transition_ms/1000),
                              (self.volume_spin, obj.volume*100),
+                             (self.look_strength_spin, float(obj.effects.get("look_intensity",100))),
                              (self.fade_in_spin, obj.fade_in_ms/1000),
                              (self.fade_out_spin, obj.fade_out_ms/1000)]:
             widget.setValue(val)
         self.mirror_check.setChecked(bool(obj.effects.get("mirror",False)))
+        self.motion_select.setCurrentText(str(obj.effects.get("motion","none")))
+        self.look_select.setCurrentText(str(obj.effects.get("look","neutral")))
+        self.noise_select.setCurrentText(str(obj.effects.get("grain_style","film")))
+        self.source_audio_check.setEnabled(obj.kind == "video")
+        self.source_audio_check.setChecked(bool(obj.effects.get("source_audio",False)))
         self.transition.setCurrentText(obj.transition_in)
         self.caption_text.setText(obj.text)
 
@@ -760,7 +789,12 @@ class StudioWindow(QMainWindow):
                                  "mirror": self.mirror_check.isChecked(),
                                  "grain": int(self.grain_spin.value()),
                                  "brightness": self.brightness_spin.value()/100,
-                                 "saturation": self.saturation_spin.value()/100})
+                                 "saturation": self.saturation_spin.value()/100,
+                                 "look": self.look_select.currentText(),
+                                 "look_intensity": self.look_strength_spin.value(),
+                                 "motion": self.motion_select.currentText(),
+                                 "grain_style": self.noise_select.currentText(),
+                                 "source_audio": self.source_audio_check.isChecked() if item.kind=="video" else False})
             item.transition_in = self.transition.currentText()
             item.transition_ms = round(self.trans_spin.value()*1000)
             item.volume = self.volume_spin.value()/100
@@ -951,6 +985,15 @@ class StudioWindow(QMainWindow):
             self.message("Cancelling current render safely...")
         else:
             self.message("No active render job")
+
+    def _on_media_status(self, status):
+        # Automatically continue playback into the following cached preview
+        # window; never confuse a paused player with end-of-timeline.
+        if status == QMediaPlayer.MediaStatus.EndOfMedia and self.project.duration_ms > 0:
+            nxt = self._preview_start + self.player.duration()
+            if nxt + 100 < self.project.duration_ms:
+                self.playhead_ms = nxt
+                self.render_preview()
 
     def _on_preview_position(self, ms: int):
         if not self._preview_output or not self.project.duration_ms:

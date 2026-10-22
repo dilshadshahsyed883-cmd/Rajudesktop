@@ -18,6 +18,7 @@ from typing import Callable
 
 from .media import ffmpeg_path
 from .timeline import StudioProject, Item, VISUAL_TRACKS, AUDIO_TRACKS
+from .effects import visual_filters, overlay_position
 
 Progress = Callable[[int, str], None]
 
@@ -68,7 +69,7 @@ def dependencies(items: list[Item]) -> list:
 def section_key(project: StudioProject, items: list[Item], start_ms: int, end_ms: int,
                 width: int, height: int, fps: int) -> str:
     payload = {
-        "engine": 2,
+        "engine": 3,
         "dims": [width, height, fps],
         "section": [start_ms, end_ms],
         "items": dependencies(items),
@@ -83,7 +84,7 @@ def _visual_items(project: StudioProject, start_ms: int, end_ms: int) -> list[It
              i.kind in {"image", "video"} and i.start_ms < end_ms and i.end_ms > start_ms]
     rank = {t.id: idx for idx, t in enumerate(project.tracks)}
     # Earlier tracks appear on top, but within one track the latest started clip wins.
-    return sorted(items, key=lambda i: (-rank[i.track_id], i.start_ms, i.id))
+    return sorted(items, key=lambda i: (rank[i.track_id], i.start_ms, i.id))
 
 
 def _caption_items(project: StudioProject, start_ms: int, end_ms: int) -> list[Item]:
@@ -94,7 +95,16 @@ def _caption_items(project: StudioProject, start_ms: int, end_ms: int) -> list[I
 
 def _audio_items(project: StudioProject) -> list[Item]:
     audible = {t.id for t in project.tracks if t.kind in AUDIO_TRACKS and not t.muted}
-    return [i for i in project.items if i.track_id in audible and i.kind == "audio"]
+    explicit = [i for i in project.items if i.track_id in audible and i.kind == "audio"]
+    # Optional original video sound. The visual track determines its timing;
+    # silent video files must keep this opt-in setting disabled.
+    for item in project.items:
+        if item.kind == "video" and item.effects.get("source_audio"):
+            explicit.append(Item(asset=item.asset, kind="audio", track_id="voice",
+                                 start_ms=item.start_ms, in_ms=item.in_ms,
+                                 out_ms=item.out_ms, volume=item.volume,
+                                 fade_in_ms=item.fade_in_ms, fade_out_ms=item.fade_out_ms))
+    return explicit
 
 
 def _sections(project: StudioProject, start_ms: int, end_ms: int, max_ms: int = 4500) -> list[tuple[int, int]]:
@@ -117,48 +127,21 @@ def _sections(project: StudioProject, start_ms: int, end_ms: int, max_ms: int = 
 
 def _video_filter(item: Item, width: int, height: int, fps: int, duration: float,
                   relative_start: int, relative_end: int) -> str:
-    effect = item.effects
-    zoom = min(3, max(0.5, float(effect.get("zoom", 1))))
-    chain = [
-        "setpts=PTS-STARTPTS",
-        f"fps={fps}",
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease",
-        f"scale=trunc(iw*{zoom:.4f}/2)*2:trunc(ih*{zoom:.4f}/2)*2",
-        f"crop=w='min(iw,{width})':h='min(ih,{height})'",
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
-        "setsar=1",
-    ]
-    if bool(effect.get("mirror", False)):
-        chain.append("hflip")
-    if float(effect.get("rotate", 0)):
-        angle = max(-360, min(360, float(effect["rotate"])))
-        chain.append(f"rotate={angle:.4f}*PI/180:c=black")
-    brightness = max(-1, min(1, float(effect.get("brightness", 0))))
-    contrast = max(0, min(3, float(effect.get("contrast", 1))))
-    saturation = max(0, min(4, float(effect.get("saturation", 1))))
-    chain.append(f"eq=brightness={brightness:.4f}:contrast={contrast:.4f}:saturation={saturation:.4f}")
-    grain = max(0, min(40, int(effect.get("grain", 0))))
-    if grain:
-        chain.append(f"noise=alls={grain}:allf=t+u")
-    chain += ["format=yuva420p"]
-    opacity = max(0, min(1, float(effect.get("opacity", 1))))
-    if opacity < 1:
-        chain.append(f"colorchannelmixer=aa={opacity:.4f}")
-    # Actual overlap transition: fade in the incoming layer over the previous clip.
-    if item.transition_in != "cut" and item.transition_ms:
-        boundary = item.start_ms + item.transition_ms
-        if relative_start < boundary:
-            # section starts at or after clip start; fade continues across boundaries
-            passed = max(0, relative_start - item.start_ms)
-            remaining = min(relative_end, boundary) - relative_start
-            if passed == 0 and remaining > 0:
-                chain.append(f"fade=t=in:st=0:d={max(0.001,item.transition_ms/1000):.4f}:alpha=1")
+    elapsed = max(0., (relative_start - item.start_ms)/1000)
+    chain = visual_filters(item.effects, width, height, fps, duration, elapsed)
+    if item.transition_in in {"fade", "dissolve"} and item.transition_ms:
+        passed = max(0, relative_start - item.start_ms)
+        if passed < item.transition_ms:
+            # The next section begins at a source-time edit boundary. Alpha
+            # fades start on the incoming clip; never substitute a generic fade.
+            length = item.transition_ms/1000
+            chain.append(f"fade=t=in:st=0:d={length:.4f}:alpha=1")
     if item.fade_in_ms and relative_start == item.start_ms:
         chain.append(f"fade=t=in:st=0:d={item.fade_in_ms/1000:.4f}:alpha=1")
     if item.fade_out_ms:
-        start_fade = item.end_ms - item.fade_out_ms
-        if relative_start <= start_fade < relative_end:
-            chain.append(f"fade=t=out:st={(start_fade-relative_start)/1000:.4f}:d={item.fade_out_ms/1000:.4f}:alpha=1")
+        fade_start = item.end_ms - item.fade_out_ms
+        if relative_start <= fade_start < relative_end:
+            chain.append(f"fade=t=out:st={(fade_start-relative_start)/1000:.4f}:d={item.fade_out_ms/1000:.4f}:alpha=1")
     chain.append(f"trim=duration={duration:.4f}")
     return ",".join(chain)
 
@@ -195,7 +178,10 @@ def _one_section(project: StudioProject, start_ms: int, end_ms: int, output: Pat
                                     start_ms, end_ms)
         graph.append(f"[{number}:v]{filter_text}[{label}]")
         target = f"base{number}"
-        graph.append(f"[{base}][{label}]overlay=0:0:shortest=1:eof_action=pass:format=auto[{target}]")
+        x_pos, y_pos = overlay_position(item.transition_in, item.transition_ms/1000,
+                                         max(0, start_ms-item.start_ms)/1000)
+        graph.append(f"[{base}][{label}]overlay=x='{x_pos}':y='{y_pos}':"
+                     f"eval=frame:shortest=1:eof_action=pass:format=auto[{target}]")
         base = target
     for number, item in enumerate(captions):
         # Each section starts at an edit boundary, so only active captions

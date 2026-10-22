@@ -256,6 +256,37 @@ def _concat(files: list[Path], output: Path, stop: threading.Event | None):
         manifest.unlink(missing_ok=True)
 
 
+
+def prune_render_cache(cache_dir: str | Path, maximum_bytes: int = 2 * 1024**3,
+                       protected: tuple[Path, ...] = ()) -> int:
+    """Remove only old, cache-owned section MP4 files; never user source assets."""
+    root = Path(cache_dir)
+    if not root.is_dir():
+        return 0
+    files = sorted(
+        (f for f in root.glob("*.mp4") if f.is_file() and not f.is_symlink()),
+        key=lambda f: f.stat().st_mtime,
+    )
+    protected_names = {str(p.resolve()) for p in protected}
+    total = sum(p.stat().st_size for p in files)
+    deleted = 0
+    for path in files:
+        if total <= maximum_bytes:
+            break
+        if str(path.resolve()) in protected_names:
+            continue
+        size = path.stat().st_size
+        path.unlink()
+        total -= size
+        deleted += 1
+    return deleted
+
+
+def verify_scratch_room(output: Path, reserve_bytes: int = 512 * 1024**2) -> None:
+    if shutil.disk_usage(output.parent).free < reserve_bytes:
+        raise RuntimeError("Insufficient free disk for rendering: keep at least 512 MiB free")
+
+
 def render(project: StudioProject, dest: str | Path, *,
            cache_dir: str | Path | None = None, preview: bool = False,
            window: tuple[int, int] | None = None,
@@ -273,6 +304,7 @@ def render(project: StudioProject, dest: str | Path, *,
     if output.exists():
         raise FileExistsError(f"An output already exists: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
+    verify_scratch_room(output)
     start_ms, end_ms = window if window else (0, project.duration_ms)
     start_ms = max(0, int(start_ms))
     end_ms = min(project.duration_ms, int(end_ms))
@@ -328,6 +360,8 @@ def render(project: StudioProject, dest: str | Path, *,
         published = root / "publish.mp4"
         shutil.copyfile(result, published)
         os.replace(published, output)
+        if cache_dir:
+            prune_render_cache(persistent, protected=tuple(chunks))
         if progress:
             progress(100, "Video exported successfully")
         return output

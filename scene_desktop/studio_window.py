@@ -55,6 +55,44 @@ def app_directory() -> Path:
     return root
 
 
+class ImportThread(QThread):
+    completed = Signal(int, list)
+    progress = Signal(int)
+
+    def __init__(self, library: MediaLibrary, paths: list[str] | None = None,
+                 folder: str | None = None):
+        super().__init__()
+        self.library, self.paths, self.folder = library, paths or [], folder
+        self.cancel_flag = threading.Event()
+
+    def run(self):
+        count, errors = 0, []
+        if self.folder:
+            root = Path(self.folder).expanduser().resolve()
+            sources = []
+            for item in root.rglob("*"):
+                if self.cancel_flag.is_set() or len(sources) >= 5000:
+                    break
+                if item.is_file() and item.suffix.lower() in {
+                    ".mp4",".mov",".mkv",".webm",".avi",".m4v",
+                    ".png",".jpg",".jpeg",".webp",".bmp"
+                }:
+                    sources.append(str(item))
+        else:
+            sources = self.paths
+        for source in sources:
+            if self.cancel_flag.is_set():
+                break
+            try:
+                self.library.ingest(source)
+                count += 1
+            except Exception as exc:
+                errors.append(f"{Path(source).name}: {exc}")
+            if count % 10 == 0:
+                self.progress.emit(count)
+        self.completed.emit(count, errors[:16])
+
+
 class ThumbnailThread(QThread):
     ready = Signal(str, str)
 
@@ -198,6 +236,7 @@ class StudioWindow(QMainWindow):
         self.library = MediaLibrary(app_directory() / "catalog.sqlite3")
         self.project.media_db = str(self.library.database)
         self.thumbnail_thread: ThumbnailThread | None = None
+        self.import_thread: ImportThread | None = None
         self.worker: RenderThread | None = None
         self.preview_pending = False
         self._preview_output = None
@@ -517,25 +556,32 @@ class StudioWindow(QMainWindow):
                 line.setIcon(QIcon(path))
                 return
 
-    def import_files(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "Import media files", "", "Media (*.mp4 *.mov *.mkv *.webm *.avi *.jpg *.jpeg *.png *.webp)")
-        success = 0
-        errors = []
-        for path in paths:
-            try:
-                self.library.ingest(path)
-                success += 1
-            except Exception as exc:
-                errors.append(f"{Path(path).name}: {exc}")
+    def _start_import(self, paths: list[str] | None = None, folder: str | None = None):
+        if self.import_thread and self.import_thread.isRunning():
+            self.message("A media import is already running")
+            return
+        self.import_thread = ImportThread(self.library, paths, folder)
+        self.import_thread.completed.connect(self._import_complete)
+        self.import_thread.progress.connect(lambda n: self.message(f"Indexed {n} media files..."))
+        self.import_thread.start()
+        self.message("Media catalog indexing started in the background")
+
+    def _import_complete(self, count: int, errors: list):
         self.refresh_library()
-        self.message(f"Imported {success} assets", errors)
+        self.message(f"Imported {count} assets", errors)
+
+    def import_files(self):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Import media files", "",
+            "Media (*.mp4 *.mov *.mkv *.webm *.avi *.m4v *.jpg *.jpeg *.png *.webp *.bmp)"
+        )
+        if paths:
+            self._start_import(paths=paths)
 
     def import_folder(self):
         directory = QFileDialog.getExistingDirectory(self, "Scan media folder")
         if directory:
-            rows, errors = self.library.import_folder(directory)
-            self.refresh_library()
-            self.message(f"Indexed {len(rows)} media items", errors)
+            self._start_import(folder=directory)
 
     def message(self, msg: str, errors=None):
         self.status.setText(msg)
@@ -1128,9 +1174,15 @@ class StudioWindow(QMainWindow):
             self.message("Finish export/preview before closing the Studio")
             event.ignore()
             return
+        if self.import_thread and self.import_thread.isRunning():
+            self.message("Media import is active; complete or cancel import before exiting")
+            event.ignore()
+            return
         if self.thumbnail_thread and self.thumbnail_thread.isRunning():
-            # Do not destroy an active QThread object when closing the window.
-            self.thumbnail_thread.wait(5000)
+            if not self.thumbnail_thread.wait(5000):
+                self.message("Thumbnails are still building; close after they finish")
+                event.ignore()
+                return
         self.autosave()
         self.player.stop()
         super().closeEvent(event)

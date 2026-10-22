@@ -29,6 +29,7 @@ from .timeline import StudioProject, Item, EditHistory, save, load, VISUAL_TRACK
 from .planner import create_scene_plan, match_media, append_scenes, Scene
 from .captions import import_srt, export_srt
 from .word_captions import import_word_json
+from .speech import transcribe_local
 from .resources import probe
 from .local_ai import plan_with_local_ai
 from .keyframes import set_keyframe,remove_keyframe
@@ -56,6 +57,26 @@ def app_directory() -> Path:
     root = Path(value or str(Path.home() / ".scene-desktop-studio"))
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+class SpeechThread(QThread):
+    ready = Signal(object)
+    failed = Signal(str)
+    stage = Signal(str)
+
+    def __init__(self,source: str,model: str,cache: Path,allow_download: bool):
+        super().__init__()
+        self.source,self.model,self.cache=source,model,cache
+        self.allow_download=allow_download
+
+    def run(self):
+        try:
+            payload=transcribe_local(self.source,self.model,self.cache,
+                                     allow_download=self.allow_download,
+                                     progress=lambda label:self.stage.emit(label))
+            self.ready.emit(payload)
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
 
 class AIPlanThread(QThread):
@@ -256,6 +277,7 @@ class StudioWindow(QMainWindow):
         self.thumbnail_thread: ThumbnailThread | None = None
         self.import_thread: ImportThread | None = None
         self.ai_thread: AIPlanThread | None = None
+        self.speech_thread: SpeechThread | None = None
         self.worker: RenderThread | None = None
         self.preview_pending = False
         self._preview_output = None
@@ -361,6 +383,7 @@ class StudioWindow(QMainWindow):
                               ("Track Controls", self.track_controls),
                               ("Add caption", self.add_caption),
                               ("Import SRT", self.import_subtitles),
+                              ("Whisper Voice", self.transcribe_voice),
                               ("Word JSON", self.import_word_captions),
                               ("Export SRT", self.export_subtitles)]:
             b = QPushButton(title)
@@ -827,6 +850,62 @@ class StudioWindow(QMainWindow):
         self.history.checkpoint()
         self.project.add(path, "audio", tracks[selected], dur, start_ms=self.playhead_ms)
         self.mark_changed()
+
+    def transcribe_voice(self):
+        if self.speech_thread and self.speech_thread.isRunning():
+            self.message("Whisper transcription is already running")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,"Choose narration to transcribe locally","",
+            "Narration (*.mp3 *.wav *.aac *.m4a *.mp4 *.mov *.mkv)"
+        )
+        if not path:
+            return
+        model, chosen = QInputDialog.getItem(
+            self,"Local Whisper model","CPU model: tiny is quickest, small is most demanding",
+            ["tiny","base","small"],0,False
+        )
+        if not chosen:
+            return
+        reply=QMessageBox.question(
+            self,"Whisper Model Weights",
+            "Use a locally cached Whisper model. If it is absent, do you "
+            "explicitly authorize downloading model weights to this PC? "
+            "Audio is processed locally and is not uploaded.",
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No |
+            QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Cancel:
+            return
+        allow_download=(reply==QMessageBox.StandardButton.Yes)
+        cache=app_directory() / "whisper-models"
+        self.speech_thread=SpeechThread(path,model,cache,allow_download)
+        self.speech_thread.stage.connect(self.message)
+        self.speech_thread.failed.connect(
+            lambda error: QMessageBox.warning(self,"Local Whisper",error))
+        self.speech_thread.ready.connect(self._transcription_ready)
+        self.speech_thread.start()
+        self.message("Local Whisper CPU transcription initiated")
+
+    def _transcription_ready(self, payload: dict):
+        folder=app_directory() / "transcripts"
+        folder.mkdir(parents=True,exist_ok=True)
+        path=folder / (uuid.uuid4().hex + ".json")
+        path.write_text(json.dumps(payload,ensure_ascii=False,indent=2),
+                        encoding="utf-8")
+        self.history.checkpoint()
+        try:
+            total=import_word_json(self.project,path)
+        except Exception as exc:
+            self.project=self.history.undo()
+            self.history.project=self.project
+            QMessageBox.warning(self,"Whisper captions",str(exc))
+            return
+        self.mark_changed()
+        self.message(f"Local Whisper recognized {len(payload['words'])} words; "
+                     f"created {total} editable karaoke phrases ({payload['language']})")
 
     def import_word_captions(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -1339,6 +1418,10 @@ class StudioWindow(QMainWindow):
     def closeEvent(self, event):
         if self.worker and self.worker.isRunning():
             self.message("Finish export/preview before closing the Studio")
+            event.ignore()
+            return
+        if self.speech_thread and self.speech_thread.isRunning():
+            self.message("Local Whisper transcription is active; close when it finishes")
             event.ignore()
             return
         if self.ai_thread and self.ai_thread.isRunning():

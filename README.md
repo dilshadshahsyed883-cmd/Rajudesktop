@@ -1,40 +1,37 @@
 # Scene Desktop Studio — Rajudesktop
 
-A **new, independent Windows desktop video editor** combining an indexed-media-library direction with Scene Builder-inspired planning and CapCut-like editing. The **initial MVP** is intentionally focused on a functional cut timeline, rather than presenting unfinished advanced controls.
+A standalone Windows video production studio combining local Media Library workflows, script-to-scene planning and a CapCut-inspired editable timeline. Independent of existing VPS_1 Scene Builder, SML, Haseeb and Bilal projects.
 
-## Milestone 1 capabilities (source)
+Development policy: one consolidated feature branch until unified acceptance. GitHub builds and tests automatically. NO automatic installation or remote desktop deployment; Windows app installation is exclusively via an owner-approved manual Tailscale/PowerShell action.
 
-- Import local images and videos directly into an editable V1 cut timeline.
-- Native Windows UI, Qt video playback and still-image preview, global seek/play controls.
-- Drag to reorder clips; trim source in/out; split at playhead; remove timeline items.
-- Editable JSON `.sdsproj` projects with atomic Save/Open and local autosave recovery.
-- Choose one narration track (WAV/MP3/M4A/AAC); preview via separate audio player.
-- CPU-safe FFmpeg export to 720p or 1080p, landscape or portrait; optional narration mixed into final H.264/AAC MP4.
-- Real FFmpeg smoke test checks export without touching original source files.
-- Portable Windows build from GitHub Actions with checksums; **no automatic deployment**.
+## Functional unified-build scope
 
-### Explicit MVP limits
+- Persistent indexed local library (SQLite): folder/file imports, tagging, search, status filters, video/image/selected counts, explicit approval, SHA-256 exact duplicate grouping, crisp image/video thumbnails. Source files are read-only.
+- Script TXT import/paste, offline timed scene planning, keyword/media matching against approved local assets, source preference modes, manual media replacements, five-scene batch review and bulk approval/locking. Auto-approval optional and off by default.
+- Native six-track graphical timeline (main video, overlay, captions, narration, music, SFX): drag, reposition/change compatible track, trim, split, replace, delete, undo/redo and properties inspector.
+- Supported clip options include zoom, mirror, brightness/contrast/saturation, basic grain, alpha fade transitions, audio volume and fades, timed captions, SRT import/export.
+- Short composited audiovisual FFmpeg proxy preview (cached), full H.264/AAC video export, compatible-section caching, background rendering and cancellation. Existing exports are never overwritten.
+- Atomic editable project saves (.sds2) with backups, local autosave recovery and missing-file relinking. Read-only PC resource/codec report available in app.
+- Windows GitHub Actions PyInstaller build, versioned downloadable ZIP, SHA-256 and tests with real generated audio/video and Qt UI smoke.
 
-This is **not yet a full CapCut editor**. Advanced layered timeline, LUTs, transitions, keyframes, asset tagging, AI script-to-scene generation, audio-video mixing parity and preview cache proxies remain future milestones. Export renders cut visuals, **does not preserve source-video audio**, and optionally adds one narration track. Project files keep absolute local media references (missing-media relinking is still pending). Playback is on the active clip, with cut-to-cut progression; complex visual compositing is not live-previewed yet.
+## Honest current limitations (not full CapCut parity)
 
-## Windows development launch (developer use only)
+- Script planning uses offline keyword/timing estimation: it is NOT yet a generative AI model, Whisper word-aligned captions or fully accurate voice timing.
+- GPU hardware acceleration, 4K and actual owner's Windows PC performance are not verified. Preview renders short cached segments, not instantaneous full-timeline GPU compositing.
+- Advanced animated keyframes, full named transition/LUT libraries, noise modes, face clustering and automatic AI inference remain future milestones. Nothing silently claims to implement these.
+- Local original media must remain accessible; portable project import of actual VPS-only Scene Builder/SML assets and external Drive/Pexels connectors are NOT wired.
+- Video visuals do not automatically mix their source audio; manually place the file on an audio track when needed. Sophisticated music ducking is not implemented yet.
+- Source lives exclusively in Rajudesktop; does not edit or migrate production apps, jobs, OAuth credentials or the user's videos.
 
-1. Python 3.11+ (for developers): `python -m pip install -r requirements.txt`
-2. Run: `python launch.py`
-3. Import media, reorder/trim/split, Save as `.sdsproj`, Export MP4.
+## Developer workflow
 
-**Owners do not need to install Python for a future packaged Windows release.** Download the verified Windows ZIP artifact from a successful GitHub Actions run. The packaged executable uses a bundled imageio-ffmpeg executable; source inputs, exports and project files are not embedded in the application.
+For developers with Python 3.11+:
+1. python -m pip install -r requirements.txt
+2. python -m unittest discover -s tests -v
+3. python launch.py
 
-## Planned build and delivery
+Windows CI generates SceneDesktopStudio-windows-x64.zip and SceneDesktopStudio-windows-x64.zip.sha256 via PyInstaller, with artifact retention. This is a CI build, not a validation of the executable on the owner's actual PC.
 
-CI: GitHub Actions Windows runner → model + FFmpeg smoke tests → PyInstaller portable Windows build → SHA-256 checksum → downloadable artifact.
+Only later, upon explicit owner authorization, an operator may perform a manual Tailscale-connected PowerShell deployment. Confirm target identity, installation directory, artifact/checksum, GUI session, app-only backup/rollback and smoke tests. No GitHub-to-PC auto-deploy is configured.
 
-Installation: **manual operator-triggered Tailscale command only**, after Windows device, OpenSSH availability, target install path, checksum, backup and idle-editor state are validated. No auto-deploy, GitHub runner shell access to the PC, installer execution, VPS access, or existing app migration is wired into this repository.
-
-Repository is currently public: **do not commit user videos, private keys, OAuth tokens or downloaded media**. Existing VPS_1/Haseeb/Bilal applications remain untouched.
-
-## Tests
-
-`python -m unittest discover -s tests -v`
-
-Master plan and progress are maintained only in the separate **Scene Desktop Studio Master Google Doc** (not the VPS_1 Master Doc).
+The living decisions and development register belong to the separate Scene Desktop Studio Master Google Doc; previous Master Docs are untouched.

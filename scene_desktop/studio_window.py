@@ -28,6 +28,7 @@ from .media import duration_ms, ffmpeg_path
 from .timeline import StudioProject, Item, EditHistory, save, load, VISUAL_TRACKS, AUDIO_TRACKS
 from .planner import create_scene_plan, match_media, append_scenes, Scene
 from .captions import import_srt, export_srt
+from .resources import probe
 from .studio_render import render
 
 SCALE = 0.035       # 35 px per second
@@ -235,7 +236,8 @@ class StudioWindow(QMainWindow):
         toolrow = QHBoxLayout()
         for title, action in [("New", self.new_project), ("Open", self.open_project),
                               ("Save", self.save_project), ("Recover", self.recover_autosave),
-                              ("Relink Media", self.relink_media), ("Undo", self.undo),
+                              ("Relink Media", self.relink_media),
+                              ("PC Resources", self.show_resources), ("Undo", self.undo),
                               ("Redo", self.redo), ("Export MP4", self.export_video)]:
             b = QPushButton(title)
             b.clicked.connect(action)
@@ -870,6 +872,23 @@ class StudioWindow(QMainWindow):
                 self.message(f"Opened {Path(path).name}")
             except Exception as exc:
                 QMessageBox.warning(self, "Cannot open", str(exc))
+
+    def show_resources(self):
+        try:
+            metrics = probe(app_directory())
+            body = "\n".join([
+                f"OS: {metrics['system']}",
+                f"CPU: {metrics['cpu']} / logical cores: {metrics['logical_cores']}",
+                f"RAM: {metrics['ram_total_gib']} GiB total, {metrics['ram_available_gib']} GiB available",
+                f"Free disk: {metrics['disk_free_gib']} / {metrics['disk_total_gib']} GiB",
+                f"GPU: {metrics['gpu_name']}",
+                f"FFmpeg encoders in build: {', '.join(metrics['ffmpeg_encoders_present'])}",
+                "GPU encoding not validated by this report",
+                *(["Warnings:"] + metrics['warnings'] if metrics["warnings"] else []),
+            ])
+            QMessageBox.information(self, "Read-only PC resources", body)
+        except Exception as exc:
+            QMessageBox.warning(self, "Resource probe", str(exc))
 
     def recover_autosave(self):
         path = app_directory() / "autosave.sds2"

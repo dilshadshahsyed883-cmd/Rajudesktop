@@ -1,9 +1,7 @@
 name: Scene Desktop Studio — Windows integration, package and manual delivery
 
+# Builds are owner-initiated only. Feature commits never package an EXE.
 on:
-  push:
-    branches: [main, "feature/**"]
-  pull_request:
   workflow_dispatch:
 
 permissions:

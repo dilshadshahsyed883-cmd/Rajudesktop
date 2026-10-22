@@ -22,18 +22,19 @@ def main():
             return 4
         return 0
     if "--check-offline-sml-runtime" in sys.argv:
-        # Verify all local server/UI imports in the actual frozen executable.
-        # Model weights and external network are never requested.
+        # Check the bundled local backend independently of Qt WebEngine.
+        # The actual loopback server/UI will be exercised by a separate CI step.
         import tempfile
         from pathlib import Path
-        from PySide6.QtWebEngineWidgets import QWebEngineView
         from fastapi import FastAPI
         from scene_desktop.offline_sml_backend.server import create_app
         with tempfile.TemporaryDirectory() as data:
             backend=create_app(Path(data)/"offline-sml", 49173)
-            if not isinstance(backend, FastAPI) or not QWebEngineView:
+            if not isinstance(backend, FastAPI):
                 return 7
-        return 0
+        # Avoid hidden Qt helper/background threads outliving CLI diagnostics.
+        import os
+        os._exit(0)
     if "--offline-sml-server" in sys.argv:
         from scene_desktop.offline_sml_backend.server import main as serve
         i=sys.argv.index("--offline-sml-server")

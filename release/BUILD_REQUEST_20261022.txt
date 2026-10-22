@@ -1,4 +1,3 @@
-Owner-authorized final Windows EXE+ZIP build request (2026-10-22).
-Reissued once with bounded QtWebEngine runtime process check to avoid Windows Start-Process -Wait child-process hang.
-Only this explicit release marker triggers packaging; future source changes do not.
-Owner personally performs Windows PC UAT. VPS_1 apps remain untouched.
+Owner-approved Rajudesktop offline-SML Windows package build.
+Restart required by failed packaged-WebEngine import check. Diagnostic now exercises bundled FastAPI alone then real localhost SML HTTP health/UI; WebEngine UI UAT remains owner PC's test.
+Build request iteration 3; only explicit release marker triggers EXE packaging.

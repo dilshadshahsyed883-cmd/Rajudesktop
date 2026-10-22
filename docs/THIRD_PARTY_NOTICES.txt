@@ -22,3 +22,12 @@ approved. Before selling/distributing, verify exact wheel/binary licenses,
 bundle upstream notices and sources/offers where required, and consider signing.
 No user-supplied videos, third-party paid media or OAuth credentials are
 packaged by the GitHub Actions workflow.
+
+* faster-whisper — local speech-to-text Python runtime powered by CTranslate2.
+  https://github.com/SYSTRAN/faster-whisper
+* CTranslate2 — CPU/GPU inference backend for sequence-to-sequence models.
+  https://github.com/OpenNMT/CTranslate2
+* PyAV, onnxruntime, tokenizers, huggingface_hub — local audio/model support.
+  Verify their exact installed license files and binary redistribution obligations.
+* Whisper model weights are separate downloads initiated by the PC user;
+  review selected model-card/license and source before storing or redistributing.

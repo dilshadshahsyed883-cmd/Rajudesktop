@@ -45,6 +45,13 @@ jobs:
           --collect-all tokenizers --collect-all av
           --collect-all onnxruntime --collect-all huggingface_hub
           launch.py
+      - name: Verify Whisper dependency imports inside packaged EXE
+        shell: pwsh
+        run: |
+          $exe = "dist/SceneDesktopStudio/SceneDesktopStudio.exe"
+          $proc = Start-Process -FilePath $exe -ArgumentList "--check-whisper-runtime" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Packaged Whisper runtime is missing or broken (exit $($proc.ExitCode))" }
+          Write-Output "PACKAGED_WHISPER_RUNTIME=PASS"
       - name: Smoke launch the packaged Windows GUI (no production machine)
         shell: pwsh
         run: |

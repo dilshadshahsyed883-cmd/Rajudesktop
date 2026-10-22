@@ -9,8 +9,8 @@ import threading
 import subprocess
 import uuid
 
-from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QBrush, QPen, QPixmap, QIcon, QDesktopServices
+from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal, QSize
+from PySide6.QtGui import QAction, QColor, QBrush, QPen, QPixmap, QIcon, QDesktopServices, QImageReader
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
@@ -224,11 +224,13 @@ class ClipBlock(QGraphicsRectItem):
                 record=editor.media_lookup.get(str(Path(item.asset).resolve()))
                 candidate=str(editor.library.cache / (record["sha256"][:20]+".jpg")) if record else ""
             if candidate and Path(candidate).is_file():
-                pix=QPixmap(candidate).scaled(
-                    min(90,max(20,round(self.rect().width())-6)),34,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
+                reader=QImageReader(candidate)
+                limits=QSize(min(90,max(20,round(self.rect().width())-6)),34)
+                native=reader.size()
+                if native.isValid():
+                    reader.setScaledSize(native.scaled(limits,Qt.AspectRatioMode.KeepAspectRatio))
+                image=reader.read()
+                pix=QPixmap.fromImage(image)
                 picture=QGraphicsPixmapItem(pix,self)
                 picture.setPos(3,10)
                 picture.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
@@ -464,7 +466,8 @@ class StudioWindow(QMainWindow):
         widget = QWidget()
         lay = QVBoxLayout(widget)
         top = QHBoxLayout()
-        for title, cb in [("Import Files", self.import_files), ("Import Folder", self.import_folder), ("Add Audio", self.add_audio)]:
+        for title, cb in [("Import Files", self.import_files), ("Import Folder", self.import_folder),
+                          ("Cancel Import", self.cancel_import), ("Add Audio", self.add_audio)]:
             b = QPushButton(title)
             b.clicked.connect(cb)
             top.addWidget(b)
@@ -685,6 +688,13 @@ class StudioWindow(QMainWindow):
             if line.data(Qt.ItemDataRole.UserRole) == media_id:
                 line.setIcon(QIcon(path))
                 return
+
+    def cancel_import(self):
+        if self.import_thread and self.import_thread.isRunning():
+            self.import_thread.cancel_flag.set()
+            self.message("Stopping media import after the current file")
+        else:
+            self.message("No media import is active")
 
     def _start_import(self, paths: list[str] | None = None, folder: str | None = None):
         if self.import_thread and self.import_thread.isRunning():

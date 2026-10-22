@@ -214,6 +214,7 @@ class StudioWindow(QMainWindow):
         for label, key, callback in [
             ("Save", "Ctrl+S", self.save_project), ("Undo", "Ctrl+Z", self.undo),
             ("Redo", "Ctrl+Shift+Z", self.redo), ("Export", "Ctrl+E", self.export_video),
+            ("Play", "Space", self.toggle_preview),
         ]:
             action = QAction(label, self)
             action.setShortcut(key)
@@ -296,6 +297,8 @@ class StudioWindow(QMainWindow):
         commands = QHBoxLayout()
         for title, action in [("Add selected media", self.add_selected_media),
                               ("Split", self.split_item), ("Delete", self.delete_item),
+                              ("Duplicate", self.duplicate_item),
+                              ("Track Controls", self.track_controls),
                               ("Add caption", self.add_caption),
                               ("Import SRT", self.import_subtitles),
                               ("Export SRT", self.export_subtitles)]:
@@ -306,6 +309,14 @@ class StudioWindow(QMainWindow):
         cancel.clicked.connect(self.cancel_render)
         commands.addWidget(cancel)
         tl.addLayout(commands)
+        zoom_row = QHBoxLayout()
+        zoom_row.addWidget(QLabel("Timeline zoom"))
+        self.timeline_zoom = QSlider(Qt.Orientation.Horizontal)
+        self.timeline_zoom.setRange(20, 180)
+        self.timeline_zoom.setValue(35)
+        self.timeline_zoom.valueChanged.connect(self.set_timeline_zoom)
+        zoom_row.addWidget(self.timeline_zoom)
+        tl.addLayout(zoom_row)
         center.addWidget(timeline_panel)
         center.setSizes([380, 410])
         right = QWidget()
@@ -727,6 +738,52 @@ class StudioWindow(QMainWindow):
             self.history.checkpoint()
             self.project.add("", "text", "captions", 3000, start_ms=self.playhead_ms, text=text)
             self.mark_changed()
+
+    def set_timeline_zoom(self, value: int):
+        global SCALE
+        SCALE = max(.02, value/1000)
+        self.redraw_timeline()
+
+    def duplicate_item(self):
+        if not self.selected_id:
+            return
+        source = self.project.item(self.selected_id)
+        if self.project.track(source.track_id).locked:
+            self.message("Selected track is locked")
+            return
+        self.history.checkpoint()
+        duplicate = copy.deepcopy(source)
+        duplicate.id = uuid.uuid4().hex
+        duplicate.start_ms = source.end_ms
+        duplicate.transition_in, duplicate.transition_ms = "cut", 0
+        self.project.items.append(duplicate)
+        self.project.validate()
+        self.project.revision += 1
+        self.selected_id = duplicate.id
+        self.mark_changed()
+
+    def track_controls(self):
+        if not self.project.tracks:
+            return
+        names = [f"{i+1}. {track.name}" for i,track in enumerate(self.project.tracks)]
+        selected, ok = QInputDialog.getItem(self,"Track controls","Track",names,0,False)
+        if not ok:
+            return
+        track = self.project.tracks[names.index(selected)]
+        options = ["Toggle Lock", "Toggle Mute", "Toggle Visibility"]
+        action, yes = QInputDialog.getItem(self,"Track controls",track.name,options,0,False)
+        if not yes:
+            return
+        self.history.checkpoint()
+        if action == options[0]:
+            track.locked = not track.locked
+        elif action == options[1]:
+            track.muted = not track.muted
+        else:
+            track.visible = not track.visible
+        self.project.revision += 1
+        self.mark_changed()
+        self.message(f"{track.name}: lock={track.locked}, mute={track.muted}, visible={track.visible}")
 
     def redraw_timeline(self):
         self.timeline.redraw()

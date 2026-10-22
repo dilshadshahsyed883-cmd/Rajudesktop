@@ -1,0 +1,24 @@
+SCENE DESKTOP STUDIO — THIRD-PARTY COMPONENTS AND DISTRIBUTION NOTES
+Copyright for Rajudesktop application source remains with its respective owner.
+This file is informational, not a replacement for upstream license files.
+
+The Windows application may bundle or invoke:
+* Python runtime — Python Software Foundation License.
+  https://docs.python.org/3/license.html
+* Qt for Python / PySide6 and associated Qt modules — commercial or LGPL/GPL
+  licensing options depending on module/version/distribution.
+  https://doc.qt.io/qtforpython-6/licenses.html
+* FFmpeg via imageio-ffmpeg — actual FFmpeg binary's compiled options may
+  trigger LGPL or GPL obligations, including source and attribution
+  requirements. See https://ffmpeg.org/legal.html and inspect the bundled
+  executable's ffmpeg -version/configure output before redistribution.
+* PyInstaller — used to build, not a blanket license for transitive packages.
+  https://pyinstaller.org/en/stable/license.html
+* imageio-ffmpeg Python wrapper — inspect the pinned installed distribution
+  metadata for license and FFmpeg binary ownership.
+
+WARNING: A successful CI build does not mean commercial redistribution is
+approved. Before selling/distributing, verify exact wheel/binary licenses,
+bundle upstream notices and sources/offers where required, and consider signing.
+No user-supplied videos, third-party paid media or OAuth credentials are
+packaged by the GitHub Actions workflow.

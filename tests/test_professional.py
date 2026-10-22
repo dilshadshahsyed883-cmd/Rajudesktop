@@ -16,6 +16,8 @@ class ProfessionalEffectsTests(unittest.TestCase):
         self.assertIn("ken_burns", MOTIONS)
         self.assertIn("slide_up", TRANSITIONS)
         self.assertIn("analog", GRAINS)
+        zoom_out = visual_filters({"zoom":.50},480,270,24,1)
+        self.assertTrue(any("pad=480:270" in f for f in zoom_out))
         for name in COLOR_LOOKS:
             filters = visual_filters({"look": name, "look_intensity": 65},
                                      320, 180, 24, 1.2)
@@ -45,7 +47,7 @@ class ProfessionalEffectsTests(unittest.TestCase):
                 "-f", "lavfi", "-i", "color=c=yellow:s=120x80",
                 "-frames:v", "1", str(still)
             ], check=True, timeout=30)
-            project = StudioProject(width=320, height=180, fps=24)
+            project = StudioProject(width=480, height=270, fps=24)
             first = project.add(str(video), "video", "v1", 1100)
             first.effects.update({"source_audio":True, "motion":"pan_left",
                                   "look":"teal_orange", "look_intensity":75,
@@ -59,6 +61,15 @@ class ProfessionalEffectsTests(unittest.TestCase):
             preview = render(project, root / "preview.mp4", cache_dir=root / "cache",
                              preview=True, window=(200, 900))
             self.assertTrue(preview.is_file())
+            # Ensure overlay track truly appears on top after slide completes.
+            from PySide6.QtGui import QImage
+            frame = root / "frame.png"
+            subprocess.run([exe,"-hide_banner","-loglevel","error","-y",
+                            "-ss","0.9","-i",str(result),"-frames:v","1",
+                            str(frame)],check=True,timeout=30)
+            pixel = QImage(str(frame)).pixelColor(240,135)
+            self.assertGreater(pixel.red(), 140)
+            self.assertGreater(pixel.green(), 140)
             info = subprocess.run([exe, "-hide_banner", "-i", str(result)],
                                   capture_output=True, text=True, timeout=20)
             self.assertIn("Audio:", info.stderr)

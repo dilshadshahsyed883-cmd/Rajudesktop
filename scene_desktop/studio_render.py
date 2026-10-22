@@ -99,7 +99,7 @@ def _audio_items(project: StudioProject) -> list[Item]:
     # Optional original video sound. The visual track determines its timing;
     # silent video files must keep this opt-in setting disabled.
     for item in project.items:
-        if item.kind == "video" and item.effects.get("source_audio"):
+        if item.kind == "video" and item.effects.get("source_audio") and not project.track(item.track_id).muted:
             explicit.append(Item(asset=item.asset, kind="audio", track_id="voice",
                                  start_ms=item.start_ms, in_ms=item.in_ms,
                                  out_ms=item.out_ms, volume=item.volume,
@@ -135,7 +135,7 @@ def _video_filter(item: Item, width: int, height: int, fps: int, duration: float
             # The next section begins at a source-time edit boundary. Alpha
             # fades start on the incoming clip; never substitute a generic fade.
             length = item.transition_ms/1000
-            chain.append(f"fade=t=in:st=0:d={length:.4f}:alpha=1")
+            chain.append(f"fade=t=in:st=0:d={length:.4f}:alpha={1 if item.transition_in=='dissolve' else 0}")
     if item.fade_in_ms and relative_start == item.start_ms:
         chain.append(f"fade=t=in:st=0:d={item.fade_in_ms/1000:.4f}:alpha=1")
     if item.fade_out_ms:

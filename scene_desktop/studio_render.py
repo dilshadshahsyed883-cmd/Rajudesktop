@@ -344,7 +344,8 @@ def verify_scratch_room(output: Path, reserve_bytes: int = 512 * 1024**2) -> Non
         raise RuntimeError("Insufficient free disk for rendering: keep at least 512 MiB free")
 
 
-def resumable_exports(project: StudioProject, cache_dir: str | Path) -> list[Path]:
+def resumable_exports(project: StudioProject, cache_dir: str | Path,
+                      max_chunk_ms: int = 5000) -> list[Path]:
     """Find unfinished jobs compatible with the *current* editor timeline.
 
     This uses exact section signatures (including source file timestamps)
@@ -358,7 +359,7 @@ def resumable_exports(project: StudioProject, cache_dir: str | Path) -> list[Pat
     jobs = cache / "render-jobs"
     if not jobs.is_dir():
         return []
-    plan = plan_chunks(project, 0, project.duration_ms)
+    plan = plan_chunks(project, 0, project.duration_ms, max_ms=max_chunk_ms)
     signatures = [
         section_key(project, _visual_items(project, p.start_ms, p.end_ms)
                     + _caption_items(project, p.start_ms, p.end_ms),

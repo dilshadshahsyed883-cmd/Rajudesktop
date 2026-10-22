@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 import threading
 
 from .library import MediaLibrary
@@ -34,7 +35,7 @@ def sync_approved_media(root: Path, library: MediaLibrary, *,
     if not database.is_file():
         return {"added":0,"skipped":0,"errors":["SML database not initialized"]}
     uri=f"file:{database.as_posix()}?mode=ro"
-    with sqlite3.connect(uri,uri=True,timeout=10) as conn:
+    with closing(sqlite3.connect(uri,uri=True,timeout=10)) as conn:
         conn.row_factory=sqlite3.Row
         rows=[]
         for row in conn.execute(

@@ -2169,7 +2169,7 @@ class StudioWindow(QMainWindow):
             self.message("SML transfer is still active; cancel or complete it before closing")
             event.ignore()
             return
-        self.sml_token.clear()
+        # Remote SML credentials are not used by the offline workspace.
         if self.worker and self.worker.isRunning():
             self.message("Finish export/preview before closing the Studio")
             event.ignore()

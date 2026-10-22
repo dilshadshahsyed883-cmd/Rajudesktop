@@ -96,9 +96,9 @@ def create_app(data_dir: str | Path, port: int):
     # handlers: lift SML's DB migration, image V2 and AI queue initialization
     # into the local parent service explicitly.
     for handler in sml_app.router.on_startup:
-        outer.add_event_handler("startup",handler)
+        outer.router.add_event_handler("startup",handler)
     for handler in sml_app.router.on_shutdown:
-        outer.add_event_handler("shutdown",handler)
+        outer.router.add_event_handler("shutdown",handler)
     outer.mount("/self-media-library",sml_app)
     return outer
 

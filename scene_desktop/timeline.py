@@ -8,6 +8,7 @@ from pathlib import Path
 import copy
 import json
 import os
+import shutil
 import tempfile
 import uuid
 
@@ -235,6 +236,10 @@ def save(project: StudioProject, dest: str | Path) -> None:
     dest = Path(dest).expanduser()
     dest.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(project.to_dict(), ensure_ascii=False, indent=2) + "\n"
+    if dest.is_file():
+        # Retain the immediately previous editable revision for crash recovery.
+        backup = dest.with_suffix(dest.suffix + ".bak")
+        shutil.copy2(dest, backup)
     temp = ""
     try:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=dest.parent,

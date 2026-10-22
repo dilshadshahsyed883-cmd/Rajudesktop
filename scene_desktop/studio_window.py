@@ -6,6 +6,7 @@ import copy
 import json
 import tempfile
 import threading
+import subprocess
 import uuid
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
@@ -49,6 +50,22 @@ def app_directory() -> Path:
     root = Path(value or str(Path.home() / ".scene-desktop-studio"))
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+class ThumbnailThread(QThread):
+    ready = Signal(str, str)
+
+    def __init__(self, library: MediaLibrary, records: list[dict]):
+        super().__init__()
+        self.library = library
+        self.records = records
+
+    def run(self):
+        for record in self.records[:40]:
+            try:
+                self.ready.emit(record["id"], str(self.library.thumbnail(record["id"])))
+            except (OSError, RuntimeError, subprocess.SubprocessError):
+                continue
 
 
 class RenderThread(QThread):
@@ -169,12 +186,15 @@ class StudioWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.project = StudioProject()
+        self.project.media_db = str(self.library.database)
         self.history = EditHistory(self.project)
         self.project_path: Path | None = None
         self.selected_id = ""
         self.playhead_ms = 0
         self.scenes: list[Scene] = []
         self.library = MediaLibrary(app_directory() / "catalog.sqlite3")
+        self.project.media_db = str(self.library.database)
+        self.thumbnail_thread: ThumbnailThread | None = None
         self.worker: RenderThread | None = None
         self.preview_pending = False
         self._preview_output = None
@@ -213,7 +233,8 @@ class StudioWindow(QMainWindow):
         outer = QVBoxLayout(main)
         toolrow = QHBoxLayout()
         for title, action in [("New", self.new_project), ("Open", self.open_project),
-                              ("Save", self.save_project), ("Undo", self.undo),
+                              ("Save", self.save_project), ("Recover", self.recover_autosave),
+                              ("Relink Media", self.relink_media), ("Undo", self.undo),
                               ("Redo", self.redo), ("Export MP4", self.export_video)]:
             b = QPushButton(title)
             b.clicked.connect(action)
@@ -300,6 +321,7 @@ class StudioWindow(QMainWindow):
         self.media_list = QListWidget()
         self.media_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.media_list.itemDoubleClicked.connect(lambda _item: self.add_selected_media())
+        self.media_list.itemSelectionChanged.connect(self.refresh_counts)
         lay.addWidget(self.media_list, 1)
         flags = QHBoxLayout()
         for title, value in [("Approve", "approved"), ("Reject", "rejected"), ("Candidate", "candidate")]:
@@ -374,6 +396,10 @@ class StudioWindow(QMainWindow):
         form.addRow("Transition sec", self.trans_spin)
         self.volume_spin = self._spin(0, 400, 100)
         form.addRow("Audio volume %", self.volume_spin)
+        self.fade_in_spin = self._spin(0, 20, 0)
+        self.fade_out_spin = self._spin(0, 20, 0)
+        form.addRow("Fade in (sec)", self.fade_in_spin)
+        form.addRow("Fade out (sec)", self.fade_out_spin)
         self.caption_text = QLineEdit()
         form.addRow("Caption text", self.caption_text)
         lay.addLayout(form)
@@ -414,9 +440,25 @@ class StudioWindow(QMainWindow):
             line = QListWidgetItem(label)
             line.setData(Qt.ItemDataRole.UserRole, rec["id"])
             self.media_list.addItem(line)
+        self.refresh_counts()
+        if not self.thumbnail_thread or not self.thumbnail_thread.isRunning():
+            self.thumbnail_thread = ThumbnailThread(self.library, rows)
+            self.thumbnail_thread.ready.connect(self.thumbnail_ready)
+            self.thumbnail_thread.start()
+
+    def refresh_counts(self):
         stats = self.library.summary()
+        selected = self._selected_library_records()
         self.counts.setText(f"{stats['total']} total | {stats['videos']} clips | "
-                            f"{stats['images']} images | {stats['approved']} approved")
+                            f"{stats['images']} images | {stats['approved']} approved | "
+                            f"{len(selected)} selected")
+
+    def thumbnail_ready(self, media_id: str, path: str):
+        for i in range(self.media_list.count()):
+            line = self.media_list.item(i)
+            if line.data(Qt.ItemDataRole.UserRole) == media_id:
+                line.setIcon(QIcon(path))
+                return
 
     def import_files(self):
         paths, _ = QFileDialog.getOpenFileNames(self, "Import media files", "", "Media (*.mp4 *.mov *.mkv *.webm *.avi *.jpg *.jpeg *.png *.webp)")
@@ -523,12 +565,18 @@ class StudioWindow(QMainWindow):
         records = self._selected_library_records()
         if not records:
             return
+        target_label, accepted = QInputDialog.getItem(
+            self, "Add media to timeline", "Choose visual track",
+            ["Main Video", "Video Overlay"], 0, False
+        )
+        if not accepted:
+            return
+        target = "v2" if target_label == "Video Overlay" else "v1"
         self.history.checkpoint()
         try:
             for rec in records:
                 if rec["missing"]:
                     raise FileNotFoundError(rec["path"])
-                target = "v1" if rec["kind"] in {"video", "image"} else "music"
                 self.project.add(rec["path"], rec["kind"], target, rec["duration_ms"])
         except Exception as exc:
             self.project = self.history.undo()
@@ -538,7 +586,10 @@ class StudioWindow(QMainWindow):
         self.mark_changed()
 
     def add_audio(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Add audio file", "", "Audio (*.wav *.mp3 *.m4a *.aac)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Add audio or use audio from a video source", "",
+            "Audio/video (*.wav *.mp3 *.m4a *.aac *.mp4 *.mov *.mkv)"
+        )
         if not path:
             return
         # FFmpeg -i Duration is sufficient for a first local-audio metadata probe.
@@ -552,8 +603,15 @@ class StudioWindow(QMainWindow):
             return
         h, minute, second = m.groups()
         dur = round((int(h)*3600+int(minute)*60+float(second))*1000)
+        selected, yes = QInputDialog.getItem(
+            self, "Audio track", "Place audio on",
+            ["Narration", "Background Music", "Sound Effects"], 0, False
+        )
+        if not yes:
+            return
+        tracks = {"Narration":"voice","Background Music":"music","Sound Effects":"sfx"}
         self.history.checkpoint()
-        self.project.add(path, "audio", "voice", dur, start_ms=self.playhead_ms)
+        self.project.add(path, "audio", tracks[selected], dur, start_ms=self.playhead_ms)
         self.mark_changed()
 
     def add_caption(self):
@@ -595,7 +653,9 @@ class StudioWindow(QMainWindow):
                              (self.brightness_spin, float(obj.effects.get("brightness",0))*100),
                              (self.saturation_spin, float(obj.effects.get("saturation",1))*100),
                              (self.trans_spin, obj.transition_ms/1000),
-                             (self.volume_spin, obj.volume*100)]:
+                             (self.volume_spin, obj.volume*100),
+                             (self.fade_in_spin, obj.fade_in_ms/1000),
+                             (self.fade_out_spin, obj.fade_out_ms/1000)]:
             widget.setValue(val)
         self.mirror_check.setChecked(bool(obj.effects.get("mirror",False)))
         self.transition.setCurrentText(obj.transition_in)
@@ -620,6 +680,8 @@ class StudioWindow(QMainWindow):
             item.transition_in = self.transition.currentText()
             item.transition_ms = round(self.trans_spin.value()*1000)
             item.volume = self.volume_spin.value()/100
+            item.fade_in_ms = round(self.fade_in_spin.value()*1000)
+            item.fade_out_ms = round(self.fade_out_spin.value()*1000)
             item.text = self.caption_text.text()
             self.project.validate()
             self.project.revision += 1
@@ -727,6 +789,47 @@ class StudioWindow(QMainWindow):
             except Exception as exc:
                 QMessageBox.warning(self, "Cannot open", str(exc))
 
+    def recover_autosave(self):
+        path = app_directory() / "autosave.sds2"
+        if not path.is_file():
+            self.message("No recovery autosave found")
+            return
+        try:
+            self.project = load(path)
+            self.history = EditHistory(self.project)
+            self.project_path = None
+            self.selected_id = ""
+            self.playhead_ms = 0
+            self.mark_changed()
+            self.message("Recovered draft; use Save to keep it as a project")
+        except Exception as exc:
+            QMessageBox.warning(self, "Recovery error", str(exc))
+
+    def relink_media(self):
+        missing = [item for item in self.project.items if item.kind != "text"
+                   and not Path(item.asset).is_file()]
+        if not missing:
+            self.message("All timeline media references are available")
+            return
+        directory = QFileDialog.getExistingDirectory(self, "Choose folder with missing files")
+        if not directory:
+            return
+        found = {}
+        for path in Path(directory).rglob("*"):
+            if path.is_file():
+                found.setdefault(path.name.lower(), []).append(path)
+        changed = 0
+        self.history.checkpoint()
+        for item in missing:
+            options = found.get(Path(item.asset).name.lower(), [])
+            if len(options) == 1:
+                item.asset = str(options[0].resolve())
+                changed += 1
+        if changed:
+            self.project.revision += 1
+            self.mark_changed()
+        self.message(f"Relinked {changed}/{len(missing)} missing media. Originals preserved.")
+
     def save_project(self):
         if self.project_path is None:
             path, _ = QFileDialog.getSaveFileName(self, "Save editable project", self.project.title + ".sds2",
@@ -824,6 +927,9 @@ class StudioWindow(QMainWindow):
             self.message("Finish export/preview before closing the Studio")
             event.ignore()
             return
+        if self.thumbnail_thread and self.thumbnail_thread.isRunning():
+            # Do not destroy an active QThread object when closing the window.
+            self.thumbnail_thread.wait(5000)
         self.autosave()
         self.player.stop()
         super().closeEvent(event)

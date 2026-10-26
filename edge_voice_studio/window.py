@@ -489,19 +489,30 @@ class StudioWindow(QMainWindow):
         _, page = self._page("Settings", "Choose storage locations and appearance. No cloud account required.")
         c, lay = card()
         self.output_path = QLineEdit(self.store.get_setting(
-            "output_folder", str(Path.home() / "Music" / "EdgeVoiceStudio")))
+            "output_folder", str(default_output_folder())))
         self.cache_path = QLineEdit(self.store.get_setting(
-            "cache_folder", str(Path.home() / "Music" / "EdgeVoiceStudio" / ".cache")))
+            "cache_folder", str(self.data / "chunk_cache")))
         for name, edit in [("Output folder", self.output_path), ("Chunk cache", self.cache_path)]:
             lay.addWidget(QLabel(name))
             row = QHBoxLayout()
             row.addWidget(edit, 1)
             row.addWidget(button("Browse", lambda _=False, e=edit: self.select_folder(e)))
             lay.addLayout(row)
+        folder_help = QLabel(
+            "MP3, WAV and SRT output goes into the folder above. "
+            "It remains your default after restarting, until you change it and click Save Settings."
+        )
+        folder_help.setObjectName("muted")
+        folder_help.setWordWrap(True)
+        lay.addWidget(folder_help)
+        lay.addWidget(button(
+            "Restore Documents Default",
+            lambda: self.output_path.setText(str(default_output_folder())),
+        ))
         lay.addWidget(QLabel("Theme"))
         self.theme = QComboBox()
-        self.theme.addItems(["Dark", "Light"])
-        self.theme.setCurrentText(self.store.get_setting("theme", "Dark"))
+        self.theme.addItems(["Navy Light", "Dark"])
+        self.theme.setCurrentText(self.store.get_setting("theme", "Navy Light"))
         lay.addWidget(self.theme)
         lay.addWidget(button("Save Settings", self.save_settings, True))
         warning = QLabel("Edge TTS needs an internet connection. All scripts, favorites, "
@@ -726,8 +737,12 @@ class StudioWindow(QMainWindow):
             return
         if not self.store.next_queued():
             return
-        worker = QueueWorker(self.store, Path(self.output_path.text()).expanduser(),
-                             Path(self.cache_path.text()).expanduser())
+        # The queue uses SAVED settings only; uncommitted field edits cannot redirect output.
+        worker = QueueWorker(
+            self.store,
+            Path(self.store.get_setting("output_folder", str(default_output_folder()))).expanduser(),
+            Path(self.store.get_setting("cache_folder", str(self.data / "chunk_cache"))).expanduser(),
+        )
         self.queue_worker = worker
         worker.changed.connect(self._refresh_queue)
         worker.note.connect(self._message)
@@ -956,7 +971,7 @@ class StudioWindow(QMainWindow):
             self.store.set_setting("cache_folder", str(cache))
             self.store.set_setting("theme", self.theme.currentText())
             self.setStyleSheet(stylesheet(self.theme.currentText()))
-            self._message("Settings saved. Future jobs will use the selected folders.")
+            self._message("Saved output folder: " + str(output))
         except Exception as exc:
             self._error(str(exc))
 

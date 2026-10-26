@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows-desktop:
@@ -87,3 +87,19 @@ jobs:
           path: dist/SML-Desktop-Windows.zip
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish permanent downloadable Windows ZIP
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'sml-desktop-v1.0.0'
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag dist/SML-Desktop-Windows.zip --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $tag dist/SML-Desktop-Windows.zip --title "SML Desktop for Windows v1.0.0" --notes "Standalone Windows SML Desktop. Source and Windows build are maintained entirely in Rajudesktop. Extract the ZIP and run SML_Desktop.exe. Full media library remains local." --target $env:GITHUB_SHA --repo $env:GITHUB_REPOSITORY --latest=false
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release upload failed' }

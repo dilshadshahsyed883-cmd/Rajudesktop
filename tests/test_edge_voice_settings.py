@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -28,6 +29,46 @@ class DesktopPreferenceTests(unittest.TestCase):
         self.assertIn("#102A4B", stylesheet("Navy Light"))
         self.assertIn("#1756D9", stylesheet("Navy Light"))
         self.assertIn("#FFFFFF", stylesheet("Navy Light"))
+
+    def test_add_to_queue_opens_queue_and_selects_new_job(self):
+        window = StudioWindow()
+        window.title_input.setText("Queue redirect test")
+        window.script.setPlainText("This narration should be added to the queue.")
+        with patch.object(window, "_start_queue") as start:
+            window.enqueue_current()
+        self.assertEqual(window.stack.currentIndex(), 2)
+        self.assertIsNotNone(window._selected_job())
+        self.assertEqual(window.store.get(window._selected_job())["title"],
+                         "Queue redirect test")
+        start.assert_called_once()
+        window.store.delete_job(window._selected_job())
+        window.close()
+
+    def test_queue_open_output_folder_without_selected_job(self):
+        with tempfile.TemporaryDirectory() as td:
+            window = StudioWindow()
+            original = window.store.get_setting("output_folder", None)
+            target = Path(td) / "Generated Voices"
+            window.store.set_setting("output_folder", str(target))
+            window._show_page(2)
+            names = []
+            for i in range(window.queue_table.rowCount()):
+                window.queue_table.item(i, 0).setSelected(False)
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            with patch.object(QDesktopServices, "openUrl", return_value=True) as opener:
+                window.open_output_folder()
+                opener.assert_called_once()
+                opened = opener.call_args.args[0]
+                self.assertIsInstance(opened, QUrl)
+                self.assertEqual(Path(opened.toLocalFile()), target)
+            self.assertTrue(target.is_dir())
+            if original is None:
+                with window.store.connect() as con:
+                    con.execute("DELETE FROM settings WHERE key='output_folder'")
+            else:
+                window.store.set_setting("output_folder", original)
+            window.close()
 
     def test_saved_custom_destination_persists(self):
         with tempfile.TemporaryDirectory() as td:

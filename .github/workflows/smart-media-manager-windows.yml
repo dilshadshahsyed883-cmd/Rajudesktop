@@ -1,0 +1,83 @@
+name: Smart Media Manager - Windows ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - "smart_media_manager/**"
+      - "launch_smart_media_manager.py"
+      - "tests/test_smart_media_manager.py"
+      - "SMART_MEDIA_MANAGER.md"
+      - ".github/workflows/smart-media-manager-windows.yml"
+  pull_request:
+    paths:
+      - "smart_media_manager/**"
+      - "launch_smart_media_manager.py"
+      - "tests/test_smart_media_manager.py"
+      - "SMART_MEDIA_MANAGER.md"
+      - ".github/workflows/smart-media-manager-windows.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test all three media engines and integration
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_video_clip_cutter.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Cutter tests failed' }
+          python -m unittest discover -s tests -p test_image_renamer.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Image tests failed' }
+          python -m unittest discover -s tests -p test_smart_clip_renamer.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Clip renamer tests failed' }
+          python -m unittest discover -s tests -p test_smart_media_manager.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Manager tests failed' }
+          python -m compileall -q smart_media_manager
+      - name: Install Windows packager
+        run: python -m pip install pyinstaller==6.16.0
+      - name: Bundle FFmpeg and FFprobe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg-dist"
+          New-Item -ItemType Directory -Force -Path 'video_clip_cutter\bin' | Out-Null
+          $ffmpeg = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-dist" -Filter ffmpeg.exe -Recurse | Select-Object -First 1
+          $ffprobe = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-dist" -Filter ffprobe.exe -Recurse | Select-Object -First 1
+          if (-not $ffmpeg -or -not $ffprobe) { throw 'FFmpeg executables missing' }
+          Copy-Item $ffmpeg.FullName 'video_clip_cutter\bin\ffmpeg.exe'
+          Copy-Item $ffprobe.FullName 'video_clip_cutter\bin\ffprobe.exe'
+      - name: Build standalone SmartMediaManager.exe and ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name SmartMediaManager --add-binary 'video_clip_cutter/bin/ffmpeg.exe;bin' --add-binary 'video_clip_cutter/bin/ffprobe.exe;bin' launch_smart_media_manager.py
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
+          Compress-Archive -Path 'dist\SmartMediaManager\*' -DestinationPath 'SmartMediaManager-Windows.zip' -Force
+          (Get-FileHash 'SmartMediaManager-Windows.zip' -Algorithm SHA256).Hash.ToLower() | Set-Content 'SmartMediaManager-Windows.zip.sha256'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmartMediaManager-Windows
+          path: |
+            SmartMediaManager-Windows.zip
+            SmartMediaManager-Windows.zip.sha256
+          if-no-files-found: error
+      - name: Publish release on main
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "smart-media-manager-v1-run-$env:GITHUB_RUN_NUMBER"
+          gh release create $tag SmartMediaManager-Windows.zip SmartMediaManager-Windows.zip.sha256 --title "Smart Media Manager Windows V1" --notes "One Windows app: Video Clip Cutter, Image Renamer, Smart Clip Renamer. Extract ZIP and run SmartMediaManager.exe. FFmpeg bundled." --target $env:GITHUB_SHA --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed' }

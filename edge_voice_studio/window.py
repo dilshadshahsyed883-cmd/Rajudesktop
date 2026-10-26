@@ -190,14 +190,19 @@ class StudioWindow(QMainWindow):
         self._closing = False
         self.setWindowTitle("Edge Voice Studio — Rajudesktop")
         self.setMinimumSize(1050, 700)
-        self.resize(1380, 850)
+        self.resize(1450, 890)
         self.output = QAudioOutput(self)
         self.player = QMediaPlayer(self)
         self.player.setAudioOutput(self.output)
         self.output.setVolume(0.85)
         self.player.positionChanged.connect(self._playback_moved)
         self.player.durationChanged.connect(self._playback_duration)
-        self.setStyleSheet(stylesheet(self.store.get_setting("theme", "Dark")))
+        self.setStyleSheet(stylesheet(self.store.get_setting("theme", "Navy Light")))
+        # Apply the requested screenshot palette once, including to existing installs.
+        if not self.store.get_setting("navy_light_v11_applied", False):
+            self.store.set_setting("theme", "Navy Light")
+            self.store.set_setting("navy_light_v11_applied", True)
+        self.setStyleSheet(stylesheet(self.store.get_setting("theme", "Navy Light")))
         self._build()
         self._show_page(0)
         self._filter_voices()
@@ -220,16 +225,41 @@ class StudioWindow(QMainWindow):
     def _build(self):
         root = QWidget()
         self.setCentralWidget(root)
-        main = QHBoxLayout(root)
-        main.setContentsMargins(14, 14, 14, 14)
-        main.setSpacing(15)
+        root.setObjectName("root")
+        outer = QVBoxLayout(root)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(11)
+
+        header = QFrame()
+        header.setObjectName("header")
+        header.setFixedHeight(74)
+        header_row = QHBoxLayout(header)
+        header_row.setContentsMargins(20, 9, 15, 9)
+        headline = QVBoxLayout()
+        app_title = QLabel("◆  Edge Voice Studio")
+        app_title.setStyleSheet("font-size: 21px; font-weight: 750;")
+        tagline = QLabel("Natural English voices  ·  Narration  ·  Batch processing")
+        tagline.setStyleSheet("color: #D4E2F4; font-size: 11px;")
+        headline.addWidget(app_title)
+        headline.addWidget(tagline)
+        header_row.addLayout(headline, 1)
+        header_row.addWidget(button("New Script", self.new_script))
+        header_row.addWidget(button("Open TXT", self.import_script))
+        header_row.addWidget(button("Save TXT", self.save_script))
+        header_row.addWidget(button("Settings", lambda: self._show_page(5)))
+        outer.addWidget(header)
+
+        main = QHBoxLayout()
+        main.setSpacing(12)
+        outer.addLayout(main, 1)
         nav, nav_layout = card()
-        nav.setFixedWidth(218)
-        nav_layout.addWidget(QLabel("◆  EDGE VOICE"))
-        lbl = QLabel("STUDIO  /  RAJUDESKTOP")
+        nav.setObjectName("sidebar")
+        nav.setFixedWidth(202)
+        nav_layout.addWidget(QLabel("CONTROL ROOM"))
+        lbl = QLabel("ENGLISH VOICE TOOLS")
         lbl.setObjectName("muted")
         nav_layout.addWidget(lbl)
-        nav_layout.addSpacing(16)
+        nav_layout.addSpacing(12)
         self.nav_buttons = []
         glyphs = ["◉", "★", "☷", "▦", "♫", "⚙"]
         for i, name in enumerate(self.PAGES):
@@ -489,6 +519,23 @@ class StudioWindow(QMainWindow):
     def _update_count(self):
         text = self.script.toPlainText()
         self.counter.setText(f"{len(text.split()):,} words · {len(text):,} characters")
+
+    def new_script(self):
+        self.script.clear()
+        self.title_input.setText("My Narration")
+        self._show_page(0)
+
+    def save_script(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save narration text", str(default_output_folder() / "narration.txt"),
+            "Text (*.txt)")
+        if not path:
+            return
+        try:
+            Path(path).write_text(self.script.toPlainText(), encoding="utf-8")
+            self._message("Narration script saved: " + path)
+        except OSError as exc:
+            self._error(str(exc))
 
     def import_script(self):
         path, _ = QFileDialog.getOpenFileName(self, "Import TXT script", "", "Text (*.txt)")

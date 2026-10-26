@@ -1,0 +1,52 @@
+name: Smart Clip Renamer - Windows Portable
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "smart_clip_renamer/**"
+      - "launch_smart_clip_renamer.py"
+      - "tests/test_smart_clip_renamer.py"
+      - ".github/workflows/smart-clip-renamer-windows.yml"
+  pull_request:
+    paths:
+      - "smart_clip_renamer/**"
+      - "launch_smart_clip_renamer.py"
+      - "tests/test_smart_clip_renamer.py"
+      - ".github/workflows/smart-clip-renamer-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run focused unit tests
+        run: python -m unittest discover -s tests -p test_smart_clip_renamer.py -v
+      - name: Install PyInstaller
+        run: python -m pip install "pyinstaller>=6.11,<7"
+      - name: Build single-file portable Windows EXE
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name SmartClipRenamer launch_smart_clip_renamer.py
+      - name: Package portable release and SHA256
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path package -Force | Out-Null
+          Copy-Item dist/SmartClipRenamer.exe package/SmartClipRenamer.exe
+          Copy-Item SMART_CLIP_RENAMER.md package/README.md
+          Compress-Archive -Path package/* -DestinationPath SmartClipRenamer-Windows.zip -Force
+          (Get-FileHash SmartClipRenamer-Windows.zip -Algorithm SHA256).Hash.ToLower() | Set-Content SmartClipRenamer-Windows.zip.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmartClipRenamer-Windows
+          path: |
+            SmartClipRenamer-Windows.zip
+            SmartClipRenamer-Windows.zip.sha256
+          if-no-files-found: error
+          retention-days: 30

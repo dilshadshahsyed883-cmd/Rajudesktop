@@ -430,6 +430,7 @@ class StudioWindow(QMainWindow):
             ("Cancel", lambda: self.set_job_status("cancelled")),
             ("Remove Row", self.remove_job),
             ("Open Output", self.open_job_output),
+            ("Open Output Folder", self.open_output_folder),
         ]:
             controls.addWidget(button(label, method))
         lay.addLayout(controls)
@@ -687,13 +688,19 @@ class StudioWindow(QMainWindow):
         script = self.script.toPlainText()
         try:
             rate, pitch, volume = self.control_values()
-            self.store.add_job(self.title_input.text() or "Narration", script,
-                               self.selected_voice, rate, pitch, volume,
-                               self.subtitles.isChecked())
+            new_id = self.store.add_job(self.title_input.text() or "Narration", script,
+                                        self.selected_voice, rate, pitch, volume,
+                                        self.subtitles.isChecked())
         except Exception as exc:
             self._error(str(exc))
             return
         self._refresh_queue()
+        for row in range(self.queue_table.rowCount()):
+            item = self.queue_table.item(row, 0)
+            if item and item.data(Qt.ItemDataRole.UserRole) == new_id:
+                self.queue_table.selectRow(row)
+                break
+        self._show_page(2)  # On successful add, take the user directly to the Queue page.
         self._start_queue()
         self._message("Narration added to queue")
 
@@ -817,6 +824,19 @@ class StudioWindow(QMainWindow):
             self._message("Queue row removed; rendered media left intact")
         except Exception as exc:
             self._error(str(exc))
+
+    def open_output_folder(self):
+        """Open the saved output destination, without needing a selected queue job."""
+        try:
+            output = Path(self.store.get_setting(
+                "output_folder", str(default_output_folder())
+            )).expanduser()
+            output.mkdir(parents=True, exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(output.resolve()))):
+                raise RuntimeError("Windows could not open the output directory")
+            self._message("Opened output folder: " + str(output))
+        except (OSError, RuntimeError) as exc:
+            self._error("Cannot open output folder: " + str(exc))
 
     def open_job_output(self):
         id_ = self._selected_job()

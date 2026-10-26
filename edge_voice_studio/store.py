@@ -118,6 +118,15 @@ class Store:
                 raise RuntimeError("Pause the active job before removing it")
             con.execute("DELETE FROM jobs WHERE id=?", (id_,))
 
+    def rename_finished(self, id_: str, title: str, output: str) -> None:
+        with self.connect() as con:
+            cur = con.execute(
+                "UPDATE jobs SET title=?, output=?, updated_at=CURRENT_TIMESTAMP "
+                "WHERE id=? AND status='done'",
+                (safe_title(title), output, id_))
+            if cur.rowcount != 1:
+                raise ValueError("Only completed files can be renamed")
+
     def get_setting(self, key: str, default=None):
         with self.connect() as con:
             row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()

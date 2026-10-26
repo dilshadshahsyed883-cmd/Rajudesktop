@@ -27,8 +27,10 @@ jobs:
       - name: Compile application sources
         run: python -m compileall -q scene_desktop launch.py
       - name: Package a portable Windows app folder
+        if: github.event_name == 'workflow_dispatch'
         run: pyinstaller --noconfirm --clean --onedir --windowed --name SceneDesktopStudio --collect-all imageio_ffmpeg launch.py
       - name: Verify bundled executable and write manifest
+        if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         run: |
           if (!(Test-Path dist/SceneDesktopStudio/SceneDesktopStudio.exe)) { throw "Windows executable missing" }
@@ -38,6 +40,7 @@ jobs:
           Compress-Archive -Path dist/SceneDesktopStudio -DestinationPath SceneDesktopStudio-windows-x64.zip -CompressionLevel Optimal
           (Get-FileHash SceneDesktopStudio-windows-x64.zip -Algorithm SHA256).Hash | Set-Content SceneDesktopStudio-windows-x64.zip.sha256 -Encoding ascii
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: SceneDesktopStudio-windows-x64-${{ github.sha }}
           path: |

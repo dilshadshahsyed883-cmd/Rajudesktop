@@ -76,7 +76,7 @@ class RenamerWindow(tk.Tk):
         style.configure("Images.Horizontal.TProgressbar", background=ACCENT, troughcolor=FIELD)
         outer = tk.Frame(self, bg=BG, padx=20, pady=16)
         outer.pack(fill="both", expand=True)
-        self.label(outer, "IMAGE RENAMER", bold=True, font=("Segoe UI", 19, "bold")).pack(anchor="w")
+        self.label(outer, "IMAGE RENAMER", bold=True).pack(anchor="w")
         self.label(outer, "Offline bulk naming · Original quality preserved", muted=True).pack(anchor="w", pady=(2, 12))
         area = tk.Frame(outer, bg=PANEL, padx=15, pady=10)
         area.pack(fill="x")

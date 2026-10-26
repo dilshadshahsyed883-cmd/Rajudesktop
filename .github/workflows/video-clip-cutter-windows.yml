@@ -1,0 +1,60 @@
+name: Video Clip Cutter - Windows EXE and ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'video_clip_cutter/**'
+      - 'launch_video_clip_cutter.py'
+      - 'tests/test_video_clip_cutter.py'
+      - '.github/workflows/video-clip-cutter-windows.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-package:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install packager
+        run: python -m pip install pyinstaller==6.16.0
+      - name: Download ffmpeg essentials
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg-dist"
+          New-Item -ItemType Directory -Force -Path 'video_clip_cutter\bin' | Out-Null
+          $ffmpeg = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-dist" -Filter ffmpeg.exe -Recurse | Select-Object -First 1
+          $ffprobe = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-dist" -Filter ffprobe.exe -Recurse | Select-Object -First 1
+          if (-not $ffmpeg -or -not $ffprobe) { throw 'FFmpeg executables missing' }
+          Copy-Item $ffmpeg.FullName 'video_clip_cutter\bin\ffmpeg.exe'
+          Copy-Item $ffprobe.FullName 'video_clip_cutter\bin\ffprobe.exe'
+      - name: Run tests
+        run: python -m unittest discover -s tests -p test_video_clip_cutter.py -v
+      - name: Build standalone Windows distribution
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name VideoClipCutter --add-binary 'video_clip_cutter/bin/ffmpeg.exe;bin' --add-binary 'video_clip_cutter/bin/ffprobe.exe;bin' launch_video_clip_cutter.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Compress-Archive -Path 'dist\VideoClipCutter\*' -DestinationPath 'VideoClipCutter-Windows.zip' -Force
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoClipCutter-Windows
+          path: VideoClipCutter-Windows.zip
+          if-no-files-found: error
+      - name: Publish permanent ZIP release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "video-clip-cutter-v1-run-${{ github.run_number }}"
+          gh release create $tag 'VideoClipCutter-Windows.zip' --title "Video Clip Cutter V1 (build ${{ github.run_number }})" --notes 'Standalone Windows desktop application: adjustable clip duration, numbered output clips, remembered destination, FFmpeg bundled.' --latest

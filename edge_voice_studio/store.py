@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -37,12 +38,20 @@ class Store:
             """)
             con.execute("UPDATE jobs SET status='queued' WHERE status='processing'")
 
+    @contextmanager
     def connect(self):
         con = sqlite3.connect(str(self.path), timeout=15)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA busy_timeout=15000")
         con.execute("PRAGMA journal_mode=WAL")
-        return con
+        try:
+            yield con
+            con.commit()
+        except BaseException:
+            con.rollback()
+            raise
+        finally:
+            con.close()
 
     def add_job(self, title: str, script: str, voice: str, rate=0, pitch=0,
                 volume=0, subtitles=True) -> str:

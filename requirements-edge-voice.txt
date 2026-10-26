@@ -1,0 +1,3 @@
+-r requirements.txt
+edge-tts>=7.0,<9
+mutagen>=1.47,<2

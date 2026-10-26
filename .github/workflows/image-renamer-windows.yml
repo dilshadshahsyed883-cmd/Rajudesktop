@@ -1,0 +1,73 @@
+name: Image Renamer - Windows portable ZIP
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - "image_renamer/**"
+      - "launch_image_renamer.py"
+      - "tests/test_image_renamer.py"
+      - "IMAGE_RENAMER.md"
+      - ".github/workflows/image-renamer-windows.yml"
+  pull_request:
+    paths:
+      - "image_renamer/**"
+      - "launch_image_renamer.py"
+      - "tests/test_image_renamer.py"
+      - "IMAGE_RENAMER.md"
+      - ".github/workflows/image-renamer-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile and run regression tests
+        shell: pwsh
+        run: |
+          python -m compileall -q image_renamer launch_image_renamer.py
+          python -m unittest discover -s tests -p "test_image_renamer.py" -v
+          python -c "from image_renamer.window import RenamerWindow; root=RenamerWindow(); assert root.title().startswith('Image Renamer'); root.destroy(); print('GUI smoke PASS')"
+      - name: Install portable EXE packager
+        run: python -m pip install "pyinstaller>=6.11,<7"
+      - name: Package independent Windows EXE
+        run: pyinstaller --noconfirm --clean --onedir --windowed --name ImageRenamer launch_image_renamer.py
+      - name: Create downloadable ZIP and checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (!(Test-Path dist/ImageRenamer/ImageRenamer.exe)) { throw "Missing ImageRenamer.exe" }
+          Copy-Item IMAGE_RENAMER.md dist/ImageRenamer/README.md
+          Compress-Archive -Path dist/ImageRenamer -DestinationPath ImageRenamer-Windows-x64.zip -Force
+          (Get-FileHash ImageRenamer-Windows-x64.zip -Algorithm SHA256).Hash | Set-Content ImageRenamer-Windows-x64.zip.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImageRenamer-Windows-x64
+          path: |
+            ImageRenamer-Windows-x64.zip
+            ImageRenamer-Windows-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish permanent Windows ZIP on main
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'image-renamer-v1.0.0'
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag ImageRenamer-Windows-x64.zip ImageRenamer-Windows-x64.zip.sha256 --clobber --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $tag ImageRenamer-Windows-x64.zip ImageRenamer-Windows-x64.zip.sha256 --title "Image Renamer Windows V1" --notes "Offline Image Renamer. Extract ZIP and run ImageRenamer.exe." --target $env:GITHUB_SHA --latest=false --repo $env:GITHUB_REPOSITORY
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed' }

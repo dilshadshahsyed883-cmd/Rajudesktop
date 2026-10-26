@@ -47,3 +47,20 @@ packaging is manual via workflow dispatch, not part of ordinary commits or PRs.
 A manually triggered release provides a Windows portable ZIP and SHA-256 checksums.
 
 No VPS deployment, background uploader, cloning, or access to the existing editor.
+
+
+## Windows ZIP V1.1 — Screenshot colors and output destination
+
+- Native navy header, pale-blue sidebar, white panels and bright-blue action buttons.
+- Theme defaults to **Navy Light**; the previous Dark option remains available.
+- Generated MP3s and matching SRT/WAV files default to the Windows Documents directory
+  (normally Documents\EdgeVoiceStudio). The Documents location is resolved by Windows,
+  so OneDrive-redirected Documents folders are also respected.
+- Settings -> Output folder -> Browse -> Save Settings changes this destination.
+  The selection persists after closing/reopening and future updates.
+- Until Save Settings is pressed, browsing/editing the output field does not affect
+  queued job destination.
+- Settings -> Restore Documents Default -> Save Settings restores the default.
+- Cache defaults to the application data directory, separate from user outputs.
+- The release ZIP includes the Windows executable and bundled Python dependencies;
+  no separate Python installation is required on the user's PC.

@@ -18,9 +18,9 @@ from tkinter import filedialog, messagebox, ttk
 from image_renamer.core import (
     EXTENSIONS as IMAGE_EXTENSIONS, execute as image_execute,
     make_plan as image_make_plan, save_history as image_save_history,
-    scan_folder as image_scan_folder, undo_last as image_undo_last,
+    scan_folder as image_scan_folder, natural_key as image_natural_key, undo_last as image_undo_last,
 )
-from smart_clip_renamer.core import create_plan as clip_create_plan, execute_plan as clip_execute_plan
+from smart_clip_renamer.core import RenamerError, create_plan as clip_create_plan, execute_plan as clip_execute_plan
 from video_clip_cutter.core import (
     default_output_folder, prepare_job, process_job, read_settings, write_settings,
 )
@@ -170,6 +170,8 @@ class WorkTab(ttk.Frame):
                 else:
                     _, result, error = event
                     self.running = False
+                    if hasattr(self, "stop_button"):
+                        self.stop_button.config(state="disabled")
                     for widget in self._busy_widgets:
                         widget.config(state="normal")
                     if error:
@@ -336,7 +338,7 @@ class ImagesTab(WorkTab):
                 if path.suffix.lower() in IMAGE_EXTENSIONS and str(path).casefold() not in already:
                     self.files.append(path)
                     already.add(str(path).casefold())
-            self.files.sort(key=lambda p: p.name.casefold())
+            self.files.sort(key=image_natural_key)
             self.source.set(f"{len(self.files)} individually selected")
             self.invalidate()
             self.status.set(f"{len(self.files)} images selected")
@@ -457,7 +459,7 @@ class ClipsTab(WorkTab):
             return False
         try:
             plan = clip_create_plan(Path(self.source.get()), Path(self.output.get()), self.keyword.get())
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, RenamerError) as exc:
             self.plan = None
             messagebox.showerror("Clip preview", str(exc))
             return False

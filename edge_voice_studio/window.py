@@ -12,11 +12,11 @@ from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
-    QMessageBox, QPlainTextEdit, QPushButton, QSlider, QSplitter, QStackedWidget,
+    QMessageBox, QInputDialog, QPlainTextEdit, QPushButton, QSlider, QSplitter, QStackedWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QAbstractItemView,
 )
 
-from .core import english_voice
+from .core import english_voice, safe_title
 from .engine import generate_preview, list_english_voices, render_job, to_wav
 from .store import Store
 
@@ -153,6 +153,8 @@ class StudioWindow(QMainWindow):
         self.player = QMediaPlayer(self)
         self.player.setAudioOutput(self.output)
         self.output.setVolume(0.85)
+        self.player.positionChanged.connect(self._playback_moved)
+        self.player.durationChanged.connect(self._playback_duration)
         self.setStyleSheet(stylesheet(self.store.get_setting("theme", "Dark")))
         self._build()
         self._show_page(0)
@@ -379,6 +381,10 @@ class StudioWindow(QMainWindow):
     def _library_page(self):
         _, page = self._page("Audio Library", "Play finished voiceovers or open the verified output folder.")
         c, lay = card()
+        self.library_search = QLineEdit()
+        self.library_search.setPlaceholderText("Search completed narrations...")
+        self.library_search.textChanged.connect(self._refresh_library)
+        lay.addWidget(self.library_search)
         self.audio_table = QTableWidget(0, 3)
         self.audio_table.setHorizontalHeaderLabels(["Project", "Voice", "File"])
         self.audio_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -390,13 +396,21 @@ class StudioWindow(QMainWindow):
         row = QHBoxLayout()
         for label, handler in [
             ("▶ Play", self.play_audio),
+            ("Ⅱ Pause", self.player.pause),
             ("■ Stop", self.player.stop),
+            ("Rename", self.rename_audio),
+            ("Delete", self.delete_audio),
             ("Export WAV", self.export_wav),
             ("Open Folder", self.open_audio_folder),
             ("Refresh", self._refresh_library),
         ]:
             row.addWidget(button(label, handler))
         lay.addLayout(row)
+        self.playback_seek = QSlider(Qt.Orientation.Horizontal)
+        self.playback_seek.setRange(0, 0)
+        self.playback_seek.sliderReleased.connect(
+            lambda: self.player.setPosition(self.playback_seek.value()))
+        lay.addWidget(self.playback_seek)
         page.addWidget(c, 1)
 
     def _settings_page(self):
@@ -710,9 +724,11 @@ class StudioWindow(QMainWindow):
                 self._message("This job has no finished output yet")
 
     def _refresh_library(self):
+        phrase = self.library_search.text().strip().lower()
         jobs = [j for j in self.store.all_jobs()
-                if j["status"] == "done" and Path(j["output"]).is_file()]
-        snapshot = tuple((j["id"], j["output"]) for j in jobs)
+                if j["status"] == "done" and Path(j["output"]).is_file()
+                and (not phrase or phrase in (j["title"] + " " + j["voice"]).lower())]
+        snapshot = tuple((j["id"], j["output"], j["title"]) for j in jobs)
         if snapshot == self._library_snapshot:
             return
         self._library_snapshot = snapshot
@@ -741,6 +757,81 @@ class StudioWindow(QMainWindow):
         path = self._selected_audio()
         if path:
             self._play_path(path)
+
+    def _playback_moved(self, position):
+        if hasattr(self, "playback_seek") and not self.playback_seek.isSliderDown():
+            self.playback_seek.setValue(int(position))
+
+    def _playback_duration(self, duration):
+        if hasattr(self, "playback_seek"):
+            self.playback_seek.setMaximum(max(0, int(duration)))
+
+    def rename_audio(self):
+        path = self._selected_audio()
+        if not path or not path.is_file():
+            self._error("Choose a finished narration")
+            return
+        row = self.audio_table.currentRow()
+        item = self.audio_table.item(row, 0)
+        job_id = item.data(Qt.ItemDataRole.UserRole)
+        current = self.store.get(job_id)
+        title, accepted = QInputDialog.getText(
+            self, "Rename narration", "New title:", text=current["title"])
+        if not accepted or not title.strip():
+            return
+        new_path = path.with_name(safe_title(title) + "-" + job_id[:8] + ".mp3")
+        moves = [(path.with_suffix(ext), new_path.with_suffix(ext))
+                 for ext in (".mp3", ".wav", ".srt") if path.with_suffix(ext).exists()]
+        if any(dest.exists() and dest != source for source, dest in moves):
+            self._error("A file with that name already exists")
+            return
+        moved = []
+        try:
+            for source, dest in moves:
+                source.rename(dest)
+                moved.append((source, dest))
+            self.store.rename_finished(job_id, title, str(new_path))
+        except Exception as exc:
+            for source, dest in reversed(moved):
+                try:
+                    dest.rename(source)
+                except OSError:
+                    pass
+            self._error("Rename failed: " + str(exc))
+            return
+        self._library_snapshot = None
+        self._queue_snapshot = None
+        self._refresh_library()
+        self._refresh_queue()
+        self._message("Narration renamed")
+
+    def delete_audio(self):
+        path = self._selected_audio()
+        if not path or not path.is_file():
+            self._error("Select a completed narration")
+            return
+        result = QMessageBox.question(
+            self, "Delete narration",
+            "Permanently delete this generated MP3 and matching WAV/SRT files? "
+            "Unrelated source files will not be touched.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if result != QMessageBox.StandardButton.Yes:
+            return
+        row = self.audio_table.currentRow()
+        job_id = self.audio_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        self.player.stop()
+        try:
+            for ext in (".mp3", ".wav", ".srt"):
+                path.with_suffix(ext).unlink(missing_ok=True)
+            self.store.delete_job(job_id)
+            self._queue_snapshot = None
+            self._library_snapshot = None
+            self._refresh_queue()
+            self._refresh_library()
+            self._message("Generated narration deleted")
+        except Exception as exc:
+            self._error(str(exc))
 
     def export_wav(self):
         path = self._selected_audio()

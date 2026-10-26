@@ -21,43 +21,85 @@ from .engine import generate_preview, list_english_voices, render_job, to_wav
 from .store import Store
 
 DARK = {
-    "bg": "#0B1120", "panel": "#141E30", "input": "#1D2A40", "text": "#F0F4FD",
-    "muted": "#9AAECA", "accent": "#7866F5", "border": "#31425C",
-    "hover": "#283958",
+    "bg": "#0F1727", "panel": "#19283D", "input": "#1D3049", "text": "#EAF1FF",
+    "muted": "#9CB2D0", "accent": "#2461D8", "border": "#354F6E",
+    "hover": "#294567", "navy": "#10284A", "sidebar": "#15263F",
+    "nav_active": "#234978",
 }
 LIGHT = {
-    "bg": "#F3F6FC", "panel": "#FFFFFF", "input": "#E9EFF9", "text": "#172743",
-    "muted": "#4E607A", "accent": "#6351D7", "border": "#D6DFED",
-    "hover": "#DCE5F5",
+    "bg": "#F2F6FC", "panel": "#FFFFFF", "input": "#FAFCFF", "text": "#12315B",
+    "muted": "#536D92", "accent": "#1756D9", "border": "#D3E0F0",
+    "hover": "#E6F0FF", "navy": "#102A4B", "sidebar": "#EDF4FF",
+    "nav_active": "#DDEAFF",
 }
 
 
 def stylesheet(theme: str) -> str:
+    """Navy header, pale workspace, white cards, blue actions."""
     c = DARK if theme == "Dark" else LIGHT
     return """
-    QWidget { background: %(bg)s; color: %(text)s; font-family: 'Segoe UI'; font-size: 13px; }
-    QFrame#card { background: %(panel)s; border: 1px solid %(border)s; border-radius: 14px; }
+    QMainWindow, QWidget#root, QWidget#workspace, QStackedWidget {
+      background: %(bg)s; color: %(text)s;
+    }
+    QWidget { color: %(text)s; font-family: 'Segoe UI'; font-size: 13px; }
+    QFrame#header { background: %(navy)s; border: 0; border-radius: 11px; }
+    QFrame#header QLabel { color: #FFFFFF; background: transparent; }
+    QFrame#header QPushButton {
+      background: #193F70; color: #FFFFFF; border: 1px solid #40658D;
+    }
+    QFrame#header QPushButton:hover { background: #27558B; }
+    QFrame#sidebar {
+      background: %(sidebar)s; border: 1px solid %(border)s; border-radius: 13px;
+    }
+    QFrame#sidebar QLabel { background: transparent; }
+    QFrame#card {
+      background: %(panel)s; border: 1px solid %(border)s; border-radius: 12px;
+    }
+    QFrame#card QLabel, QFrame#card QCheckBox {
+      background: transparent; border: 0;
+    }
     QLineEdit, QPlainTextEdit, QListWidget, QTableWidget, QComboBox {
       background: %(input)s; color: %(text)s; border: 1px solid %(border)s;
-      border-radius: 9px; padding: 8px; selection-background-color: %(accent)s;
+      border-radius: 7px; padding: 8px; selection-background-color: %(accent)s;
     }
-    QPlainTextEdit { padding: 14px; }
-    QPushButton { background: %(input)s; color: %(text)s; border: 1px solid %(border)s;
-      border-radius: 9px; padding: 10px 14px; font-weight: 600; }
+    QPlainTextEdit { padding: 12px; }
+    QPushButton {
+      background: %(panel)s; color: %(text)s; border: 1px solid %(border)s;
+      border-radius: 7px; padding: 9px 12px; font-weight: 600;
+    }
     QPushButton:hover { background: %(hover)s; }
-    QPushButton#primary { background: %(accent)s; color: #FFFFFF; border: none; }
-    QPushButton#primary:hover { background: #6657DD; }
-    QPushButton#nav { text-align: left; border: 0; background: transparent; padding: 12px; }
-    QPushButton#nav:checked { background: %(accent)s; color: #FFFFFF; }
+    QPushButton#primary { background: %(accent)s; color: #FFFFFF; border: 0; }
+    QPushButton#primary:hover { background: #0B47BB; }
+    QPushButton#nav {
+      text-align: left; border: 0; background: transparent; padding: 12px;
+      color: %(text)s;
+    }
+    QPushButton#nav:hover { background: %(hover)s; }
+    QPushButton#nav:checked {
+      background: %(nav_active)s; color: %(accent)s; border-left: 4px solid %(accent)s;
+    }
     QSlider::groove:horizontal { height: 5px; background: %(border)s; border-radius: 2px; }
-    QSlider::handle:horizontal { background: %(accent)s; width: 15px; margin: -5px 0;
-      border-radius: 7px; }
-    QTableWidget { gridline-color: %(border)s; alternate-background-color: %(panel)s; }
-    QHeaderView::section { background: %(panel)s; color: %(text)s; padding: 8px; border: 0; }
+    QSlider::handle:horizontal {
+      background: %(accent)s; width: 15px; margin: -5px 0; border-radius: 7px;
+    }
+    QTableWidget {
+      gridline-color: %(border)s; alternate-background-color: %(panel)s;
+    }
+    QHeaderView::section {
+      background: %(sidebar)s; color: %(text)s; padding: 8px; border: 0;
+    }
     QScrollBar:vertical { background: %(bg)s; width: 10px; }
     QScrollBar::handle:vertical { background: %(border)s; border-radius: 5px; }
     QLabel#muted { color: %(muted)s; }
     """ % c
+
+
+def default_output_folder() -> Path:
+    """Honor OS-managed Documents path including Windows OneDrive redirection."""
+    documents = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.DocumentsLocation
+    )
+    return Path(documents or str(Path.home() / "Documents")) / "EdgeVoiceStudio"
 
 
 def card() -> tuple[QFrame, QVBoxLayout]:

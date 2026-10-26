@@ -61,7 +61,7 @@ class DesktopPreferenceTests(unittest.TestCase):
                 opener.assert_called_once()
                 opened = opener.call_args.args[0]
                 self.assertIsInstance(opened, QUrl)
-                self.assertEqual(Path(opened.toLocalFile()), target)
+                self.assertEqual(Path(opened.toLocalFile()).resolve(), target.resolve())
             self.assertTrue(target.is_dir())
             if original is None:
                 with window.store.connect() as con:
@@ -74,9 +74,10 @@ class DesktopPreferenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             first = StudioWindow()
             expected = str(default_output_folder())
+            previous = first.store.get_setting("output_folder", expected)
             first.output_path.setText(str(Path(td) / "VoiceOutputs"))
             # Browsing alone must not change the committed destination.
-            self.assertEqual(first.store.get_setting("output_folder", expected), expected)
+            self.assertEqual(first.store.get_setting("output_folder", expected), previous)
             first.save_settings()
             self.assertEqual(first.store.get_setting("output_folder"), str(Path(td) / "VoiceOutputs"))
             first.close()
@@ -84,8 +85,8 @@ class DesktopPreferenceTests(unittest.TestCase):
             self.assertEqual(second.output_path.text(), str(Path(td) / "VoiceOutputs"))
             second.output_path.setText(str(Path(td) / "Unsaved"))
             self.assertEqual(second.store.get_setting("output_folder"), str(Path(td) / "VoiceOutputs"))
-            # Put defaults back for unrelated tests.
-            second.output_path.setText(expected)
+            # Restore the original stored destination for unrelated tests.
+            second.output_path.setText(previous)
             second.save_settings()
             second.close()
 

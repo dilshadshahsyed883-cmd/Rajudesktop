@@ -1,0 +1,79 @@
+name: Voice to SRT Studio - Windows EXE
+on:
+  push:
+    branches:
+      - main
+      - feature/voice-to-srt-windows-exe-20261027
+    paths:
+      - "voice_to_srt/**"
+      - ".github/workflows/voice-to-srt-windows.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Extract the original tested application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force voice_to_srt/src | Out-Null
+          Expand-Archive -LiteralPath voice_to_srt/voice_to_srt_sources.zip -DestinationPath voice_to_srt/src -Force
+          if (!(Test-Path voice_to_srt/src/app.py) -or !(Test-Path voice_to_srt/src/srt_engine.py)) { throw "Source files missing" }
+      - name: Install speech engine and Windows packager
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r voice_to_srt/src/requirements.txt "pyinstaller>=6.11,<7"
+      - name: Verify imports and timestamp logic
+        shell: pwsh
+        run: |
+          python -m compileall -q voice_to_srt/src
+          $env:PYTHONPATH = (Resolve-Path voice_to_srt/src).Path
+          python -c "from srt_engine import Word, words_to_cues, render_srt; x=words_to_cues([Word(0.1, 1, 'hello'), Word(1, 2, ' world')]); assert '00:00:00,100' in render_srt(x); print('SRT logic PASS')"
+          python -c "import tkinter, faster_whisper, ctranslate2, av; print('Audio engine imports PASS')"
+      - name: Build standalone Windows application
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name VoiceToSRTStudio --distpath dist --workpath build --specpath build --collect-all faster_whisper --collect-all ctranslate2 --collect-all av --collect-all tokenizers --collect-all huggingface_hub --collect-all onnxruntime voice_to_srt/src/app.py
+          if (!(Test-Path dist/VoiceToSRTStudio/VoiceToSRTStudio.exe)) { throw 'EXE missing' }
+      - name: Smoke-test Windows EXE launch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path dist/VoiceToSRTStudio/VoiceToSRTStudio.exe).Path
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          $p.Refresh()
+          if ($p.HasExited) { throw "Windows EXE exited unexpectedly with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+          Write-Host 'Windows EXE GUI startup PASS'
+      - name: ZIP Windows EXE and bundled libraries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          Voice to SRT Studio Windows 64-bit
+          ----------------------------------
+          Extract the entire ZIP and double-click VoiceToSRTStudio.exe.
+          Keep the _internal directory next to the EXE.
+          No Python or start.bat is needed.
+          The speech model downloads the first time you generate subtitles.
+          The audio is transcribed locally on your computer.
+          '@ | Set-Content -Encoding UTF8 dist/VoiceToSRTStudio/README.txt
+          Compress-Archive -Path dist/VoiceToSRTStudio -DestinationPath VoiceToSRTStudio-Windows-x64.zip -Force
+          (Get-FileHash VoiceToSRTStudio-Windows-x64.zip -Algorithm SHA256).Hash | Set-Content VoiceToSRTStudio-Windows-x64.zip.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoiceToSRTStudio-Windows-x64
+          path: |
+            VoiceToSRTStudio-Windows-x64.zip
+            VoiceToSRTStudio-Windows-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30

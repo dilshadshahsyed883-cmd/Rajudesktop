@@ -21,7 +21,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-build.txt
       - name: Install pinned-range build dependencies
-        run: python -m pip install -r requirements-build.txt
+        run: python -m pip install -r requirements-build.txt "mutagen>=1.47,<2"
       - name: Model and real FFmpeg export tests
         run: python -m unittest discover -s tests -v
       - name: Compile application sources

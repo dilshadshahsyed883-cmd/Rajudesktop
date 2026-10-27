@@ -67,7 +67,7 @@ class Store:
                 (id,title,script,voice,rate,pitch,volume,subtitles,total)
                 VALUES (?,?,?,?,?,?,?,?,?)""",
                 (id_, safe_title(title), script.strip(), voice, int(rate), int(pitch),
-                 int(volume), int(bool(subtitles)), len(chunks)))
+                 int(volume), 1, len(chunks)))
         return id_
 
     def all_jobs(self) -> list[dict]:

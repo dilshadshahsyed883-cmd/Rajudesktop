@@ -151,5 +151,56 @@ class ZBuilderCoreTests(unittest.TestCase):
             self.assertEqual(1, catalog.assets()[0]['export_count'])
 
 
+    def test_clean_entire_library_records_only_preserves_all_original_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            img, clip = root / 'original.jpg', root / 'clip.mp4'
+            img.write_bytes(b'image')
+            clip.write_bytes(b'video')
+            db = Catalog(root / 'lib.sqlite')
+            db.add(img)
+            db.add(clip)
+            db.record_successful_export([img])
+            self.assertEqual(2, db.clear_library_records())
+            self.assertEqual([], db.assets())
+            self.assertTrue(img.exists())
+            self.assertTrue(clip.exists())
+            self.assertEqual(0, db.clear_library_records())
+            new_id = db.add(img)
+            self.assertEqual(0, next(a['export_count'] for a in db.assets()
+                                      if a['id'] == new_id))
+
+    def test_clean_entire_library_recycles_used_and_unused_with_safe_failures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ok_file, locked, missing = (root / 'good.jpg', root / 'locked.mp4',
+                                        root / 'missing.jpg')
+            ok_file.write_bytes(b'ok')
+            locked.write_bytes(b'locked')
+            missing.write_bytes(b'not here soon')
+            db = Catalog(root / 'lib.sqlite')
+            db.add(ok_file)
+            db.add(locked)
+            db.add(missing)
+            missing.unlink()
+            trash = root / 'trash'
+            trash.mkdir()
+            def recycle(path):
+                source = Path(path)
+                if source.name == 'locked.mp4':
+                    raise PermissionError('simulated locked file')
+                source.rename(trash / source.name)
+            moved, forgotten, failures = db.recycle_entire_library(recycle=recycle)
+            self.assertEqual([ok_file.name], [Path(x).name for x in moved])
+            self.assertEqual([missing.name], [Path(x).name for x in forgotten])
+            self.assertEqual(1, len(failures))
+            self.assertIn('simulated locked file', failures[0])
+            self.assertTrue((trash / 'good.jpg').is_file())
+            self.assertTrue(locked.is_file())
+            self.assertFalse(missing.exists())
+            self.assertEqual(['locked.mp4'], [a['filename'] for a in db.assets()])
+
+
+
 if __name__ == '__main__':
     unittest.main()

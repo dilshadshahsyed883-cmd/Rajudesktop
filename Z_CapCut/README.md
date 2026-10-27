@@ -16,6 +16,7 @@ This folder is a persistent engineering record named **Z CapCut**. It is **not**
 | CapCut native draft A | 1 track; 3 sequential items; animation and transition | [03 — Draft schema and experiments](03_NATIVE_DRAFTS.md) |
 | CapCut native draft B | 2 tracks; lower-index photos and higher-index video; two 0.2 s gaps | [03 — Draft schema and experiments](03_NATIVE_DRAFTS.md) |
 | Z Builder implementation mapping | Proposed requirements, status labels, safety and test matrix | [04 — Z Builder integration](04_ZBUILDER_INTEGRATION.md) |
+| CapCut root-binary ZIP | 177 root-level native/runtime files; sensitive crash dumps excluded from public repo | [05 — Binary ZIP inspection](05_ROOT_BINARY_ZIP.md) |
 | Machine-readable public findings | Sanitized resource IDs, version and verified field names | [capability_manifest.json](capability_manifest.json) |
 
 ## Most useful verified facts

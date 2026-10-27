@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal, QStandardPaths
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame,
+    QApplication, QComboBox, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
     QMessageBox, QInputDialog, QPlainTextEdit, QPushButton, QSlider, QSplitter, QStackedWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QAbstractItemView,
@@ -305,9 +305,7 @@ class StudioWindow(QMainWindow):
         row.addWidget(button("Save Preset", self.save_preset))
         row.addWidget(button("Reset Controls", self.reset_sliders))
         settings.addLayout(row)
-        self.subtitles = QCheckBox("Export SRT subtitles when word timings are available")
-        self.subtitles.setChecked(True)
-        settings.addWidget(self.subtitles)
+        settings.addWidget(QLabel("MP3 + 3–4 second synchronized SRT generated automatically"))
         page.addWidget(settings_card)
         self.rate_slider.setValue(0)
         self.pitch_slider.setValue(0)
@@ -589,7 +587,7 @@ class StudioWindow(QMainWindow):
             rate, pitch, volume = self.control_values()
             self.store.add_job(self.title_input.text() or "Narration", script,
                                self.selected_voice, rate, pitch, volume,
-                               self.subtitles.isChecked())
+                               True)
         except Exception as exc:
             self._error(str(exc))
             return
@@ -620,7 +618,7 @@ class StudioWindow(QMainWindow):
             try:
                 self.store.add_job(p.stem, p.read_text(encoding="utf-8-sig"),
                                    self.selected_voice, rate, pitch, volume,
-                                   self.subtitles.isChecked())
+                                   True)
                 added += 1
             except Exception as exc:
                 errors.append(p.name + ": " + str(exc))
@@ -779,7 +777,7 @@ class StudioWindow(QMainWindow):
             self, "Rename narration", "New title:", text=current["title"])
         if not accepted or not title.strip():
             return
-        new_path = path.with_name(safe_title(title) + "-" + job_id[:8] + ".mp3")
+        new_path = path.with_name(safe_title(title) + ".mp3")
         moves = [(path.with_suffix(ext), new_path.with_suffix(ext))
                  for ext in (".mp3", ".wav", ".srt") if path.with_suffix(ext).exists()]
         if any(dest.exists() and dest != source for source, dest in moves):

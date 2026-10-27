@@ -62,7 +62,7 @@ class ChunkTests(unittest.TestCase):
             ]
             count = write_srt([(words, 10_000)], output)
             self.assertEqual(count, 3)
-            blocks = output.read_text(encoding="utf-8").strip().split("\\n\\n")
+            blocks = output.read_text(encoding="utf-8").strip().split("\n\n")
             self.assertEqual(len(blocks), 3)
             self.assertIn("00:00:00,000 --> 00:00:03,850", blocks[0])
             self.assertIn("00:00:04,000 --> 00:00:07,850", blocks[1])

@@ -4,12 +4,14 @@ The writer copies media into a new draft and never mutates user source or old dr
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+from typing import NamedTuple
 
 from .core import Plan, preflight, write_timeline_csv, timeline, MAX_VIDEO_CLIP_SECONDS, TIMING_EPSILON
 
@@ -95,7 +97,8 @@ def animated(shot) -> tuple[dict, str]:
     return {'transform': transform, 'kfs': kf}, ''
 
 
-def build_request(plan: Plan, drafts_root: str = '', launch: bool = False) -> tuple[dict, list[str]]:
+def build_request(plan: Plan, drafts_root: str = '', launch: bool = False,
+                  include_voice: bool = False, voice_source_start: float = 0) -> tuple[dict, list[str]]:
     failures = preflight(plan)
     if failures:
         raise ValueError('Preflight blocked:\n' + '\n'.join(failures[:30]))
@@ -119,7 +122,8 @@ def build_request(plan: Plan, drafts_root: str = '', launch: bool = False) -> tu
             captions.append({'text': shot.narration.strip(), 'start': start,
                              'end': end, 'pos': 'bottom',
                              'size': 45, 'color': '#ffffff', 'weight': 'bold'})
-        media.setdefault(shot.assigned_path, probe(shot.assigned_path))
+        if shot.assigned_path not in media:
+            media[shot.assigned_path] = probe(shot.assigned_path)
         if shot.media_type == 'video':
             actual = media[shot.assigned_path]['duration']
             required = shot.source_in_seconds + shot.duration
@@ -130,49 +134,147 @@ def build_request(plan: Plan, drafts_root: str = '', launch: bool = False) -> tu
                 warnings.append(f'{shot.section}: video duration could not be read; assumed 4.000s. Confirm in CapCut.')
         current = end
     voice = None
-    if plan.narration_path:
+    if include_voice:
+        if not plan.narration_path:
+            raise ValueError('Include voice is ON but no voice file is selected; choose one or turn it OFF.')
         media[plan.narration_path] = probe(plan.narration_path)
         audio_length = media[plan.narration_path]['duration']
+        global_end = voice_source_start + current
+        if audio_length and global_end > audio_length + 0.25:
+            raise ValueError(f'Voice audio ends at {audio_length:.3f}s, but this part requests through {global_end:.3f}s.')
         voice = {'file': plan.narration_path, 'start': 0,
-                 'dur': audio_length if audio_length > 0 else current, 'volume': 1}
+                 'trimStart': round(voice_source_start, 3), 'dur': current, 'volume': 1}
         if not audio_length:
-            media[plan.narration_path]['duration'] = current
-            warnings.append('Voice duration not probed; timeline duration assumed. Install FFmpeg to read accurate duration.')
-        elif (plan.sections.get('_FORMAT', {}).get('type') == 'simple_timed_v1'
-              and abs(audio_length - current) > 0.25):
-            raise ValueError(f'Input voice is {audio_length:.3f}s but Scene Plan ends at {current:.3f}s. Fix the Scene Plan timing before exporting.')
-        elif abs(audio_length - current) > 1:
-            warnings.append(f'Voice length ({audio_length:.1f}s) differs from visual timeline ({current:.1f}s); timings need review.')
+            media[plan.narration_path]['duration'] = global_end
+            warnings.append('Voice duration could not be probed; final synchronization needs review in CapCut.')
     captions_mode = plan.sections.get('CAPTIONS', {})
     if captions_mode.get('caption_style', '').casefold() == 'karaoke':
         warnings.append('Karaoke word-highlighting cannot export: captions become plain editable CapCut subtitle clips.')
     if plan.sections.get('LOOK', {}).get('lut_enabled', '').casefold() == 'true':
         warnings.append('Scene Plan LUT cannot be exported by Z Studio draft writer; apply it in CapCut.')
     payload = {'name': plan.name, 'W': plan.width, 'H': plan.height, 'fps': plan.fps,
-               'images': images, 'captions': captions, 'voice': voice, 'music': [], 'sfx': []}
+               'images': images, 'captions': captions, 'voice': voice, 'music': [], 'sfx': [],
+               'separateLayers': True}
     return {'payload': payload, 'media': media, 'drafts_root': drafts_root, 'launch': launch}, warnings
 
 
-def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False) -> dict:
+# Default split policy: aim at six minutes, keep complete Scene Plan shots, and
+# never exceed seven minutes. The final remaining piece may be shorter than five.
+PART_MIN_SECONDS = 300.0
+PART_TARGET_SECONDS = 360.0
+PART_MAX_SECONDS = 420.0
+
+
+class Part(NamedTuple):
+    index: int
+    start_seconds: float
+    end_seconds: float
+    plan: Plan
+
+
+def split_into_parts(plan: Plan) -> list[Part]:
+    """Partition only at existing scene boundaries, without gaps or overlaps.
+
+    Prefer five-to-seven-minute parts when possible; penalize an unnecessarily
+    short final part. A single scene > 7 min is rejected instead of cut.
+    """
+    shots = list(timeline(plan))
+    if not shots:
+        raise ValueError('No scenes to export')
+    n = len(shots)
+    starts = [start for start, _, _ in shots]
+    ends = [end for _, end, _ in shots]
+    if any(end - start > PART_MAX_SECONDS + 0.002 for start, end, _ in shots):
+        raise ValueError('A scene exceeds 7 minutes. Split that scene in the Scene Plan first.')
+    # Last part can be shorter; other parts should be between 5-7 minutes.
+    # Minimize the number of parts first and keep durations near 6 minutes,
+    # with a large penalty for a very short leftover part.
+    best: list[tuple[float, list[tuple[int, int]]] | None] = [None] * (n + 1)
+    best[n] = (0.0, [])
+    for i in range(n - 1, -1, -1):
+        for j in range(i + 1, n + 1):
+            duration = round(ends[j - 1] - starts[i], 3)
+            if duration > PART_MAX_SECONDS + 0.002:
+                break
+            if j < n and duration < PART_MIN_SECONDS - 0.002:
+                continue
+            following = best[j]
+            if following is None:
+                continue
+            # Prefer proper 5-7m chunks; allow a final short tail when needed.
+            short_penalty = ((PART_MIN_SECONDS - duration) ** 2 * 10
+                             if duration < PART_MIN_SECONDS else 0)
+            score = following[0] + 10000 + (duration - PART_TARGET_SECONDS) ** 2 + short_penalty
+            if best[i] is None or score < best[i][0]:
+                best[i] = (score, [(i, j)] + following[1])
+    if best[0] is None:
+        raise ValueError('Cannot split at scene boundaries into <=7-minute parts; revise exceptionally long scenes.')
+    result = []
+    for index, (i, j) in enumerate(best[0][1], 1):
+        absolute_start = starts[i]
+        absolute_end = ends[j - 1]
+        sub = Plan.from_dict(plan.to_dict())
+        sub.name = f'{plan.name} - Part {index:02d}'
+        sub.shots = [replace(sh, start_seconds=round(start - absolute_start, 3))
+                     for start, _, sh in shots[i:j]]
+        result.append(Part(index, absolute_start, absolute_end, sub))
+    return result
+
+
+def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
+                  include_voice: bool = False) -> dict:
+    """Write one editable CapCut draft per part, not one whole-length project."""
     node = find_node()
     if not node:
-        raise RuntimeError('Node.js not available. Install Node or use Z Studio portable Node runtime; no project was modified.')
+        raise RuntimeError('Node.js not available. Install Node or use Z Studio portable Node runtime.')
     js = Path(__file__).with_name('capcut_bridge.js')
     engine = Path(__file__).with_name('capcut-draft.js')
     if not js.is_file() or not engine.is_file():
         raise RuntimeError('Z Studio CapCut engine missing from this distribution.')
-    request, warnings = build_request(plan, drafts_root, launch)
-    with tempfile.TemporaryDirectory(prefix='zb-capcut-') as directory:
-        input_path, output_path = Path(directory) / 'request.json', Path(directory) / 'result.json'
-        input_path.write_text(json.dumps(request, ensure_ascii=False), encoding='utf-8')
-        done = subprocess.run([node, str(js), str(input_path), str(output_path)],
-                              capture_output=True, text=True, timeout=1800)
-        if done.returncode and not output_path.is_file():
-            raise RuntimeError('CapCut draft creation failed:\n' + done.stderr[-2500:])
-        output = json.loads(output_path.read_text(encoding='utf-8'))
-        output['warnings'] = warnings + output.get('notes', [])
-        if done.returncode or output.get('verify_issues'):
-            raise RuntimeError('Draft written but failed verification:\n' + '\n'.join(output.get('verify_issues') or [done.stderr]))
-        write_timeline_csv(plan, Path(output['folder']) / 'Z_Builder_Timeline.csv')
-        (Path(output['folder']) / 'Z_Builder_Warnings.txt').write_text('\n'.join(output['warnings']) + '\n', encoding='utf-8')
-        return output
+    failures = preflight(plan)
+    if failures:
+        raise ValueError('Preflight blocked:\n' + '\n'.join(failures[:30]))
+    if include_voice and not plan.narration_path:
+        raise ValueError('Select Voice MP3/WAV or uncheck Include Voice in CapCut.')
+    parts = split_into_parts(plan)
+    prepared = []
+    for part in parts:
+        request, warnings = build_request(part.plan, drafts_root, False,
+                                         include_voice=include_voice, voice_source_start=part.start_seconds)
+        prepared.append((part, request, warnings))
+    output_parts = []
+    all_warnings = []
+    compatibility = {}
+    # Each part is verified before the next is created; on failure report exact
+    # created drafts, leaving them visible instead of secretly deleting data.
+    for part, request, warnings in prepared:
+        request['launch'] = launch and part.index == len(parts)
+        with tempfile.TemporaryDirectory(prefix='zb-capcut-') as directory:
+            input_path, output_path = Path(directory) / 'request.json', Path(directory) / 'result.json'
+            input_path.write_text(json.dumps(request, ensure_ascii=False), encoding='utf-8')
+            done = subprocess.run([node, str(js), str(input_path), str(output_path)],
+                                  capture_output=True, text=True, timeout=1800)
+            if done.returncode and not output_path.is_file():
+                created = '\n'.join(p['folder'] for p in output_parts)
+                raise RuntimeError(f'Part {part.index} failed. Earlier drafts remain:\n{created}\n' + done.stderr[-2500:])
+            out = json.loads(output_path.read_text(encoding='utf-8'))
+            combined_warnings = warnings + out.get('notes', [])
+            if done.returncode or out.get('verify_issues'):
+                raise RuntimeError(f'Part {part.index} failed verification at {out.get("folder", "?")}:\n'
+                                   + '\n'.join(out.get('verify_issues') or [done.stderr]))
+            folder = Path(out['folder'])
+            write_timeline_csv(part.plan, folder / 'Z_Builder_Timeline.csv')
+            (folder / 'Z_Builder_Warnings.txt').write_text('\n'.join(combined_warnings) + '\n', encoding='utf-8')
+            info = {'index': part.index, 'folder': str(folder),
+                    'original_start_seconds': part.start_seconds,
+                    'original_end_seconds': part.end_seconds,
+                    'duration_seconds': round(part.end_seconds - part.start_seconds, 3),
+                    'tracks': out['tracks'], 'segments': out['segments'],
+                    'voice_included': include_voice}
+            (folder / 'Z_Builder_Part_Info.json').write_text(json.dumps(info, indent=2), encoding='utf-8')
+            output_parts.append(info)
+            all_warnings += combined_warnings
+            compatibility = out.get('capcut', {})
+    return {'parts': output_parts, 'count': len(output_parts),
+            'warnings': list(dict.fromkeys(all_warnings)),
+            'capcut': compatibility, 'launched': bool(launch and output_parts)}

@@ -1,32 +1,24 @@
 name: Z Builder Windows Python Source
+
 on:
   push:
-    branches:
-      - main
-      - 'feature/z-builder-*'
     paths:
       - 'z_builder/**'
-      - 'launch_z_builder.py'
-      - 'start_z_builder.bat'
-      - 'EXAMPLE_SCENE_PLAN.txt'
-      - 'requirements-z-builder.txt'
       - 'tests/test_z_builder*.py'
+      - 'Z_BUILDER.md'
       - '.github/workflows/z-builder-source.yml'
   pull_request:
     paths:
       - 'z_builder/**'
-      - 'launch_z_builder.py'
-      - 'start_z_builder.bat'
-      - 'EXAMPLE_SCENE_PLAN.txt'
       - 'tests/test_z_builder*.py'
-  workflow_dispatch:
-
-permissions:
-  contents: read
+      - 'Z_BUILDER.md'
+      - '.github/workflows/z-builder-source.yml'
 
 jobs:
   source-and-tests:
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,24 +26,17 @@ jobs:
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
-      - name: Install video probe for real four-second media test
-        run: python -m pip install "imageio-ffmpeg>=0.5,<1"
-      - name: Validate syntax and run real Z Studio CapCut draft test
+          node-version: '22'
+      - name: Install test/runtime dependencies
+        run: python -m pip install -r requirements-z-builder.txt
+      - name: Validate syntax and run Z Studio draft integration tests
+        run: python -m unittest discover -s tests -p 'test_z_builder*.py' -v
+      - name: Make runnable Python source ZIP
         shell: pwsh
         run: |
-          python -m compileall -q z_builder launch_z_builder.py
-          python -m unittest discover -s tests -p 'test_z_builder*.py' -v
-      - name: Make runnable source ZIP (NO exe)
-        shell: pwsh
-        run: |
-          Compress-Archive -Path 'z_builder','launch_z_builder.py','start_z_builder.bat','requirements-z-builder.txt','Z_BUILDER.md','EXAMPLE_SCENE_PLAN.txt','tests/test_z_builder.py','tests/test_z_builder_timing.py' -DestinationPath 'Z-Builder-Windows-Python-Source.zip' -CompressionLevel Optimal
-          $hash = (Get-FileHash -Algorithm SHA256 'Z-Builder-Windows-Python-Source.zip').Hash
-          "$hash  Z-Builder-Windows-Python-Source.zip" | Out-File -Encoding ascii 'Z-Builder-Windows-Python-Source.sha256'
+          Compress-Archive -Path 'z_builder','launch_z_builder.py','start_z_builder.bat','requirements-z-builder.txt','Z_BUILDER.md','EXAMPLE_SCENE_PLAN.txt','tests/test_z_builder.py','tests/test_z_builder_timing.py','tests/test_z_builder_parts.py' -DestinationPath 'Z-Builder-Windows-Python-Source.zip' -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
-          name: Z-Builder-Windows-Python-Source
-          path: |
-            Z-Builder-Windows-Python-Source.zip
-            Z-Builder-Windows-Python-Source.sha256
-          if-no-files-found: error
+          name: Z-Builder-Windows-Python-Source-v3
+          path: Z-Builder-Windows-Python-Source.zip
+          retention-days: 30

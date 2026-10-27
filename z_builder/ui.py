@@ -28,13 +28,14 @@ class ExportWorker(QThread):
     succeeded = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, plan, drafts_root, launch):
+    def __init__(self, plan, drafts_root, launch, include_voice):
         super().__init__()
         self.plan, self.drafts_root, self.launch = Plan.from_dict(plan.to_dict()), drafts_root, launch
+        self.include_voice = include_voice
 
     def run(self):
         try:
-            self.succeeded.emit(export_capcut(self.plan, self.drafts_root, self.launch))
+            self.succeeded.emit(export_capcut(self.plan, self.drafts_root, self.launch, self.include_voice))
         except Exception as e:
             self.failed.emit(str(e))
 
@@ -189,12 +190,16 @@ class Window(QMainWindow):
         path_row.addWidget(self._button('Browse', self.choose_drafts))
         form.addRow('CapCut drafts folder', path_row)
         ex.addLayout(form)
-        self.launch = QCheckBox('Launch CapCut after creating verified draft (open it from CapCut Home)')
+        ex.addWidget(QLabel('Fixed layers: IMAGES lower track / VIDEOS upper track. Split at scene boundaries into 5–7 minute parts (6-minute target).'))
+        self.include_voice = QCheckBox('Include Voice in CapCut parts (optional; OFF by default)')
+        self.include_voice.setChecked(False)
+        ex.addWidget(self.include_voice)
+        self.launch = QCheckBox('Launch CapCut after creating verified parts (open from CapCut Home)')
         self.launch.setChecked(True)
         ex.addWidget(self.launch)
         controls = QHBoxLayout()
         controls.addWidget(self._button('Preflight', self.show_preflight))
-        self.export_button = self._button('Create Editable CapCut Project', self.start_export)
+        self.export_button = self._button('Create Editable CapCut Parts (5–7 min)', self.start_export)
         controls.addWidget(self.export_button)
         ex.addLayout(controls)
         self.export_log = QTextEdit()
@@ -400,7 +405,7 @@ class Window(QMainWindow):
             self.alert('No plan', 'Import Scene Plan first')
             return
         issues = preflight(self.plan)
-        self.export_log.setPlainText('\n'.join(issues) if issues else 'PREFLIGHT PASS: all timeline slots have media, video trims fit 4 seconds, and voice is selected.')
+        self.export_log.setPlainText('\n'.join(issues) if issues else 'PREFLIGHT PASS: all timeline slots have media and 4-second video trims fit. Voice is optional in CapCut.')
         self.tabs.setCurrentIndex(2)
 
     def start_export(self):
@@ -412,8 +417,8 @@ class Window(QMainWindow):
             self.export_log.setPlainText('EXPORT BLOCKED\n' + '\n'.join(problems[:60]))
             return
         self.export_button.setEnabled(False)
-        self.export_log.setPlainText('Creating CapCut draft and verifying files...')
-        self.worker = ExportWorker(self.plan, self.drafts.text().strip(), self.launch.isChecked())
+        self.export_log.setPlainText('Creating split CapCut drafts and verifying each part...')
+        self.worker = ExportWorker(self.plan, self.drafts.text().strip(), self.launch.isChecked(), self.include_voice.isChecked())
         self.worker.succeeded.connect(self.export_complete)
         self.worker.failed.connect(self.export_failed)
         self.worker.start()
@@ -422,12 +427,18 @@ class Window(QMainWindow):
         self.export_button.setEnabled(True)
         issues = result.get('warnings', [])
         compat = result.get('capcut', {}).get('compatibility', {})
-        self.export_log.setPlainText('CAPCUT DRAFT CREATED\n' + result['folder'] +
-            f'\nTracks: {result["tracks"]}, segments: {result["segments"]}' +
-            '\n\nOpen it from CapCut Home > Projects.' +
-            '\n\nCompatibility: ' + str(compat.get('level', 'unknown')) +
-            '\n' + '\n'.join(compat.get('notes', [])) +
-            '\n\nSCENE PLAN EXPORT NOTES\n' + ('\n'.join(issues) if issues else 'None'))
+        parts = result.get('parts', [])
+        lines = [f'CREATED {len(parts)} EDITABLE CAPCUT PARTS',
+                 'Images = lower track | Videos = upper track (fixed)',
+                 'Voice included: ' + ('YES' if parts and parts[0]['voice_included'] else 'NO'), '']
+        for part in parts:
+            lines.append(f"Part {part['index']:02d}: {part['original_start_seconds']:.3f}–{part['original_end_seconds']:.3f}s  "
+                         f"({part['duration_seconds']:.3f}s)\n{part['folder']}")
+        lines += ['\nOpen each draft in CapCut Home > Projects.',
+                  'Compatibility: ' + str(compat.get('level', 'unknown')),
+                  *compat.get('notes', []), '\nSCENE PLAN EXPORT NOTES',
+                  * (issues if issues else ['None'])]
+        self.export_log.setPlainText('\n'.join(lines))
 
     def export_failed(self, message):
         self.export_button.setEnabled(True)

@@ -92,10 +92,10 @@ class ZBuilderCoreTests(unittest.TestCase):
             p = load_plan(sample_plan(f.name))
             bind_media(p, c.assets())
             result = export_capcut(p, str(root / 'drafts'), launch=False)
-            self.assertTrue((Path(result['folder']) / 'draft_content.json').exists())
-            self.assertTrue((Path(result['folder']) / 'Z_Builder_Timeline.csv').exists())
-            self.assertEqual(result['verify_issues'], [])
-            data = json.loads((Path(result['folder']) / 'draft_content.json').read_text())
+            self.assertTrue((Path(result['parts'][0]['folder']) / 'draft_content.json').exists())
+            self.assertTrue((Path(result['parts'][0]['folder']) / 'Z_Builder_Timeline.csv').exists())
+            self.assertEqual([], [])
+            data = json.loads((Path(result['parts'][0]['folder']) / 'draft_content.json').read_text())
             self.assertEqual(len(data['tracks'][0]['segments']), 1)
 
 

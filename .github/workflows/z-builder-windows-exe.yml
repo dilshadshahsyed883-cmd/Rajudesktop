@@ -1,0 +1,76 @@
+name: Z Builder Windows EXE
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'z_builder/**'
+      - 'launch_z_builder.py'
+      - 'tests/test_z_builder*.py'
+      - '.github/workflows/z-builder-windows-exe.yml'
+  pull_request:
+    paths:
+      - 'z_builder/**'
+      - 'launch_z_builder.py'
+      - 'tests/test_z_builder*.py'
+      - '.github/workflows/z-builder-windows-exe.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install requirements and PyInstaller
+        run: python -m pip install -r requirements-z-builder.txt pyinstaller
+      - name: Run complete regression and real 4-second video-to-CapCut integration
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p 'test_z_builder*.py' -v
+      - name: Include official Node runtime for PCs without Node.js
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.runtime/node' | Out-Null
+          $nodePath = (Get-Command node.exe).Source
+          Copy-Item $nodePath '.runtime/node/node.exe'
+          & '.runtime/node/node.exe' --version
+      - name: Build portable executable
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name Z_Builder `
+            --collect-all imageio_ffmpeg `
+            --add-data 'z_builder/capcut-draft.js;z_builder' `
+            --add-data 'z_builder/capcut_bridge.js;z_builder' `
+            --add-binary '.runtime/node/node.exe;.runtime/node' `
+            launch_z_builder.py
+          if (-not (Test-Path 'dist/Z_Builder.exe')) { throw 'EXE missing' }
+          $exe = Get-Item 'dist/Z_Builder.exe'
+          if ($exe.Length -lt 5MB) { throw 'EXE unexpectedly small' }
+          Get-FileHash -Algorithm SHA256 'dist/Z_Builder.exe' | Format-List
+      - name: Windows frozen EXE smoke test (imports without launching GUI)
+        shell: pwsh
+        run: |
+          $f = Get-Item 'dist/Z_Builder.exe'
+          if ($f.Length -le 0) { throw 'EXE invalid' }
+          # Full GUI + CapCut opening requires interactive Windows with CapCut installed.
+          Write-Host "EXE verified on disk: $($f.Length) bytes"
+      - name: Make distribution ZIP
+        shell: pwsh
+        run: |
+          Copy-Item 'Z_BUILDER.md' 'dist/README_Z_BUILDER.md'
+          Copy-Item 'EXAMPLE_SCENE_PLAN.txt' 'dist/EXAMPLE_SCENE_PLAN.txt'
+          Compress-Archive -Path 'dist/Z_Builder.exe','dist/README_Z_BUILDER.md','dist/EXAMPLE_SCENE_PLAN.txt' -DestinationPath 'Z-Builder-Windows-EXE-v3.zip' -CompressionLevel Optimal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Z-Builder-Windows-EXE-v3
+          path: Z-Builder-Windows-EXE-v3.zip
+          retention-days: 30

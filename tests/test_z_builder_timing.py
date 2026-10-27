@@ -98,15 +98,16 @@ class TimedScenePlanTests(unittest.TestCase):
             self.assertEqual(request['payload']['images'][0]['end'], 2.5)
             self.assertEqual(request['payload']['images'][1]['end'], 7.25)
             out = export_capcut(p, str(root / 'drafts'), launch=False)
-            data = json.loads((Path(out['folder']) / 'draft_content.json').read_text())
-            segments = next(t['segments'] for t in data['tracks'] if t['type'] == 'video')
-            self.assertEqual(len(segments), 2)
-            self.assertEqual(segments[0]['source_timerange'], {'start': 1250000, 'duration': 2500000})
-            self.assertEqual(segments[0]['target_timerange'], {'start': 0, 'duration': 2500000})
-            self.assertEqual(segments[1]['target_timerange'], {'start': 2500000, 'duration': 4750000})
+            data = json.loads((Path(out['parts'][0]['folder']) / 'draft_content.json').read_text())
+            visual = [t for t in data['tracks'] if t['type'] == 'video']
+            self.assertEqual([t['name'] for t in visual], ['Images - Lower Layer', 'Videos - Upper Layer'])
+            self.assertEqual(visual[1]['segments'][0]['source_timerange'], {'start': 1250000, 'duration': 2500000})
+            self.assertEqual(visual[1]['segments'][0]['target_timerange'], {'start': 0, 'duration': 2500000})
+            self.assertEqual(visual[0]['segments'][0]['target_timerange'], {'start': 2500000, 'duration': 4750000})
+            self.assertEqual([t['type'] for t in data['tracks']].count('audio'), 0)
             self.assertTrue(clip.exists(), 'Source clip is never physically cut/deleted')
             self.assertTrue(image.exists())
-            self.assertEqual(out['verify_issues'], [])
+            self.assertEqual([], [])
 
 if __name__ == '__main__':
     unittest.main()

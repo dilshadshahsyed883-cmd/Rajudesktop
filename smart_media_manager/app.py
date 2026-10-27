@@ -1,4 +1,4 @@
-"""One offline Windows application with three independent media tool tabs.
+"""One Windows application with four independent media tool tabs.
 
 Existing production-tested processing cores remain the single source of truth.
 No operation silently deletes originals or overwrites outputs.
@@ -21,6 +21,7 @@ from image_renamer.core import (
     scan_folder as image_scan_folder, natural_key as image_natural_key, undo_last as image_undo_last,
 )
 from smart_clip_renamer.core import RenamerError, create_plan as clip_create_plan, execute_plan as clip_execute_plan
+from smart_media_manager.youtube_downloader import YoutubeTab
 from video_clip_cutter.core import (
     default_output_folder, prepare_job, process_job, read_settings, write_settings,
 )
@@ -521,7 +522,7 @@ class SmartMediaManager(tk.Tk):
         header.pack_propagate(False)
         tk.Label(header, text="SMART MEDIA MANAGER", fg="white", bg=NAVY,
                  font=("Segoe UI", 19, "bold")).pack(anchor="w", padx=28, pady=(14, 0))
-        tk.Label(header, text="RAJU DESKTOP  •  3 tools  •  Local Windows processing",
+        tk.Label(header, text="RAJU DESKTOP  •  4 tools  •  Local Windows processing",
                  fg="#b8cbea", bg=NAVY, font=("Segoe UI", 10)).pack(anchor="w", padx=30, pady=(3, 0))
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=14, pady=12)
@@ -530,8 +531,9 @@ class SmartMediaManager(tk.Tk):
             CutterTab(notebook, preferences),
             ImagesTab(notebook, preferences),
             ClipsTab(notebook, preferences),
+            YoutubeTab(notebook, preferences),
         ]
-        for tab, title in zip(self.tabs, ("Video Clip Cutter", "Image Renamer", "Smart Clip Renamer")):
+        for tab, title in zip(self.tabs, ("Video Clip Cutter", "Image Renamer", "Smart Clip Renamer", "YouTube Downloader")):
             notebook.add(tab, text=title)
         self.protocol("WM_DELETE_WINDOW", self.close)
 

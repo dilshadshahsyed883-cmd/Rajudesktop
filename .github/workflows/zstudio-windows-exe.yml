@@ -47,7 +47,7 @@ jobs:
       - name: Validate generated executables
         shell: pwsh
         run: |
-          $files = @(Get-ChildItem -Path dist/z-studio-video-editor -Filter *.exe -Recurse)
+          $files = @(Get-ChildItem -Path dist/z-studio-video-editor -Filter Z-Studio-Video-Editor-*.exe -File)
           if ($files.Count -ne 2) { throw "Expected exactly 2 EXE files, got $($files.Count)" }
           foreach($f in $files) {
             $s = [IO.File]::OpenRead($f.FullName)

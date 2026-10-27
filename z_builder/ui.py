@@ -1,4 +1,4 @@
-"""Z Builder Windows UI: Media Library / Director V25 / shot assignment / CapCut.
+"""Z Builder three-step Windows UI: timed plan+voice, library and timeline, CapCut.
 CapCut draft files are created only on explicit user action.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget
 )
 
-from .core import Catalog, Plan, bind_media, kind_of, load_plan, open_project, preflight, save_project
+from .core import Catalog, Plan, bind_media, kind_of, load_plan, open_project, preflight, save_project, timeline
 from .capcut import export_capcut
 
 
@@ -47,6 +47,7 @@ class Window(QMainWindow):
         self.home.mkdir(parents=True, exist_ok=True)
         self.catalog = Catalog(self.home / 'library.sqlite3')
         self.plan: Plan | None = None
+        self.pending_voice = ''
         self.worker = None
         self.assets = []
         self.setWindowTitle('Z Builder — Scene Plan · Media Library · CapCut')
@@ -75,7 +76,7 @@ class Window(QMainWindow):
         title = QLabel('Z BUILDER')
         title.setStyleSheet('font-size:26px;font-weight:800;color:#eff6ff;')
         outer.addWidget(title)
-        subtitle = QLabel('Director V25  •  Local Media Library  •  Scene Matching  •  Editable CapCut Draft')
+        subtitle = QLabel('1  Input: Scene Plan + Voice    →    2  Select Media + Build Timeline    →    3  Open in CapCut')
         outer.addWidget(subtitle)
         self.tabs = QTabWidget()
         outer.addWidget(self.tabs, 1)
@@ -134,24 +135,30 @@ class Window(QMainWindow):
         split.addWidget(side)
         split.setSizes([970, 360])
         media_layout.addWidget(split, 1)
-        self.tabs.addTab(self.media_tab, '1  Media Library')
+        # Scene Media Library is included inside the Media Selection step.
 
         plan_tab = QWidget()
         pl = QVBoxLayout(plan_tab)
         b = QHBoxLayout()
-        b.addWidget(self._button('Import Director V25 TXT', self.import_plan))
+        b.addWidget(self._button('Import Simple Scene Plan TXT', self.import_plan))
         b.addWidget(self._button('Open Z Builder Project', self.open_project))
         b.addWidget(self._button('Save Z Builder Project', self.save_project))
         pl.addLayout(b)
-        self.plan_info = QLabel('Import SCENE_PLAN_VERSION=2 TXT to begin. Scene Plan is the authoritative settings source.')
+        self.plan_info = QLabel('Simple plan: 00:00 --> 00:02.500 | video | clip1.mp4 | in=0.500  (or  | image | photo.jpg)')
+        voice_row = QHBoxLayout()
+        voice_row.addWidget(self._button('Choose Voice MP3/WAV', self.choose_voice))
+        self.voice_info = QLabel('No narration selected')
+        voice_row.addWidget(self.voice_info, 1)
+        pl.addLayout(voice_row)
         pl.addWidget(self.plan_info)
-        self.plan_table = self._table(['Shot', 'Duration', 'Library filename', 'Pexels query', 'Animation', 'Spoken words'])
+        self.plan_table = self._table(['Shot', 'Start–End', 'Media type', 'Requested file / keyword', 'Source in', 'Duration'])
         pl.addWidget(self.plan_table, 1)
         self.plan_warnings = QTextEdit()
         self.plan_warnings.setReadOnly(True)
         self.plan_warnings.setMaximumHeight(180)
         pl.addWidget(self.plan_warnings)
-        self.tabs.addTab(plan_tab, '2  Director Scene Plan')
+        pl.addWidget(self._button('Next → Select Media and Build Timeline', self.go_media_selection))
+        self.tabs.addTab(plan_tab, '1  Input — Scene Plan + Voice')
 
         select_tab = QWidget()
         sel = QVBoxLayout(select_tab)
@@ -161,18 +168,19 @@ class Window(QMainWindow):
         self.match_count = QLabel('No scene plan')
         buttons.addWidget(self.match_count, 1)
         sel.addLayout(buttons)
-        self.match_table = self._table(['Shot', 'Planned filename', 'Matched media', 'Source', 'Status'])
+        self.match_table = self._table(['Shot', 'Start–End', 'Requested', 'Matched media', 'Source trim', 'Status'])
         self.match_table.itemDoubleClicked.connect(lambda _: self.replace_selected())
         sel.addWidget(self.match_table, 1)
-        sel.addWidget(QLabel('Library Only never contacts Pexels. Library First marks Pexels keywords as pending; download/import a replacement before exporting.'))
-        self.tabs.addTab(select_tab, '3  Media Selection')
+        sel.addWidget(QLabel('4-sec videos are trimmed to the exact scene slot without changing source files. Images hold for the whole slot.'))
+        sel.addWidget(self._button('Next → Open in CapCut', self.go_capcut))
+        self.select_tabs = QTabWidget()
+        self.select_tabs.addTab(select_tab, 'Scene Timeline')
+        self.select_tabs.addTab(self.media_tab, 'Media Library')
+        self.tabs.addTab(self.select_tabs, '2  Media Selection + Timeline')
 
         export_tab = QWidget()
         ex = QVBoxLayout(export_tab)
         ex.addWidget(QLabel('CapCut Desktop Export — source assets remain untouched; a new CapCut draft is created.'))
-        ex.addWidget(self._button('Choose Narration WAV/MP3 (optional)', self.choose_voice))
-        self.voice_info = QLabel('No narration selected')
-        ex.addWidget(self.voice_info)
         form = QFormLayout()
         path_row = QHBoxLayout()
         self.drafts = QLineEdit()
@@ -193,7 +201,7 @@ class Window(QMainWindow):
         self.export_log.setReadOnly(True)
         self.export_log.setText('Native CapCut draft writing follows the Z Studio 9.4 format. CapCut version compatibility must be checked on your PC.')
         ex.addWidget(self.export_log, 1)
-        self.tabs.addTab(export_tab, '4  Open in CapCut')
+        self.tabs.addTab(export_tab, '3  Open in CapCut')
         self.statusBar().showMessage('Ready — catalog is local to Documents/Z Builder')
 
     def alert(self, title, message):
@@ -281,12 +289,14 @@ class Window(QMainWindow):
             self.statusBar().showMessage(f'Summary saved: {path}')
 
     def import_plan(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Import V25 Director TXT', '', 'Scene Plan (*.txt *.ini)')
+        path, _ = QFileDialog.getOpenFileName(self, 'Import timed Scene Plan TXT', '', 'Scene Plan (*.txt *.ini)')
         if path:
             try:
                 self.plan = load_plan(Path(path).read_text(encoding='utf-8-sig'))
+                if self.pending_voice:
+                    self.plan.narration_path = self.pending_voice
                 self.match_all()
-                self.tabs.setCurrentIndex(1)
+                self.tabs.setCurrentIndex(0)
             except Exception as e:
                 self.alert('Invalid Scene Plan', str(e))
 
@@ -296,16 +306,21 @@ class Window(QMainWindow):
         p = self.plan
         self.plan_info.setText(f'{p.name}  •  {p.source_mode}  •  {p.width}×{p.height}  •  {p.fps} FPS  •  {len(p.shots)} shots  •  {p.duration:.1f}s')
         self.plan_table.setRowCount(len(p.shots))
-        for i, shot in enumerate(p.shots):
-            for c, val in enumerate([shot.section, str(shot.duration), shot.filename or 'none',
-                                     shot.pexels_keyword, shot.animation, shot.narration]):
+        for i, (start, end, shot) in enumerate(timeline(p)):
+            for c, val in enumerate([shot.section, f'{start:.3f}–{end:.3f}', shot.media_type,
+                                     shot.filename or 'keyword: ' + shot.keyword,
+                                     f'{shot.source_in_seconds:.3f}s' if shot.media_type == 'video' else '—',
+                                     f'{shot.duration:.3f}s']):
                 self.plan_table.setItem(i, c, QTableWidgetItem(val))
-        self.plan_warnings.setPlainText('\n'.join(p.warnings[:150]) or 'No plan timing warnings')
+        warnings = list(p.warnings)
+        warnings += [f'{shot.section}: video requires {shot.source_in_seconds + shot.duration:.3f}s from a 4-second source; shorten/reselect' for shot in p.shots
+                     if shot.media_type == 'video' and shot.source_in_seconds + shot.duration > 4.002]
+        self.plan_warnings.setPlainText('\n'.join(warnings[:150]) or 'Scene Plan timing validated')
         self.voice_info.setText(p.narration_path or 'No narration selected')
 
     def match_all(self):
         if not self.plan:
-            self.alert('No plan', 'Import a Director V25 Scene Plan first')
+            self.alert('No plan', 'Import a Scene Plan first')
             return
         issues = bind_media(self.plan, self.catalog.assets())
         self.display_plan()
@@ -354,13 +369,26 @@ class Window(QMainWindow):
                 self.alert('Cannot open project', str(e))
 
     def choose_voice(self):
-        if not self.plan:
-            self.alert('No plan', 'Import Scene Plan first')
-            return
         file, _ = QFileDialog.getOpenFileName(self, 'Choose narration', '', 'Audio (*.wav *.mp3 *.aac *.m4a)')
         if file:
-            self.plan.narration_path = file
+            self.pending_voice = file
+            if self.plan:
+                self.plan.narration_path = file
             self.voice_info.setText(file)
+
+    def go_media_selection(self):
+        if not self.plan:
+            self.alert('Input required', 'Import a Scene Plan first')
+            return
+        self.match_all()
+        self.select_tabs.setCurrentIndex(0)
+        self.tabs.setCurrentIndex(1)
+
+    def go_capcut(self):
+        if not self.plan:
+            self.alert('Input required', 'Import a Scene Plan first')
+            return
+        self.show_preflight()
 
     def choose_drafts(self):
         folder = QFileDialog.getExistingDirectory(self, 'Select CapCut draft folder')
@@ -372,8 +400,8 @@ class Window(QMainWindow):
             self.alert('No plan', 'Import Scene Plan first')
             return
         issues = preflight(self.plan)
-        self.export_log.setPlainText('\n'.join(issues) if issues else 'PREFLIGHT PASS: all planned shots reference existing matching media.\nReview timing and unsupported V25 effects after export.')
-        self.tabs.setCurrentIndex(3)
+        self.export_log.setPlainText('\n'.join(issues) if issues else 'PREFLIGHT PASS: all timeline slots have media, video trims fit 4 seconds, and voice is selected.')
+        self.tabs.setCurrentIndex(2)
 
     def start_export(self):
         if not self.plan:

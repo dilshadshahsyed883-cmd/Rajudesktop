@@ -1,0 +1,9 @@
+# Z Builder simple timed plan — images hold, videos are trimmed from 4-second clips
+# Replace these filenames with your own local library media.
+name=My First Z Builder Project
+aspect=16:9
+resolution=1080p
+fps=30
+00:00.000 --> 00:02.500 | video | Clip 1.mp4 | in=0
+00:02.500 --> 00:06.000 | image | Poster 1.jpg
+00:06.000 --> 00:08.500 | video | keyword: tennis | in=0.500

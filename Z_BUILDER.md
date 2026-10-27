@@ -1,30 +1,51 @@
-# Z Builder — Standalone Windows Scene Plan to CapCut
+# Z Builder — Scene Plan + Voice → Media Selection & Timeline → Open in CapCut
 
-Z Builder combines **Director V25 Scene Plan**, a **local Media Library**, deterministic **shot-by-shot media matching**, and the **original Z Studio CapCut draft writer**. It does not modify the VPS Scene Builder, SML or Z Studio.
+A **small standalone Windows desktop app**, not a copy of the complete VPS Scene Builder. The UI has **three steps**:
 
-## Run (source, no EXE)
+1. **Input:** load a simple timed Scene Plan `.txt` and the final MP3/WAV voice file.
+2. **Media Selection & Timeline:** select images/videos from the local Media Library (import folder/files, preview, tags, downloadable media summary). Exact filenames are matched automatically; keywords match only when an unambiguous item exists. Replace any selected shot manually. The preview table shows every planned start/end, video trim and image hold.
+3. **Open in CapCut:** preflight voice/media/shot timings, create a new editable CapCut project using the **original Z Studio draft writer**, and open CapCut if available. The resulting project appears under CapCut Home → Projects.
 
-1. Extract ZIP and double-click `start_z_builder.bat` (or `pip install -r requirements-z-builder.txt && python launch_z_builder.py`). Python 3.11+ recommended.
-2. The launcher reuses installed Node.js or downloads verified official portable Node.js (first launch only, internet required). The **native CapCut draft export** uses Z Studio's original pure-Node `capcut-draft.js`; no rewriting of CapCut's fragile JSON format.
-3. Import a folder of images/videos; optional tags; download catalog summary TXT.
-4. Import Director V25 TXT (`SCENE_PLAN_VERSION=2`). Review provisional shot duration warnings.
-5. In Media Selection, match **exact approved filenames** or manually replace missing/ambiguous scenes.
-6. Add optional voice narration, run preflight, and choose **Create Editable CapCut Project**. It appears in **CapCut Home > Projects**; CapCut has no supported deep link to open one draft directly.
+## Simple Scene Plan format
 
-The local catalog DB is under `Documents/Z Builder/library.sqlite3`. Import never moves/deletes original assets. The CapCut exporter copies only referenced media into a new draft folder and verifies it. Deleting catalog entries only removes their database records.
+See `EXAMPLE_SCENE_PLAN.txt` in the ZIP:
 
-## Source handling and limitations
+```text
+name=My Video
+aspect=16:9
+fps=30
+00:00.000 --> 00:02.500 | video | Clip 1.mp4 | in=1.250
+00:02.500 --> 00:07.250 | image | Poster 1.jpg
+00:07.250 --> 00:09.000 | video | keyword: tennis | in=0
+```
 
-- `library_only`: unresolved shots block export. **Never** calls Pexels.
-- `scene_first`: unresolved shots explicitly show the V25 Pexels query but are **not silently downloaded**. Manually supply matching footage before export. External stock search needs a separate API-backed implementation.
-- V25 `animation_duration` is used as a **provisional** shot duration only if no explicit `shot_duration_seconds` / `duration_seconds` exists. It is not an automatic speech-to-time alignment engine.
-- The implemented keyframe animations are `pan_left`, `pan_right`, `right_zoom`, `zoom_1`, `zoom_in`, `zoom_out`; unsupported animation types remain warnings, not fake successful effects.
-- Non-cut transitions, LUTs and karaoke word highlighting are **not carried into CapCut** by the original Z Studio writer. Their omissions are listed in each exported draft's `Z_Builder_Warnings.txt`; spoken scene text is exported as simple editable caption blocks.
-- Z Studio's CapCut draft layout was derived from CapCut 9.4. Newer/other installed CapCut versions may be incompatible; desktop confirmation is necessary. No installed CapCut is required for unit testing drafts to a chosen folder.
-- Source-video audio is muted to avoid overlapping narration, but the separate narration audio track is preserved when supplied. Video duration probing uses bundled imageio-ffmpeg (or FFprobe/FFmpeg on PATH) for accurate source trim/duration; run preflight after media assignment.
+Each row specifies **exact target timeline start and end**, the media type, and an **exact filename** or `keyword: ...` for automatic media selection. Videos may optionally specify `in=` to choose where to start inside the source clip (seconds). `text=...` adds an optional editable CapCut text caption. `resolution=1080p`/`720p` and `aspect=16:9`/`9:16` are optional. Times support SS, MM:SS or HH:MM:SS and up to three decimal places. Original `SCENE_PLAN_VERSION=2` plans remain accepted as a legacy compatibility format.
+
+**The Scene Plan is the sole timing authority.** The timeline must start at 00:00.000 and have no gaps/overlaps. Voice length is checked against the total scene duration if the audio duration is readable (difference over 0.25 seconds blocks export).
+
+### Four-second video source rule
+
+All source video clips are assumed to be **4 seconds maximum**. For a **2.5-second scene**, Z Builder sets the source range to **2.5 seconds**, not four; if `in=1.250`, it uses source **1.250–3.750**, placed at the scene's exact target range. Images simply hold as long as their scenes require (even more than 4 seconds).
+
+- No source media is cut or overwritten on disk; CapCut's editable source and target time ranges perform the trims.
+- If `source in + required scene duration` exceeds 4 seconds, export is blocked. No speed-up, slow-motion, frozen footage or silent stretching.
+- Real video file duration is checked at export when FFmpeg/FFprobe is available. If duration cannot be probed, the source is assumed to be 4 seconds **with a warning**.
+- For a scene longer than the available video, split the scene into smaller slots with additional media or use an image. One four-second clip is never stretched to fill it.
+
+## Run (Python files only, no EXE)
+
+1. Extract the ZIP to a folder on Windows.
+2. Double-click `start_z_builder.bat`. Python 3.11+ is recommended. This installs Python dependencies only when missing and uses installed Node or a verified official portable Node.js (internet needed for first setup).
+3. Import a media folder in **2 → Media Library**, add the Scene Plan and voice in **1 → Input**, then click Next to inspect and resolve the timeline. Click **3 → Open in CapCut** after preflight.
+
+The app's media catalog is stored in `Documents/Z Builder/library.sqlite3`. Original files are never moved/deleted by the catalog. CapCut export copies referenced files into a new draft; it does not modify any existing draft or the original Z Studio.
+
+## Compatibility limitations
+
+The Z Studio CapCut draft layout is based on CapCut 9.4 and needs testing against installed CapCut versions. CapCut offers no supported direct deep-link to open a specific project; the app starts CapCut, and the newly created project is chosen on its Home screen. Non-cut transitions, LUTs and word-level karaoke effects are not included by the native Z Studio exporter. They are reported as warnings rather than silently faked. Automatic Pexels download is out of scope; the library supplies the media. Only scene timing, source trims, media choices, optional captions and the supplied voice are sent to CapCut. Existing VPS Scene Builder remains unchanged.
 
 ## Tests
 
-`python -m unittest discover -s tests -p 'test_z_builder.py' -v`
+`python -m unittest discover -s tests -p 'test_z_builder*.py' -v`
 
-The portable source ZIP includes the Z Studio CapCut module, which retains its original header comments and attribution. There is no proprietary Z Studio licensing logic or credentials included.
+Includes a real 4-second video → 2.5-second CapCut source trim / correct target times / image hold / voice timeline integration test when FFmpeg and Node are installed.

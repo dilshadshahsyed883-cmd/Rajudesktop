@@ -1,0 +1,49 @@
+name: Z Builder Windows Python Source
+on:
+  push:
+    branches:
+      - feature/z-builder-v1-20261027
+    paths:
+      - 'z_builder/**'
+      - 'launch_z_builder.py'
+      - 'start_z_builder.bat'
+      - 'requirements-z-builder.txt'
+      - 'tests/test_z_builder.py'
+      - '.github/workflows/z-builder-source.yml'
+  pull_request:
+    paths:
+      - 'z_builder/**'
+      - 'launch_z_builder.py'
+      - 'start_z_builder.bat'
+      - 'tests/test_z_builder.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate syntax and run real Z Studio CapCut draft test
+        shell: pwsh
+        run: |
+          python -m compileall -q z_builder launch_z_builder.py
+          python -m unittest discover -s tests -p 'test_z_builder.py' -v
+      - name: Make runnable source ZIP (NO exe)
+        shell: pwsh
+        run: |
+          Compress-Archive -Path 'z_builder','launch_z_builder.py','start_z_builder.bat','requirements-z-builder.txt','Z_BUILDER.md' -DestinationPath 'Z-Builder-Windows-Python-Source.zip' -CompressionLevel Optimal
+          $hash = (Get-FileHash -Algorithm SHA256 'Z-Builder-Windows-Python-Source.zip').Hash
+          "$hash  Z-Builder-Windows-Python-Source.zip" | Out-File -Encoding ascii 'Z-Builder-Windows-Python-Source.sha256'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Z-Builder-Windows-Python-Source
+          path: |
+            Z-Builder-Windows-Python-Source.zip
+            Z-Builder-Windows-Python-Source.sha256
+          if-no-files-found: error

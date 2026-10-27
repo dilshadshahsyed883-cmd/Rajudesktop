@@ -14,7 +14,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QDoubleSpinBox,
     QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget,
     QTextEdit, QVBoxLayout, QWidget
@@ -98,6 +98,10 @@ class Window(QMainWindow):
         mcontrols.addWidget(self._button('Import Folder', self.import_folder))
         mcontrols.addWidget(self._button('Import Files', self.import_files))
         mcontrols.addWidget(self._button('Download Summary .txt', self.save_summary))
+        self.media_filter = QComboBox()
+        self.media_filter.addItems(['All Media', 'Images', 'Videos'])
+        self.media_filter.currentIndexChanged.connect(self.refresh_library)
+        mcontrols.addWidget(self.media_filter)
         self.media_count = QLabel()
         mcontrols.addWidget(self.media_count, 1)
         media_layout.addLayout(mcontrols)
@@ -221,8 +225,10 @@ class Window(QMainWindow):
 
     def refresh_library(self):
         self.assets = self.catalog.assets()
-        self.media_table.setRowCount(len(self.assets))
-        for i, a in enumerate(self.assets):
+        choice = self.media_filter.currentIndex()
+        self.visible_assets = [a for a in self.assets if choice == 0 or a['kind'] == ('image' if choice == 1 else 'video')]
+        self.media_table.setRowCount(len(self.visible_assets))
+        for i, a in enumerate(self.visible_assets):
             status = 'Ready' if a['approved'] and a['exists'] else 'Missing / unapproved'
             for col, val in enumerate([a['filename'], a['kind'], status, a['tags'], a['path']]):
                 self.media_table.setItem(i, col, QTableWidgetItem(str(val)))
@@ -234,9 +240,9 @@ class Window(QMainWindow):
 
     def select_library(self):
         row = self.media_table.currentRow()
-        if row < 0 or row >= len(self.assets):
+        if row < 0 or row >= len(self.visible_assets):
             return
-        a = self.assets[row]
+        a = self.visible_assets[row]
         self.tags.setText(a['tags'])
         self.player.stop()
         self.preview.setCurrentWidget(self.image)
@@ -258,14 +264,14 @@ class Window(QMainWindow):
 
     def save_tags(self):
         row = self.media_table.currentRow()
-        if 0 <= row < len(self.assets):
-            self.catalog.update_tags(self.assets[row]['id'], self.tags.text())
+        if 0 <= row < len(self.visible_assets):
+            self.catalog.update_tags(self.visible_assets[row]['id'], self.tags.text())
             self.refresh_library()
 
     def remove_catalog_item(self):
         row = self.media_table.currentRow()
-        if 0 <= row < len(self.assets):
-            self.catalog.remove(self.assets[row]['id'])
+        if 0 <= row < len(self.visible_assets):
+            self.catalog.remove(self.visible_assets[row]['id'])
             self.refresh_library()
 
     def save_summary(self):

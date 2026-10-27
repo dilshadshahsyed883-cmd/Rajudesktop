@@ -55,6 +55,12 @@ def probe(path: str) -> dict:
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
     exe = shutil.which('ffmpeg')
+    if not exe:
+        try:
+            import imageio_ffmpeg
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except (ImportError, OSError, RuntimeError):
+            pass
     if exe:
         try:
             p = subprocess.run([exe, '-hide_banner', '-i', path], capture_output=True, text=True, timeout=25)
@@ -113,6 +119,9 @@ def build_request(plan: Plan, drafts_root: str = '', launch: bool = False) -> tu
                              'end': round(current + shot.duration, 3), 'pos': 'bottom',
                              'size': 45, 'color': '#ffffff', 'weight': 'bold'})
         media.setdefault(shot.assigned_path, probe(shot.assigned_path))
+        if shot.media_type == 'video' and not media[shot.assigned_path]['duration']:
+            media[shot.assigned_path]['duration'] = shot.duration
+            warnings.append(f'{shot.section}: source video duration could not be probed; estimated from planned shot length.')
         current += shot.duration
     voice = None
     if plan.narration_path:
@@ -121,6 +130,7 @@ def build_request(plan: Plan, drafts_root: str = '', launch: bool = False) -> tu
         voice = {'file': plan.narration_path, 'start': 0,
                  'dur': audio_length if audio_length > 0 else current, 'volume': 1}
         if not audio_length:
+            media[plan.narration_path]['duration'] = current
             warnings.append('Voice duration not probed; timeline duration assumed. Install FFmpeg to read accurate duration.')
         elif abs(audio_length - current) > 1:
             warnings.append(f'Voice length ({audio_length:.1f}s) differs from visual timeline ({current:.1f}s); timings need review.')

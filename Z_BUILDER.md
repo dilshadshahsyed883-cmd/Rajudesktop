@@ -22,6 +22,26 @@ Small standalone Windows desktop application (Python/PySide6), independent of th
 - Z Builder displays original filenames, counts, total size, and a final destructive-action confirmation. Only those selected original PC files are moved to the **Windows Recycle Bin** using `send2trash` and removed from the catalog. No automatic cleanup, permanent deletion, or change to unselected media.
 - **Important:** CapCut draft creation is not final rendering; Z Builder cannot detect whether your manual CapCut render has actually completed. If media is used by another project or you intend to re-edit it, keep the original files. CapCut draft folders and exported final videos are not deleted. Re-import a recovered file if required.
 
+## Clean Entire Library
+
+In **Step 2 → Media Library**, press **Clean Entire Library**. This operates on **all**
+cataloged images and videos (not just media used in a CapCut draft). Choose one mode:
+
+1. **Clear Library Only (default and safest)** — removes all Z Builder library
+   entries, search tags, and export-history flags. **Original PC files are kept.**
+   It does not delete CapCut drafts, exported videos, project files, or voice files.
+2. **Move All Library Original Files to Windows Recycle Bin** — moves both used and
+   unused library media from their actual PC folders into Recycle Bin. This requires
+   manually confirming your final CapCut videos are rendered and checked, a Yes/No
+   dialog, and typing **DELETE ALL**. Missing originals are forgotten; locked or
+   unsafe original files are skipped and left in the library for retry. Other
+   CapCut projects may still rely on these sources, so do not choose this mode
+   until all relevant edits are finished.
+
+**Neither mode runs automatically.** Clean Entire Library is separate from the
+existing **Delete Selected Used Media** action. The app cannot independently
+confirm render completion.
+
 ## Simple Scene Plan format
 
 ```text

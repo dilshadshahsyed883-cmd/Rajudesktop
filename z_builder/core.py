@@ -19,6 +19,8 @@ VIDEO_EXTS = {'.mp4', '.m4v', '.mov', '.mkv', '.webm', '.avi'}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 NONE_VALUES = {'', 'none', 'null', 'n/a', 'na'}
 SOURCE_MODES = {'library_only', 'scene_first'}
+MAX_VIDEO_CLIP_SECONDS = 4.0
+TIMING_EPSILON = 0.0005
 
 
 def kind_of(path: str | Path) -> str:
@@ -141,6 +143,8 @@ class Shot:
     assigned_path: str = ''
     source: str = 'unresolved'
     warning: str = ''
+    start_seconds: float = -1.0  # -1 means legacy sequential V25 timeline
+    source_in_seconds: float = 0.0  # non-destructive trim of original 4-second video
 
 
 @dataclass
@@ -157,7 +161,7 @@ class Plan:
 
     @property
     def duration(self):
-        return round(sum(s.duration for s in self.shots), 3)
+        return round(max((end for _, end, _ in timeline(self)), default=0.0), 3)
 
     def to_dict(self):
         return asdict(self)
@@ -211,6 +215,8 @@ def _number(value: str, label: str, minimum: float, maximum: float) -> float:
 
 
 def load_plan(text: str) -> Plan:
+    if 'SCENE_PLAN_VERSION=2' not in text.lstrip('\ufeff'):
+        return load_simple_plan(text)
     blocks = parse_ini(text)
     p = blocks.get('PROJECT', {})
     media = blocks.get('MEDIA', {})
@@ -259,6 +265,117 @@ def load_plan(text: str) -> Plan:
     return Plan(p.get('name', 'Z Builder Project'), mode, w, h, fps, shots, blocks, warnings)
 
 
+
+def parse_time(value: str) -> float:
+    """Accept SS.mmm, MM:SS.mmm or HH:MM:SS.mmm; exact ms precision."""
+    text = value.strip()
+    segments = text.split(':')
+    if not 1 <= len(segments) <= 3:
+        raise ValueError(f'Invalid Scene Plan time: {value}')
+    if any(not re.fullmatch(r'\d+(?:\.\d{1,3})?', p) for p in segments):
+        raise ValueError(f'Invalid Scene Plan time: {value}')
+    if any('.' in p for p in segments[:-1]):
+        raise ValueError(f'Invalid Scene Plan time: {value}')
+    if len(segments) >= 2 and float(segments[-1]) >= 60:
+        raise ValueError(f'Seconds must be below 60: {value}')
+    if len(segments) == 3 and int(segments[1]) >= 60:
+        raise ValueError(f'Minutes must be below 60: {value}')
+    result = 0.0
+    for part in segments:
+        result = result * 60 + float(part)
+    return round(result, 3)
+
+
+def timeline(plan: Plan):
+    """Return (start, end, shot); no cumulative drift for explicit simple plans."""
+    cursor = 0.0
+    for shot in plan.shots:
+        start = cursor if shot.start_seconds < 0 else round(shot.start_seconds, 3)
+        end = round(start + shot.duration, 3)
+        yield start, end, shot
+        cursor = end
+
+
+def load_simple_plan(text: str) -> Plan:
+    """Simple input: 00:00 --> 00:02.500 | video | clip.mp4 | in=0.5
+
+    Media may alternatively be `keyword: tennis`, resolved from approved library
+    names/tags. Rows must be gapless and begin at zero to protect voice sync.
+    """
+    options = {'name': 'Z Builder Project', 'aspect_ratio': '16:9',
+               'resolution': '1080p', 'fps': '30'}
+    names = {'project': 'name', 'name': 'name', 'aspect': 'aspect_ratio',
+             'aspect_ratio': 'aspect_ratio', 'resolution': 'resolution', 'fps': 'fps'}
+    row_pattern = re.compile(r'^(.*?)\s*-->\s*(.*?)\s*\|\s*(image|video)\s*\|\s*([^|]+)(.*)$', re.I)
+    shots = []
+    prev = 0.0
+    for line_no, raw in enumerate(text.lstrip('\ufeff').splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith(('#', ';')):
+            continue
+        match = row_pattern.match(line)
+        if not match:
+            if '=' in line and '-->' not in line:
+                key, value = (part.strip() for part in line.split('=', 1))
+                key = names.get(key.casefold())
+                if not key or shots:
+                    raise ValueError(f'Line {line_no}: unknown setting or setting after shots')
+                options[key] = value
+                continue
+            raise ValueError(f'Line {line_no}: use START --> END | video/image | filename or keyword')
+        begin, end, kind, target, tail = match.groups()
+        start, stop = parse_time(begin), parse_time(end)
+        if not 0 < stop - start <= 1800:
+            raise ValueError(f'Line {line_no}: end must be after start')
+        if abs(start - prev) > TIMING_EPSILON:
+            raise ValueError(f'Line {line_no}: gap/overlap at {start:g}s (expected {prev:g}s); voice timeline must be continuous')
+        extras = {}
+        for part in tail.split('|'):
+            part = part.strip()
+            if not part:
+                continue
+            if '=' not in part:
+                raise ValueError(f'Line {line_no}: expected option key=value, found {part}')
+            k, v = (p.strip() for p in part.split('=', 1))
+            if k.casefold() not in {'in', 'text'}:
+                raise ValueError(f'Line {line_no}: unknown media option {k}')
+            extras[k.casefold()] = v
+        target = target.strip()
+        keyword = ''
+        name = ''
+        if target.casefold().startswith('keyword:'):
+            keyword = target.split(':', 1)[1].strip()
+        elif Path(target).suffix.casefold() in MEDIA_EXTS:
+            name = target
+        else:
+            keyword = target
+        if not (name or keyword):
+            raise ValueError(f'Line {line_no}: media filename/keyword is empty')
+        in_sec = _number(extras.get('in', '0'), f'Line {line_no} video in', 0, 4)
+        if kind.casefold() == 'image' and in_sec:
+            raise ValueError(f'Line {line_no}: in= applies only to videos')
+        shots.append(Shot(f'SCENE_{len(shots)+1:03d}.SHOT_01', name, kind.casefold(),
+                          keyword, '', round(stop-start, 3), extras.get('text', ''),
+                          start_seconds=start, source_in_seconds=in_sec))
+        prev = stop
+    if not shots:
+        raise ValueError('Scene Plan has no timed shots')
+    aspect = options['aspect_ratio']
+    if aspect not in {'16:9', '9:16'}:
+        raise ValueError('aspect_ratio must be 16:9 or 9:16')
+    resolution = options['resolution']
+    if resolution not in {'1080p', '720p'}:
+        raise ValueError('resolution must be 1080p or 720p')
+    fps = int(_number(options['fps'], 'fps', 24, 60))
+    if fps not in {24, 25, 30, 60}:
+        raise ValueError('fps must be 24, 25, 30 or 60')
+    width, height = (1920, 1080) if resolution == '1080p' else (1280, 720)
+    if aspect == '9:16':
+        width, height = height, width
+    return Plan(options['name'], 'library_only', width, height, fps, shots,
+                sections={'_FORMAT': {'type': 'simple_timed_v1'}})
+
+
 def bind_media(plan: Plan, assets: list[dict]) -> list[str]:
     """Exact filename has priority, no fabricated IDs, no Pexels silent substitution."""
     issues = []
@@ -273,6 +390,25 @@ def bind_media(plan: Plan, assets: list[dict]) -> list[str]:
         selected = manual if manual and manual['kind'] == shot.media_type else None
         if not selected and len(matches) == 1 and matches[0]['kind'] == shot.media_type:
             selected = matches[0]
+        keyword_ambiguous = False
+        if not selected and not shot.filename and shot.keyword:
+            tokens = set(tokenize(shot.keyword))
+            scored = []
+            for asset in available:
+                if asset['kind'] != shot.media_type:
+                    continue
+                indexed = set(tokenize(Path(asset['filename']).stem + ' ' + asset.get('tags', '')))
+                common = len(indexed & tokens)
+                if common and common == len(tokens):
+                    scored.append((common, asset))
+            if scored:
+                scored.sort(key=lambda x: (-x[0], x[1]['filename'].casefold(), x[1]['id']))
+                best = scored[0][0]
+                ties = [asset for score, asset in scored if score == best]
+                if len(ties) == 1:
+                    selected = ties[0]
+                else:
+                    keyword_ambiguous = True
         shot.warning = ''
         if selected:
             shot.assigned_id = selected['id']
@@ -281,7 +417,9 @@ def bind_media(plan: Plan, assets: list[dict]) -> list[str]:
         else:
             shot.assigned_id = shot.assigned_path = ''
             shot.source = 'unresolved'
-            if len(matches) > 1:
+            if keyword_ambiguous:
+                problem = f'{shot.section}: multiple media match keyword {shot.keyword}; choose manually'
+            elif len(matches) > 1:
                 problem = f'{shot.section}: ambiguous duplicate filename {shot.filename}; choose file manually'
             elif matches and matches[0]['kind'] != shot.media_type:
                 problem = f'{shot.section}: media type mismatch for {shot.filename}'
@@ -296,15 +434,26 @@ def bind_media(plan: Plan, assets: list[dict]) -> list[str]:
 
 def preflight(plan: Plan) -> list[str]:
     issues = []
+    cursor = 0.0
     if not plan.shots:
         issues.append('No scene shots')
-    for shot in plan.shots:
+    for start, end, shot in timeline(plan):
+        if abs(start - cursor) > TIMING_EPSILON:
+            issues.append(f'{shot.section}: timeline gap/overlap at {start}s (expected {cursor}s)')
+        cursor = end
+        if shot.media_type == 'video':
+            if shot.source_in_seconds < 0 or shot.source_in_seconds > MAX_VIDEO_CLIP_SECONDS:
+                issues.append(f'{shot.section}: source in must be between 0 and 4 seconds')
+            elif shot.source_in_seconds + shot.duration > MAX_VIDEO_CLIP_SECONDS + TIMING_EPSILON:
+                issues.append(f'{shot.section}: {shot.duration:.3f}s video slot from in={shot.source_in_seconds:.3f}s exceeds a 4-second clip; split the slot or choose another item')
         if not shot.assigned_path or not Path(shot.assigned_path).is_file():
             issues.append(f'{shot.section}: unresolved or missing media')
         elif kind_of(shot.assigned_path) != shot.media_type:
             issues.append(f'{shot.section}: kind mismatch')
         if not 0.1 <= shot.duration <= 1800:
             issues.append(f'{shot.section}: invalid duration')
+    if plan.sections.get('_FORMAT', {}).get('type') == 'simple_timed_v1' and not plan.narration_path:
+        issues.append('Input: voice MP3/WAV is required for this timed Scene Plan')
     if plan.narration_path and not Path(plan.narration_path).is_file():
         issues.append('Narration file not found')
     return issues
@@ -325,9 +474,10 @@ def open_project(filename: str | Path) -> Plan:
 def write_timeline_csv(plan: Plan, filename: str | Path):
     with Path(filename).open('w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f)
-        writer.writerow(['shot', 'start_seconds', 'duration_seconds', 'filename', 'source', 'narration', 'animation', 'transition'])
-        t = 0.0
-        for shot in plan.shots:
-            writer.writerow([shot.section, round(t, 3), round(shot.duration, 3),
-                             shot.assigned_path, shot.source, shot.narration, shot.animation, shot.transition])
-            t += shot.duration
+        writer.writerow(['shot', 'start_seconds', 'end_seconds', 'duration_seconds',
+                         'source_in_seconds', 'source_out_seconds', 'filename', 'source', 'narration'])
+        for start, end, shot in timeline(plan):
+            writer.writerow([shot.section, start, end, shot.duration,
+                             shot.source_in_seconds if shot.media_type == 'video' else 0,
+                             round(shot.source_in_seconds + shot.duration, 3) if shot.media_type == 'video' else '',
+                             shot.assigned_path, shot.source, shot.narration])

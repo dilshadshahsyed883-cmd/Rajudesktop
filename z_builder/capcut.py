@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import tempfile
 
-from .core import Plan, preflight, write_timeline_csv
+from .core import Plan, preflight, write_timeline_csv, timeline, MAX_VIDEO_CLIP_SECONDS, TIMING_EPSILON
 
 
 SUPPORTED_ANIMATIONS = {'none', 'pan_left', 'pan_right', 'right_zoom', 'zoom_1', 'zoom_in', 'zoom_out'}
@@ -102,7 +102,7 @@ def build_request(plan: Plan, drafts_root: str = '', launch: bool = False) -> tu
     images, captions, media = [], [], {}
     warnings = list(plan.warnings)
     current = 0.0
-    for shot in plan.shots:
+    for start, end, shot in timeline(plan):
         motion, warning = animated(shot)
         if warning:
             warnings.append(warning)
@@ -110,19 +110,25 @@ def build_request(plan: Plan, drafts_root: str = '', launch: bool = False) -> tu
             warnings.append(f'{shot.section}: transition {shot.transition} is not exported by Z Studio CapCut writer.')
         entry = {'image': shot.assigned_path,
                  'kind': 'video' if shot.media_type == 'video' else 'image',
-                 'start': round(current, 3), 'end': round(current + shot.duration, 3),
+                 'start': start, 'end': end,
+                 'trimStart': round(shot.source_in_seconds, 3) if shot.media_type == 'video' else 0,
                  'zoom': 'none', 'hasAudio': False, 'muted': True,
                  **motion}
         images.append(entry)
         if shot.narration.strip():
-            captions.append({'text': shot.narration.strip(), 'start': round(current, 3),
-                             'end': round(current + shot.duration, 3), 'pos': 'bottom',
+            captions.append({'text': shot.narration.strip(), 'start': start,
+                             'end': end, 'pos': 'bottom',
                              'size': 45, 'color': '#ffffff', 'weight': 'bold'})
         media.setdefault(shot.assigned_path, probe(shot.assigned_path))
-        if shot.media_type == 'video' and not media[shot.assigned_path]['duration']:
-            media[shot.assigned_path]['duration'] = shot.duration
-            warnings.append(f'{shot.section}: source video duration could not be probed; estimated from planned shot length.')
-        current += shot.duration
+        if shot.media_type == 'video':
+            actual = media[shot.assigned_path]['duration']
+            required = shot.source_in_seconds + shot.duration
+            if actual > 0 and required > actual + 0.035:
+                raise ValueError(f'{shot.section}: video has {actual:.3f}s available, but requested source 0:{required:.3f}. Choose another clip or shorten shot.')
+            if not actual:
+                media[shot.assigned_path]['duration'] = MAX_VIDEO_CLIP_SECONDS
+                warnings.append(f'{shot.section}: video duration could not be read; assumed 4.000s. Confirm in CapCut.')
+        current = end
     voice = None
     if plan.narration_path:
         media[plan.narration_path] = probe(plan.narration_path)
@@ -132,6 +138,9 @@ def build_request(plan: Plan, drafts_root: str = '', launch: bool = False) -> tu
         if not audio_length:
             media[plan.narration_path]['duration'] = current
             warnings.append('Voice duration not probed; timeline duration assumed. Install FFmpeg to read accurate duration.')
+        elif (plan.sections.get('_FORMAT', {}).get('type') == 'simple_timed_v1'
+              and abs(audio_length - current) > 0.25):
+            raise ValueError(f'Input voice is {audio_length:.3f}s but Scene Plan ends at {current:.3f}s. Fix the Scene Plan timing before exporting.')
         elif abs(audio_length - current) > 1:
             warnings.append(f'Voice length ({audio_length:.1f}s) differs from visual timeline ({current:.1f}s); timings need review.')
     captions_mode = plan.sections.get('CAPTIONS', {})

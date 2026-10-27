@@ -1,0 +1,274 @@
+{
+  "record_name": "Z CapCut",
+  "record_date": "2026-10-27",
+  "target_repo": "dilshadshahsyed883-cmd/Rajudesktop",
+  "capcut_install_version": "9.6.0.4097",
+  "research_status": "static_analysis_and_two_draft_samples_only",
+  "provenance": {
+    "inventory": {
+      "file_entries": 4741,
+      "size_gib": 1.78,
+      "resources_files": 3719,
+      "default_adjust_bundle_files": 1801,
+      "adjustment_groups": 39,
+      "draft_converter_files": 209,
+      "json_file_count": 605
+    },
+    "deep_inspection": {
+      "zip_entry_count_including_directories": 257,
+      "selected_resource_files": 249,
+      "nonempty_files_including_manifest": 250,
+      "parsed_json_count": 209,
+      "json_parse_failures": 0
+    },
+    "privacy": "Machine-specific paths, hardware IDs, account information, original draft files, and proprietary assets omitted."
+  },
+  "resource_findings": {
+    "adjustment_groups": [
+      "FC",
+      "black_white",
+      "brightness",
+      "brightness_v1",
+      "brightness_v2",
+      "clear",
+      "color_match_select_target",
+      "combine_adjust",
+      "contrast",
+      "contrast_v1",
+      "contrast_v2",
+      "contrast_v3",
+      "fade",
+      "highlight",
+      "highlight_v1",
+      "hsl",
+      "hsl_v1",
+      "light_sensation",
+      "merge_all_adjust_color",
+      "particle",
+      "particle_v1",
+      "particle_v2",
+      "saturation",
+      "saturation_v1",
+      "shadow",
+      "shadow_highlight_v2_gles2",
+      "shadow_highlight_v2_gles3",
+      "shadow_highlight_v3_gles3",
+      "shadow_v1",
+      "sharpen",
+      "sharpen_v1",
+      "temperature",
+      "temperature_tone_v2",
+      "temperature_tone_v3",
+      "tone",
+      "tone_v1",
+      "vignetting",
+      "vignetting_v1",
+      "yunfu_npu"
+    ],
+    "mix_mode_ids": {
+      "color_filter": 871339,
+      "dark_en": 871342,
+      "bright_en": 871341,
+      "over_lay": 871340,
+      "glare_pc": 871338,
+      "soft_light": 871337,
+      "linear_deepening": 871336,
+      "darken_color": 871335,
+      "color_dodge": 871334,
+      "multiply_blend_mode": 871333
+    },
+    "template_ratio_choices": [
+      "9:16",
+      "16:9",
+      "1:1",
+      "4:3",
+      "2:1",
+      "5.8\"",
+      "2.35:1",
+      "3:4",
+      "1.85:1"
+    ],
+    "material_publishing_routes": [
+      "publish-effects",
+      "publish-audio-effect",
+      "publish-filter-single",
+      "publish-caption-animation",
+      "publish-video",
+      "publish-caption-template",
+      "publish-filter-collection",
+      "publish-text-animation"
+    ],
+    "internal_cli": {
+      "source": "Resources/common_agent/skills/timeline-draft-cli/SKILL.md",
+      "command_documented": "lyra-cli-ipc timeline add-draft",
+      "representations": [
+        "nested",
+        "expanded"
+      ],
+      "placements": [
+        "append",
+        "at ripple",
+        "at overwrite"
+      ],
+      "status": "session-bound internal documentation only, not verified external API"
+    },
+    "draft_converter": {
+      "path": "Tools/draft-converter/draft-converter.exe",
+      "dependencies_observed": [
+        "OpenTimelineIO",
+        "AAF adapter",
+        "FCP XML adapter"
+      ],
+      "tested": false
+    },
+    "ai_resource_clues": [
+      "matting",
+      "face-recognition model references",
+      "Chroma",
+      "Chroma2"
+    ]
+  },
+  "draft_schema": {
+    "app_version": "9.6.0",
+    "project_version": 360000,
+    "new_version": "189.0.0",
+    "fps": 30,
+    "canvas": {
+      "width": 1920,
+      "height": 1362,
+      "ratio": "original"
+    },
+    "timestamp_unit": "microseconds",
+    "fields": {
+      "timeline": "tracks[].segments[].target_timerange",
+      "source_trim": "tracks[].segments[].source_timerange",
+      "segment_material_link": "tracks[].segments[].material_id -> materials.videos[].id",
+      "material_type": "materials.videos[].type",
+      "media_location": "materials.videos[].path",
+      "animation_ref": "segments[].extra_material_refs -> materials.material_animations[].id",
+      "transition_ref": "segments[].extra_material_refs -> materials.transitions[].id",
+      "clip_transform": "segments[].clip.scale/transform/rotation/flip/alpha",
+      "render_layer_indices": "tracks[].segments[].render_index and track_render_index"
+    }
+  },
+  "sample_a": {
+    "timeline_duration_us": 14000000,
+    "tracks_count": 1,
+    "audio_tracks_count": 0,
+    "segments": [
+      {
+        "track": 0,
+        "media": "video_a",
+        "type": "video",
+        "start_us": 0,
+        "duration_us": 4000000
+      },
+      {
+        "track": 0,
+        "media": "photo_a",
+        "type": "photo",
+        "start_us": 4000000,
+        "duration_us": 5000000
+      },
+      {
+        "track": 0,
+        "media": "photo_b",
+        "type": "photo",
+        "start_us": 9000000,
+        "duration_us": 5000000
+      }
+    ],
+    "transitions": [
+      {
+        "name": "Halo Shift",
+        "resource_id": "7683535350479817991",
+        "duration_us": 2000000,
+        "is_overlap": true
+      }
+    ],
+    "animations": [
+      {
+        "name": "Pendulum 1",
+        "resource_id": "6811007755785081357",
+        "duration_us": 5000000
+      }
+    ],
+    "coverage_gaps_us": []
+  },
+  "sample_b": {
+    "timeline_duration_us": 14400000,
+    "tracks_count": 2,
+    "audio_tracks_count": 0,
+    "maintrack_adsorb": false,
+    "segments": [
+      {
+        "track": 0,
+        "track_flag": 0,
+        "render_index": 0,
+        "media": "photo_a",
+        "type": "photo",
+        "start_us": 0,
+        "duration_us": 5000000
+      },
+      {
+        "track": 0,
+        "track_flag": 0,
+        "render_index": 0,
+        "media": "photo_b",
+        "type": "photo",
+        "start_us": 9400000,
+        "duration_us": 5000000
+      },
+      {
+        "track": 1,
+        "track_flag": 2,
+        "render_index": 1,
+        "media": "video_a",
+        "type": "video",
+        "start_us": 5200000,
+        "duration_us": 4000000
+      }
+    ],
+    "transitions": [],
+    "animations": [
+      {
+        "name": "Pendulum 1",
+        "resource_id": "6811007755785081357",
+        "duration_us": 5000000
+      }
+    ],
+    "coverage_gaps_us": [
+      {
+        "start": 5000000,
+        "end": 5200000
+      },
+      {
+        "start": 9200000,
+        "end": 9400000
+      }
+    ]
+  },
+  "not_verified": [
+    "Actual video-over-photo visual z-order: sample B has no overlapping material intervals",
+    "Audio serialization into native draft",
+    "External generated draft opening and saving round-trip",
+    "Exact image fill transform behavior",
+    "Editing installed CapCut animation/transition catalog",
+    "Converter import/export compatibility",
+    "External access to internal session CLI",
+    "Project effects runtime/offline portability",
+    "True 16:9 draft behavior",
+    "Arbitrary keyframes",
+    "5–7 minute parts in running Z Builder"
+  ],
+  "zbuilder_requirements": [
+    "Scene Plan defines all target time ranges",
+    "No fixed 2.5-second media duration",
+    "Trim 4-second source clips where needed",
+    "Images lower track, video higher track",
+    "Open in CapCut generates 5–7-minute parts",
+    "Audio import optional",
+    "Never modify an original CapCut draft",
+    "Test every output in CapCut 9.6.0"
+  ]
+}

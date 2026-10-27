@@ -25,6 +25,8 @@ jobs:
           assert b'nodejs.org' in (a / 'bootstrap_node.py').read_bytes()
           print('Auto-node launch files present')
           PY
+      - name: Verify standalone Video Editor
+        run: python3 z-studio/tests/verify_video_only.py z-studio/Z-Studio-Local/app
       - name: Check Python files and JavaScript source syntax
         run: |
           python3 -m py_compile z-studio/Z-Studio-Local/bootstrap_node.py

@@ -48,6 +48,8 @@ def assemble(extract=False):
     if extract:
         with zipfile.ZipFile(archive) as zf:
             zf.extractall(ROOT)
+        from transform_video_only import transform
+        transform(ROOT / 'Z-Studio-Local' / 'app')
     print(f"Z Studio verified with auto-Node startup: {archive} ({archive.stat().st_size} bytes)")
 
 

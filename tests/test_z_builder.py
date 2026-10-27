@@ -121,7 +121,9 @@ class ZBuilderCoreTests(unittest.TestCase):
             recycled.mkdir()
             moved, failures = catalog.recycle_exported_media([used_id, used_id],
                 recycle=lambda path: Path(path).rename(recycled / Path(path).name))
-            self.assertEqual([str(used)], moved)
+            # Windows may resolve a short 8.3 profile path into its long equivalent.
+            self.assertEqual(1, len(moved))
+            self.assertEqual(used.name, Path(moved[0]).name)
             self.assertFalse(failures)
             self.assertFalse(used.exists())
             self.assertTrue((recycled / used.name).exists())

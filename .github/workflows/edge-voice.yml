@@ -45,7 +45,8 @@ jobs:
           python -c "from PySide6.QtWidgets import QApplication; from edge_voice_studio.window import StudioWindow; a=QApplication([]); w=StudioWindow(); assert w.stack.count()==6; w.close(); print('UI smoke passed')"
 
   edge-voice-portable:
-    if: github.event_name == 'workflow_dispatch'
+    # One-time signed-in download artifact for the requested Windows EXE.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/feature/edge-tts-exe-build-20261027')
     needs: edge-voice-tests
     runs-on: windows-latest
     timeout-minutes: 45

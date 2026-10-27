@@ -136,7 +136,6 @@ class Window(QMainWindow):
         sl.addWidget(self._button('Remove from Library (keep original)', self.remove_catalog_item))
         sl.addWidget(self._button('Select All Used Media', self.select_all_used))
         self.render_confirm = QCheckBox('Final video rendered and checked in CapCut')
-        self.render_confirm.setWordWrap(True)
         sl.addWidget(self.render_confirm)
         sl.addWidget(self._button('Delete Selected Used Media (Recycle Bin)', self.delete_used_media))
         sl.addWidget(QLabel('Only media from successful CapCut exports can be recycled.\n'

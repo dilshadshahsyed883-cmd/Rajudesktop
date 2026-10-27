@@ -1,0 +1,71 @@
+name: Scene Builder Desktop Python ZIP
+
+on:
+  push:
+    branches:
+      - main
+      - feat/scene-builder-desktop-*
+    paths:
+      - "scene_builder_desktop/**"
+      - "scene_desktop/**"
+      - "tests/test_scene_builder_desktop.py"
+      - "launch_scene_builder_desktop.py"
+      - "start_scene_builder_desktop.bat"
+      - "SCENE_BUILDER_DESKTOP.md"
+      - ".github/workflows/scene-builder-desktop-python.yml"
+  pull_request:
+    paths:
+      - "scene_builder_desktop/**"
+      - "scene_desktop/**"
+      - "tests/test_scene_builder_desktop.py"
+      - "launch_scene_builder_desktop.py"
+      - "start_scene_builder_desktop.bat"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile desktop sources
+        run: |
+          python -m compileall -q scene_builder_desktop scene_desktop launch_scene_builder_desktop.py
+      - name: Run offline catalog and Director regression tests
+        run: |
+          python -m unittest discover -s tests -p test_scene_builder_desktop.py -v
+      - name: Package a runnable Python source ZIP (no EXE)
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          root = Path.cwd()
+          dest = root / "scene-builder-desktop-python.zip"
+          include = [
+              "scene_builder_desktop",
+              "scene_desktop",
+              "launch_scene_builder_desktop.py",
+              "start_scene_builder_desktop.bat",
+              "requirements.txt",
+              "SCENE_BUILDER_DESKTOP.md",
+          ]
+          with ZipFile(dest, "w", compression=ZIP_DEFLATED) as archive:
+              for name in include:
+                  item = root / name
+                  paths = item.rglob("*") if item.is_dir() else [item]
+                  for path in paths:
+                      if path.is_file() and "__pycache__" not in path.parts:
+                          archive.write(path, path.relative_to(root))
+          print(f"Created {dest.name} ({dest.stat().st_size:,} bytes)")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scene-builder-desktop-python
+          path: scene-builder-desktop-python.zip
+          if-no-files-found: error
+          retention-days: 30

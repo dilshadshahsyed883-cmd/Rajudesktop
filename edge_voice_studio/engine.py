@@ -136,8 +136,15 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
                 raise RenderStopped("Job paused or cancelled")
             audio = work / f"{index:05}.mp3"
             timings = work / f"{index:05}.json"
+            # Old / interrupted caches may contain audio without usable timing
+            # events. Regenerate those chunks rather than exporting a fake SRT.
+            try:
+                cached_words = json.loads(timings.read_text(encoding="utf-8"))
+                has_timings = isinstance(cached_words, list) and bool(cached_words)
+            except (OSError, ValueError, TypeError):
+                has_timings = False
             if (not audio.is_file() or audio.stat().st_size == 0
-                    or not timings.is_file() or timings.stat().st_size == 0):
+                    or not has_timings):
                 audio.unlink(missing_ok=True)
                 timings.unlink(missing_ok=True)
                 last_exc = None
@@ -148,6 +155,9 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
                         words = await synthesis(
                             text, job["voice"], job["rate"], job["pitch"],
                             job["volume"], audio, stopped)
+                        if not words:
+                            raise RuntimeError(
+                                "Edge TTS returned no word timings; accurate SRT unavailable")
                         timings.write_text(json.dumps(words), encoding="utf-8")
                         last_exc = None
                         break

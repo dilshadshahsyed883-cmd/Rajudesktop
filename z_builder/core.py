@@ -119,6 +119,49 @@ class Catalog:
             c.execute('DELETE FROM media_exports WHERE asset_id=?', (identity,))
             c.execute('DELETE FROM assets WHERE id=?', (identity,))
 
+    def clear_library_records(self) -> int:
+        """Remove every library entry and its export-history metadata; keep PC files."""
+        with self._connect() as c:
+            count = c.execute('SELECT COUNT(*) FROM assets').fetchone()[0]
+            c.execute('DELETE FROM media_exports')
+            c.execute('DELETE FROM assets')
+        return count
+
+    def recycle_entire_library(self, recycle=None) -> tuple[list[str], list[str], list[str]]:
+        """Explicit bulk operation: recycle all cataloged original media files.
+
+        Missing originals are only forgotten. Failed/unsafe files remain in the
+        catalog for manual review; no CapCut draft or rendered output is touched
+        unless it was separately imported into the library.
+        The UI must require confirmation before calling this method.
+        """
+        if recycle is None:
+            from send2trash import send2trash
+            recycle = send2trash
+        moved, missing, failures = [], [], []
+        for asset in self.assets():
+            path = Path(asset['path'])
+            identity = asset['id']
+            if not path.exists() and not path.is_symlink():
+                self.remove(identity)
+                missing.append(str(path))
+                continue
+            if (not path.is_file() or path.is_symlink() or
+                    stable_id(str(path)) != identity):
+                failures.append(f'{path}: unsafe file type, link, or changed path; skipped')
+                continue
+            try:
+                recycle(str(path))
+            except Exception as exc:
+                failures.append(f'{path.name}: {exc}')
+                continue
+            try:
+                self.remove(identity)
+            except Exception as exc:
+                failures.append(f'{path.name}: recycled, but catalog record could not be removed: {exc}')
+            moved.append(str(path))
+        return moved, missing, failures
+
     def record_successful_export(self, paths) -> int:
         """Mark only catalog items used in a fully verified CapCut export.
 

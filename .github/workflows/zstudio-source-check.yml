@@ -1,0 +1,19 @@
+name: Z Studio source verification
+on:
+  push:
+    branches: [z-studio]
+    paths: ["z-studio/**", ".github/workflows/zstudio-source-check.yml"]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify source archive and extract
+        run: python3 z-studio/assemble_source.py --extract
+      - name: Syntax check JavaScript modules
+        run: |
+          find z-studio/Z-Studio-Local/app -name '*.js' -type f -print0 | xargs -0 -n 1 node --check

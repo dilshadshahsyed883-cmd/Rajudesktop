@@ -10,6 +10,17 @@ from z_builder.core import Catalog, bind_media, load_plan, preflight, timeline
 from z_builder.capcut import build_request, export_capcut, find_node
 
 
+def ffmpeg_bin():
+    executable = shutil.which('ffmpeg')
+    if executable:
+        return executable
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, OSError, RuntimeError):
+        return None
+
+
 SIMPLE = """name=Z Builder Timed Example
 aspect=16:9
 fps=30
@@ -60,7 +71,7 @@ class TimedScenePlanTests(unittest.TestCase):
             other = load_plan(txt)
             self.assertIn('multiple media', bind_media(other, c.assets())[0])
 
-    @unittest.skipUnless(shutil.which('ffmpeg') and find_node(), 'FFmpeg and Node needed')
+    @unittest.skipUnless(ffmpeg_bin() and find_node(), 'FFmpeg and Node needed')
     def test_real_four_second_video_is_trimmed_and_aligned_in_capcut_draft(self):
         import base64
         with tempfile.TemporaryDirectory() as folder:
@@ -68,10 +79,10 @@ class TimedScenePlanTests(unittest.TestCase):
             clip = root / 'Clip 1.mp4'
             image = root / 'Poster 1.png'
             voice = root / 'voice.wav'
-            subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi',
+            subprocess.run([ffmpeg_bin(), '-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi',
                             '-i', 'color=c=blue:s=320x180:r=30:d=4', '-c:v', 'mpeg4', '-an', str(clip)],
                            check=True, timeout=35)
-            subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi',
+            subprocess.run([ffmpeg_bin(), '-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi',
                             '-i', 'anullsrc=r=44100:cl=mono', '-t', '7.25', '-c:a', 'pcm_s16le', str(voice)],
                            check=True, timeout=35)
             image.write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a+4sAAAAASUVORK5CYII='))

@@ -1,0 +1,53 @@
+name: Z Builder original web source parity
+
+on:
+  push:
+    paths:
+      - "z_builder_full/**"
+      - "tests/test_z_builder_full.py"
+      - ".github/workflows/z-builder-full-source-parity.yml"
+      - "z_builder/capcut-draft.js"
+  pull_request:
+    paths:
+      - "z_builder_full/**"
+      - "tests/test_z_builder_full.py"
+      - ".github/workflows/z-builder-full-source-parity.yml"
+
+jobs:
+  source-parity:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Z Builder source
+        uses: actions/checkout@v4
+        with:
+          path: rajudesktop
+      - name: Checkout exact original Scene Builder source
+        uses: actions/checkout@v4
+        with:
+          repository: dilshadshahsyed883-cmd/vps1-deploy-control
+          ref: 1a34ec4a898772ea99a1dd76cef3bdde9f9eaeef
+          path: upstream
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Structural source-parity tests
+        working-directory: rajudesktop
+        run: python -m unittest discover -s tests -p test_z_builder_full.py -v
+      - name: Bundle entire web frontend, worker and original Z Studio CapCut draft code
+        working-directory: rajudesktop
+        shell: pwsh
+        run: >
+          python z_builder_full/assemble.py
+          --upstream-source ../upstream/apps/scene-builder
+          --repository .
+          --upstream-commit 1a34ec4a898772ea99a1dd76cef3bdde9f9eaeef
+          --output ../Z-Builder-Full-Web-Source-Parity.zip
+      - name: Attach full-source integration workbench (not a runnable release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Z-Builder-Full-Web-Source-Parity-NOT-RUNNABLE
+          path: Z-Builder-Full-Web-Source-Parity.zip
+          retention-days: 14

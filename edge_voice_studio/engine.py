@@ -136,7 +136,8 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
                 raise RenderStopped("Job paused or cancelled")
             audio = work / f"{index:05}.mp3"
             timings = work / f"{index:05}.json"
-            if not audio.is_file() or audio.stat().st_size == 0:
+            if (not audio.is_file() or audio.stat().st_size == 0
+                    or not timings.is_file() or timings.stat().st_size == 0):
                 audio.unlink(missing_ok=True)
                 timings.unlink(missing_ok=True)
                 last_exc = None
@@ -164,18 +165,36 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
             except (OSError, ValueError):
                 words = []
             parts.append(audio)
-            if job["subtitles"]:
-                subtitle_parts.append((words, audio_duration_ms(audio)))
+            subtitle_parts.append((words, audio_duration_ms(audio)))
             store.update(job_id, completed=index + 1)
             progress(index + 1, len(chunks))
 
         if stopped() or store.get(job_id)["status"] != "processing":
             raise RenderStopped("Job paused or cancelled")
-        stem = safe_title(job["title"]) + "-" + job_id[:8]
+        # Reserve matching filenames without overwriting another job's exports.
+        stem = safe_title(job["title"])
         destination = output_dir / (stem + ".mp3")
-        concat_mp3(parts, destination)
-        if job["subtitles"]:
-            write_srt(subtitle_parts, output_dir / (stem + ".srt"))
+        suffix = 2
+        while destination.exists() or destination.with_suffix(".srt").exists():
+            destination = output_dir / f"{stem} ({suffix}).mp3"
+            suffix += 1
+
+        # Both files must be valid before either appears in the output folder.
+        with tempfile.TemporaryDirectory(prefix=".edge-tts-", dir=output_dir) as tmp:
+            staged_mp3 = Path(tmp) / "voice.mp3"
+            staged_srt = Path(tmp) / "voice.srt"
+            concat_mp3(parts, staged_mp3)
+            count = write_srt(subtitle_parts, staged_srt)
+            if count == 0 or staged_srt.stat().st_size == 0:
+                raise RuntimeError("Synchronized SRT could not be generated")
+            if stopped() or store.get(job_id)["status"] != "processing":
+                raise RenderStopped("Job paused or cancelled")
+            os.replace(staged_mp3, destination)
+            try:
+                os.replace(staged_srt, destination.with_suffix(".srt"))
+            except Exception:
+                destination.unlink(missing_ok=True)
+                raise
         store.update(job_id, status="done", completed=len(chunks), output=str(destination))
         return destination
     except RenderStopped:

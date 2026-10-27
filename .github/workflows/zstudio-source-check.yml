@@ -12,8 +12,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Verify source archive and extract
-        run: python3 z-studio/assemble_source.py --extract
-      - name: Syntax check JavaScript modules
+      - name: Verify portable Node bootstrap unit tests
+        run: python3 -m unittest discover -s z-studio/tests -p 'test_*.py' -v
+      - name: Verify reconstructed source archive and launcher fixes
         run: |
+          python3 z-studio/assemble_source.py --extract
+          python3 - <<'PY'
+          from pathlib import Path
+          a = Path('z-studio/Z-Studio-Local')
+          assert (a / 'bootstrap_node.py').exists()
+          assert b'portable_node' in (a / 'start.bat').read_bytes()
+          assert b'nodejs.org' in (a / 'bootstrap_node.py').read_bytes()
+          print('Auto-node launch files present')
+          PY
+      - name: Check Python files and JavaScript source syntax
+        run: |
+          python3 -m py_compile z-studio/Z-Studio-Local/bootstrap_node.py
           find z-studio/Z-Studio-Local/app -name '*.js' -type f -print0 | xargs -0 -n 1 node --check

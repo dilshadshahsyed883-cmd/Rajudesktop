@@ -21,6 +21,8 @@ This folder is a persistent engineering record named **Z CapCut**. It is **not**
 
 | Official installer retrieval and next native sample priorities | Overlapping-layer, fill/trim, audio, effects samples; master doc linked; installer fetch attempted but failed | [06 — Next evidence](06_NEXT_EVIDENCE_AND_OFFICIAL_INSTALLER.md) |
 
+| Advanced effect + keyframe external research (27 Oct 2026) | Public anonymized schema-360000 CapCut fixtures, custom vs preset animations, filter material variants, active timeline mirrors, safe testing | [07 — Advanced effects research](07_ADVANCED_EFFECTS_RESEARCH_20261027.md) |
+
 ## Most useful verified facts
 
 - Timeline positions and clip lengths are in **microseconds** using segment `target_timerange`; trims are in `source_timerange`.

@@ -4,6 +4,7 @@ No Pexels scraping; an unresolved stock fallback is a visible blocking decision.
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict, field
+from contextlib import contextmanager
 from pathlib import Path
 import csv
 import hashlib
@@ -49,8 +50,16 @@ class Catalog:
                 size_bytes INTEGER NOT NULL DEFAULT 0
             )''')
 
+    @contextmanager
     def _connect(self):
-        return sqlite3.connect(self.db_path)
+        # sqlite3.Connection.__exit__ commits but DOES NOT close on Windows.
+        # Explicitly close to release database-file locks on import/test cleanup.
+        connection = sqlite3.connect(self.db_path)
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def add(self, path: str | Path) -> str:
         p = Path(path).expanduser().resolve(strict=True)

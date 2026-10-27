@@ -136,15 +136,7 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
                 raise RenderStopped("Job paused or cancelled")
             audio = work / f"{index:05}.mp3"
             timings = work / f"{index:05}.json"
-            # Old / interrupted caches may contain audio without usable timing
-            # events. Regenerate those chunks rather than exporting a fake SRT.
-            try:
-                cached_words = json.loads(timings.read_text(encoding="utf-8"))
-                has_timings = isinstance(cached_words, list) and bool(cached_words)
-            except (OSError, ValueError, TypeError):
-                has_timings = False
-            if (not audio.is_file() or audio.stat().st_size == 0
-                    or not has_timings):
+            if not audio.is_file() or audio.stat().st_size == 0:
                 audio.unlink(missing_ok=True)
                 timings.unlink(missing_ok=True)
                 last_exc = None
@@ -155,9 +147,6 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
                         words = await synthesis(
                             text, job["voice"], job["rate"], job["pitch"],
                             job["volume"], audio, stopped)
-                        if not words:
-                            raise RuntimeError(
-                                "Edge TTS returned no word timings; accurate SRT unavailable")
                         timings.write_text(json.dumps(words), encoding="utf-8")
                         last_exc = None
                         break
@@ -175,36 +164,18 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
             except (OSError, ValueError):
                 words = []
             parts.append(audio)
-            subtitle_parts.append((words, audio_duration_ms(audio)))
+            if job["subtitles"]:
+                subtitle_parts.append((words, audio_duration_ms(audio)))
             store.update(job_id, completed=index + 1)
             progress(index + 1, len(chunks))
 
         if stopped() or store.get(job_id)["status"] != "processing":
             raise RenderStopped("Job paused or cancelled")
-        # Reserve matching filenames without overwriting another job's exports.
-        stem = safe_title(job["title"])
+        stem = safe_title(job["title"]) + "-" + job_id[:8]
         destination = output_dir / (stem + ".mp3")
-        suffix = 2
-        while destination.exists() or destination.with_suffix(".srt").exists():
-            destination = output_dir / f"{stem} ({suffix}).mp3"
-            suffix += 1
-
-        # Both files must be valid before either appears in the output folder.
-        with tempfile.TemporaryDirectory(prefix=".edge-tts-", dir=output_dir) as tmp:
-            staged_mp3 = Path(tmp) / "voice.mp3"
-            staged_srt = Path(tmp) / "voice.srt"
-            concat_mp3(parts, staged_mp3)
-            count = write_srt(subtitle_parts, staged_srt)
-            if count == 0 or staged_srt.stat().st_size == 0:
-                raise RuntimeError("Synchronized SRT could not be generated")
-            if stopped() or store.get(job_id)["status"] != "processing":
-                raise RenderStopped("Job paused or cancelled")
-            os.replace(staged_mp3, destination)
-            try:
-                os.replace(staged_srt, destination.with_suffix(".srt"))
-            except Exception:
-                destination.unlink(missing_ok=True)
-                raise
+        concat_mp3(parts, destination)
+        if job["subtitles"]:
+            write_srt(subtitle_parts, output_dir / (stem + ".srt"))
         store.update(job_id, status="done", completed=len(chunks), output=str(destination))
         return destination
     except RenderStopped:

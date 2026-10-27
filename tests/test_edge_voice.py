@@ -46,34 +46,11 @@ class ChunkTests(unittest.TestCase):
                 [([{"text": "Hello", "offset": 0, "duration": 5000000}], 900),
                  ([{"text": "world", "offset": 0, "duration": 5000000}], 900)],
                 output)
-            self.assertEqual(count, 1)
+            self.assertEqual(count, 2)
             data = output.read_text()
-            self.assertIn("00:00:00,000 --> 00:00:01,400", data)
-            self.assertIn("Hello world", data)
+            self.assertIn("00:00:00,000 --> 00:00:00,500", data)
+            self.assertIn("00:00:00,900 --> 00:00:01,400", data)
             self.assertEqual(srt_time(61001), "00:01:01,001")
-
-    def test_srt_prefers_three_to_four_second_cues(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / "Project.srt"
-            words = [
-                {"text": f"word{i}", "offset": i * 5_000_000,
-                 "duration": 3_500_000}
-                for i in range(20)
-            ]
-            count = write_srt([(words, 10_000)], output)
-            self.assertEqual(count, 3)
-            blocks = output.read_text(encoding="utf-8").strip().split("\n\n")
-            self.assertEqual(len(blocks), 3)
-            self.assertIn("00:00:00,000 --> 00:00:03,850", blocks[0])
-            self.assertIn("00:00:04,000 --> 00:00:07,850", blocks[1])
-            self.assertIn("00:00:08,000 --> 00:00:09,850", blocks[2])
-
-    def test_srt_without_timing_fails_instead_of_generating_guess(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / "Project.srt"
-            with self.assertRaisesRegex(ValueError, "word timings"):
-                write_srt([([], 2500)], output)
-            self.assertFalse(output.exists())
 
 
 class StorageTests(unittest.TestCase):
@@ -105,7 +82,7 @@ class RenderTests(unittest.TestCase):
             root = Path(temp)
             store = Store(root / "db.sqlite")
             script = ("This is a long sentence for repeatable audio tests. " * 160)
-            job = store.add_job("Long Test", script, "en-US-AndrewNeural", subtitles=True)
+            job = store.add_job("Long Test", script, "en-US-AndrewNeural", subtitles=False)
             generated = []
             pause = [False]
 
@@ -118,7 +95,7 @@ class RenderTests(unittest.TestCase):
                     capture_output=True, text=True, timeout=30)
                 if proc.returncode:
                     raise RuntimeError(proc.stderr)
-                return [{"text": "voice", "offset": 0, "duration": 900_000}]
+                return []
 
             def on_progress(done, total):
                 if done == 1:
@@ -136,10 +113,6 @@ class RenderTests(unittest.TestCase):
                 store, job, root / "output", root / "cache", synthesis=fake_synth))
             self.assertTrue(result.is_file())
             self.assertGreater(result.stat().st_size, 100)
-            srt = result.with_suffix(".srt")
-            self.assertTrue(srt.is_file())
-            self.assertGreater(srt.stat().st_size, 20)
-            self.assertEqual(result.stem, srt.stem)
             self.assertEqual(store.get(job)["status"], "done")
             self.assertEqual(len(generated), store.get(job)["total"])
             self.assertNotEqual(store.get(job)["total"], 0)

@@ -78,89 +78,37 @@ def srt_time(ms: int) -> str:
 
 
 def write_srt(chunks: list[tuple[list[dict], int]], output: Path) -> int:
-    """Create captions of roughly 3–4 seconds using Edge's actual word timestamps.
-
-    Word offsets are relative to the beginning of each synthesized MP3 chunk;
-    measured MP3 lengths locate each chunk on the final concatenated timeline.
-    Short final phrases and long pauses may necessarily yield shorter cues.
-    Missing timing metadata is an error, never an empty or guessed SRT.
-    """
-    words: list[dict] = []
+    """Write word-timed cues with measured audio duration offsets."""
+    entries: list[str] = []
     shift_ms = 0
-    for events, duration_ms in chunks:
-        duration_ms = max(0, int(duration_ms))
-        if duration_ms <= 0:
-            raise ValueError("Cannot synchronize subtitles with an empty audio chunk")
-        chunk_words = []
-        for item in events:
+    for words, duration_ms in chunks:
+        group: list[dict] = []
+        for item in words:
             try:
                 word = str(item["text"]).strip()
                 start = max(0, int(item["offset"]) // 10000)
-                length = max(1, int(item["duration"]) // 10000)
+                duration = max(1, int(item["duration"]) // 10000)
             except (KeyError, ValueError, TypeError):
                 continue
-            if not word or start >= duration_ms:
+            if not word:
                 continue
-            end = min(duration_ms, start + length)
-            chunk_words.append({"text": word, "start": shift_ms + start,
-                                "end": shift_ms + end})
-        if not chunk_words:
-            raise ValueError(
-                "Edge TTS did not provide word timings for a voice chunk; "
-                "accurate synchronized SRT cannot be generated")
-        words.extend(sorted(chunk_words, key=lambda item: item["start"]))
+            group.append({"text": word, "start": start, "end": start + duration})
+            if len(group) >= 8 or word[-1] in ".!?":
+                first, last = group[0], group[-1]
+                entries.append(
+                    f"{len(entries)+1}\n{srt_time(shift_ms+first['start'])} --> "
+                    f"{srt_time(shift_ms+last['end'])}\n"
+                    + " ".join(x["text"] for x in group) + "\n"
+                )
+                group = []
+        if group:
+            first, last = group[0], group[-1]
+            entries.append(
+                f"{len(entries)+1}\n{srt_time(shift_ms+first['start'])} --> "
+                f"{srt_time(shift_ms+last['end'])}\n"
+                + " ".join(x["text"] for x in group) + "\n"
+            )
         shift_ms += duration_ms
-
-    if not words:
-        raise ValueError("Cannot generate subtitles without spoken words")
-
-    groups: list[list[dict]] = []
-    current: list[dict] = []
-
-    def flush() -> None:
-        nonlocal current
-        if current:
-            groups.append(current)
-            current = []
-
-    for index, word in enumerate(words):
-        if current:
-            gap = word["start"] - current[-1]["end"]
-            proposed_ms = word["end"] - current[0]["start"]
-            # Do not hold captions through a conspicuous silence, or exceed
-            # four seconds just to squeeze in another spoken word.
-            if gap >= 1200 or (proposed_ms > 4000 and
-                               current[-1]["end"] - current[0]["start"] >= 1200):
-                flush()
-        current.append(word)
-        elapsed = current[-1]["end"] - current[0]["start"]
-        upcoming = words[index + 1] if index + 1 < len(words) else None
-        next_too_late = upcoming is None or (
-            upcoming["end"] - current[0]["start"] > 4000
-            or upcoming["start"] - current[-1]["end"] >= 1200)
-        if elapsed >= 3000 and (next_too_late or word["text"].endswith((".", "!", "?"))):
-            flush()
-    flush()
-
-    # Avoid a one-word tail if the preceding cue can accommodate it without
-    # crossing a large pause. Preserve precise spoken starts/ends.
-    if len(groups) >= 2:
-        previous, last = groups[-2], groups[-1]
-        last_ms = last[-1]["end"] - last[0]["start"]
-        joined_ms = last[-1]["end"] - previous[0]["start"]
-        gap = last[0]["start"] - previous[-1]["end"]
-        if last_ms < 1800 and joined_ms <= 4200 and gap < 700:
-            previous.extend(last)
-            groups.pop()
-
-    entries = []
-    for index, group in enumerate(groups, 1):
-        text = " ".join(part["text"] for part in group)
-        text = re.sub(r"\s+([,.!?;:])", r"\1", text)
-        entries.append(
-            f"{index}\n{srt_time(group[0]['start'])} --> "
-            f"{srt_time(group[-1]['end'])}\n{text}\n"
-        )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(entries) + "\n", encoding="utf-8")
+    if entries:
+        output.write_text("\n".join(entries) + "\n", encoding="utf-8")
     return len(entries)

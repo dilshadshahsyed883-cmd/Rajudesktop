@@ -11,9 +11,8 @@ not inside, Scene Desktop Studio. The original video editor and media files stay
 - SQLite queued narration jobs with restart recovery.
 - Long-script sentence-aware chunks and resumable MP3 segment generation.
 - Bounded network retries, pause, cancel and resume.
-- Each finished narration automatically includes a matching MP3 and synchronized SRT (normally 3–4 second cues), plus optional background WAV conversion.
+- Finished MP3, optional word-timed SRT when available, background WAV conversion.
 - Audio preview and library player, independent output/cache folder locations.
-- Matching Project.mp3 and Project.srt files share one output folder. Collisions use Project (2), etc., instead of overwriting prior exports.
 - Scripts, favorites, outputs and queue stay local to the Windows PC.
 
 ## Developer launch
@@ -37,10 +36,7 @@ a generated audio file or any Scene editor media.
 
 The Microsoft Edge voice endpoint is online and is not under this application's
 control. Upstream rate limits, protocol changes and network problems may interrupt
-speech synthesis. SRT timings are derived from Edge word-boundary events (not
-estimates from written character counts). Missing word timings cause the job
-to fail clearly rather than publishing an inaccurate or empty SRT. MP3 and SRT
-are published as one successful queue result.
+speech synthesis. Timing-based subtitle export depends on word-boundary events.
 
 ## Tests and releases
 

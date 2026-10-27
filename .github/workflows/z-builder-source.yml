@@ -32,6 +32,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install video probe for real four-second media test
+        run: python -m pip install "imageio-ffmpeg>=0.5,<1"
       - name: Validate syntax and run real Z Studio CapCut draft test
         shell: pwsh
         run: |

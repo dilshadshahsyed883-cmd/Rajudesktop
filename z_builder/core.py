@@ -51,6 +51,10 @@ class Catalog:
                 kind TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '', approved INTEGER NOT NULL DEFAULT 1,
                 size_bytes INTEGER NOT NULL DEFAULT 0
             )''')
+            c.execute('''CREATE TABLE IF NOT EXISTS media_exports (
+                asset_id TEXT PRIMARY KEY, exported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                times_exported INTEGER NOT NULL DEFAULT 1
+            )''')
 
     @contextmanager
     def _connect(self):
@@ -94,7 +98,10 @@ class Catalog:
     def assets(self, include_missing=True) -> list[dict]:
         with self._connect() as c:
             c.row_factory = sqlite3.Row
-            result = [dict(r) for r in c.execute('SELECT * FROM assets ORDER BY kind, filename COLLATE NOCASE, id')]
+            result = [dict(r) for r in c.execute('''SELECT a.*, COALESCE(e.times_exported, 0) AS export_count,
+                e.exported_at AS last_exported_at
+                FROM assets AS a LEFT JOIN media_exports AS e ON e.asset_id = a.id
+                ORDER BY a.kind, a.filename COLLATE NOCASE, a.id''')]
         for a in result:
             a['approved'] = bool(a['approved'])
             a['exists'] = Path(a['path']).is_file()
@@ -109,7 +116,64 @@ class Catalog:
     def remove(self, identity: str):
         """Forget a catalog entry, never delete a user's original file."""
         with self._connect() as c:
+            c.execute('DELETE FROM media_exports WHERE asset_id=?', (identity,))
             c.execute('DELETE FROM assets WHERE id=?', (identity,))
+
+    def record_successful_export(self, paths) -> int:
+        """Mark only catalog items used in a fully verified CapCut export.
+
+        Matching uses canonical source paths and stable IDs, never just filenames.
+        A scene being matched does NOT count as an export.
+        """
+        marked = 0
+        with self._connect() as c:
+            for raw in set(str(p) for p in paths if p):
+                path = str(Path(raw).resolve())
+                identity = stable_id(path)
+                found = c.execute('SELECT 1 FROM assets WHERE id=? AND path=?',
+                                  (identity, path)).fetchone()
+                if found:
+                    c.execute('''INSERT INTO media_exports(asset_id, times_exported)
+                                 VALUES (?, 1)
+                                 ON CONFLICT(asset_id) DO UPDATE SET
+                                 times_exported=media_exports.times_exported+1,
+                                 exported_at=CURRENT_TIMESTAMP''', (identity,))
+                    marked += 1
+        return marked
+
+    def recycle_exported_media(self, identities, recycle=None) -> tuple[list[str], list[str]]:
+        """Explicitly move selected exported originals to Windows Recycle Bin.
+
+        Never silently delete or touch unexported files. The UI must obtain final
+        render confirmation first; an exported CapCut draft is not a rendered video.
+        """
+        if recycle is None:
+            from send2trash import send2trash
+            recycle = send2trash
+        moved, failures = [], []
+        for identity in dict.fromkeys(identities):
+            with self._connect() as c:
+                row = c.execute('''SELECT a.path FROM assets AS a
+                    INNER JOIN media_exports AS e ON e.asset_id = a.id
+                    WHERE a.id=?''', (identity,)).fetchone()
+            if row is None:
+                failures.append(f'{identity}: not marked as exported (not eligible)')
+                continue
+            path = Path(row[0])
+            if (not path.is_file() or path.is_symlink() or
+                    stable_id(str(path)) != identity):
+                failures.append(f'{path}: missing or changed path; skipped')
+                continue
+            try:
+                recycle(str(path))
+            except Exception as exc:
+                failures.append(f'{path.name}: {exc}')
+                continue
+            with self._connect() as c:
+                c.execute('DELETE FROM media_exports WHERE asset_id=?', (identity,))
+                c.execute('DELETE FROM assets WHERE id=? AND path=?', (identity, str(path)))
+            moved.append(str(path))
+        return moved, failures
 
     def summary(self) -> str:
         assets = self.assets()
@@ -117,6 +181,7 @@ class Catalog:
                  f'Images: {sum(a["kind"] == "image" for a in assets)}',
                  f'Videos: {sum(a["kind"] == "video" for a in assets)}',
                  f'Approved: {sum(a["approved"] for a in assets)}',
+                 f'Used in verified CapCut exports: {sum(a["export_count"] > 0 for a in assets)}',
                  'Only approved and existing files can be selected.', '']
         for kind in ('image', 'video'):
             lines.append(kind.upper() + 'S')

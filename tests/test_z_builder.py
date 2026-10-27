@@ -99,5 +99,57 @@ class ZBuilderCoreTests(unittest.TestCase):
             self.assertEqual(len(data['tracks'][0]['segments']), 1)
 
 
+    def test_used_media_requires_verified_export_and_manual_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            used = root / 'Used Video.mp4'
+            unused = root / 'Keep Image.jpg'
+            used.write_bytes(b'video')
+            unused.write_bytes(b'image')
+            catalog = Catalog(root / 'catalog.sqlite')
+            used_id = catalog.add(used)
+            unused_id = catalog.add(unused)
+            self.assertEqual([], [a for a in catalog.assets() if a['export_count']])
+            self.assertEqual(([], [f'{unused_id}: not marked as exported (not eligible)']),
+                             catalog.recycle_exported_media([unused_id], recycle=lambda _: self.fail('deleted unused')))
+            self.assertEqual(1, catalog.record_successful_export([str(used), str(used), str(root / 'missing.jpg')]))
+            self.assertEqual(2, catalog.record_successful_export([str(used), str(unused)]))
+            indexed = {a['id']: a for a in catalog.assets()}
+            self.assertEqual(2, indexed[used_id]['export_count'])
+            self.assertEqual(1, indexed[unused_id]['export_count'])
+            recycled = root / 'recycled'
+            recycled.mkdir()
+            moved, failures = catalog.recycle_exported_media([used_id, used_id],
+                recycle=lambda path: Path(path).rename(recycled / Path(path).name))
+            # Windows may resolve a short 8.3 profile path into its long equivalent.
+            self.assertEqual(1, len(moved))
+            self.assertEqual(used.name, Path(moved[0]).name)
+            self.assertFalse(failures)
+            self.assertFalse(used.exists())
+            self.assertTrue((recycled / used.name).exists())
+            self.assertTrue(unused.exists())
+            self.assertEqual([unused_id], [a['id'] for a in catalog.assets()])
+            # Re-importing a recovered original must not inherit old usage history.
+            (recycled / used.name).rename(used)
+            catalog.add(used)
+            self.assertEqual(0, next(a['export_count'] for a in catalog.assets() if a['id'] == used_id))
+
+    def test_failed_recycle_keeps_original_and_catalog_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / 'clip.mp4'
+            source.write_bytes(b'data')
+            catalog = Catalog(root / 'catalog.sqlite')
+            asset_id = catalog.add(source)
+            catalog.record_successful_export([source])
+            def broken_recycle(_):
+                raise PermissionError('file locked by Windows')
+            moved, failures = catalog.recycle_exported_media([asset_id], recycle=broken_recycle)
+            self.assertFalse(moved)
+            self.assertIn('file locked', failures[0])
+            self.assertTrue(source.is_file())
+            self.assertEqual(1, catalog.assets()[0]['export_count'])
+
+
 if __name__ == '__main__':
     unittest.main()

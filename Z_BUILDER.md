@@ -14,6 +14,14 @@ Small standalone Windows desktop application (Python/PySide6), independent of th
 - CapCut Home → Projects contains separate drafts named `Your Project - Part 01`, `Your Project - Part 02`, etc. Each contains `Z_Builder_Part_Info.json` with the original time range, `Z_Builder_Timeline.csv`, and `Z_Builder_Warnings.txt`.
 - The exporter uses the source asset files **non-destructively** and verifies written JSON, media and track assignments. Actual compatibility with installed CapCut versions must be tested on the user's PC.
 
+## Used Media — manual cleanup after final CapCut rendering
+
+- A local asset is marked **Exported ×N** only after all CapCut draft parts finish successfully and verification passes; merely adding it to the library or matching a Scene Plan never makes it eligible for cleanup.
+- In **Step 2 → Media Library**, select the **Used in CapCut Export** filter. Select individual rows with Ctrl/Shift or use **Select All Used Media**.
+- After you manually finish and inspect your **final rendered video in CapCut**, check **Final video rendered and checked in CapCut**, then click **Delete Selected Used Media (Recycle Bin)**.
+- Z Builder displays original filenames, counts, total size, and a final destructive-action confirmation. Only those selected original PC files are moved to the **Windows Recycle Bin** using `send2trash` and removed from the catalog. No automatic cleanup, permanent deletion, or change to unselected media.
+- **Important:** CapCut draft creation is not final rendering; Z Builder cannot detect whether your manual CapCut render has actually completed. If media is used by another project or you intend to re-edit it, keep the original files. CapCut draft folders and exported final videos are not deleted. Re-import a recovered file if required.
+
 ## Simple Scene Plan format
 
 ```text
@@ -32,7 +40,7 @@ Every row must be continuous, with no overlap or gap. Original 4-second video cl
 
 ## Run
 
-**Source build**: on Windows (Python 3.11+), extract ZIP and run `start_z_builder.bat`, which installs dependencies if required and bootstraps the official portable Node runtime when needed. The app's catalog lives in `Documents/Z Builder/library.sqlite3` and never deletes original PC media. To build from source: `pip install -r requirements-z-builder.txt && python launch_z_builder.py`.
+**Source build**: on Windows (Python 3.11+), extract ZIP and run `start_z_builder.bat`, which installs dependencies if required and bootstraps the official portable Node runtime when needed. The app's catalog lives in `Documents/Z Builder/library.sqlite3` and does not delete original PC media unless you explicitly invoke render-confirmed Recycle Bin cleanup. To build from source: `pip install -r requirements-z-builder.txt && python launch_z_builder.py`.
 
 **Windows EXE build**: the `Z Builder Windows EXE` GitHub Actions workflow builds a portable PyInstaller one-file executable with PySide6, the original Z Studio Node exporter and bundled Node runtime. No separate system Python/Node installation is needed for that EXE. Windows SmartScreen may warn because the build is not code-signed. The official CapCut application must still be installed. The EXE is a Windows-only CI artifact, not locally built on Linux.
 

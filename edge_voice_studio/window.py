@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal, QStandardPaths
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFormLayout, QFrame,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
     QMessageBox, QInputDialog, QPlainTextEdit, QPushButton, QSlider, QSplitter, QStackedWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QAbstractItemView,

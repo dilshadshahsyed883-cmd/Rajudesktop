@@ -156,11 +156,11 @@ def write_srt(chunks: list[tuple[list[dict], int]], output: Path) -> int:
     entries = []
     for index, group in enumerate(groups, 1):
         text = " ".join(part["text"] for part in group)
-        text = re.sub(r"\\s+([,.!?;:])", r"\\1", text)
+        text = re.sub(r"\s+([,.!?;:])", r"\1", text)
         entries.append(
-            f"{index}\\n{srt_time(group[0]['start'])} --> "
-            f"{srt_time(group[-1]['end'])}\\n{text}\\n"
+            f"{index}\n{srt_time(group[0]['start'])} --> "
+            f"{srt_time(group[-1]['end'])}\n{text}\n"
         )
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\\n".join(entries) + "\\n", encoding="utf-8")
+    output.write_text("\n".join(entries) + "\n", encoding="utf-8")
     return len(entries)

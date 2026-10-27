@@ -123,7 +123,7 @@ function motionOf(c, dur, zoomMin) {
 function makePlan(payload, media) {
   const notes = [], warn = m => { if (!notes.includes(m)) notes.push(m); };
   const W = payload.W || 1920, H = payload.H || 1080, zoomMin = payload.zoomMinSec || 5;
-  const plan = { name: payload.name || 'Z Studio Project', W, H, fps: +payload.fps || 30, images: [], voice: [], music: [], sfx: [], captions: [], titles: [], notes, gaps: 0 };
+  const plan = { name: payload.name || 'Z Studio Project', W, H, fps: +payload.fps || 30, images: [], voice: [], music: [], sfx: [], captions: [], titles: [], notes, gaps: 0, separateLayers: payload.separateLayers === true };
   let prev = 0;
   const imgs = (payload.images || []).filter(c => c && c.image).slice().sort((a, b) => a.start - b.start);
   imgs.forEach((c, i) => {
@@ -238,15 +238,27 @@ const yFor = pos => pos === 'top' ? 0.78 : pos === 'center' ? 0 : -0.78;
 function buildContent(plan, files, timelineId) {
   const M = emptyMaterials(), tracks = [], matFor = new Map();
   const refs = list => list.map(m => { M[MAT_KEY[m.type] || 'material_colors'].push(m); return m.id; });
-  // main picture track
-  const main = trackOf('video', ''); let ti = 0;
-  for (const c of plan.images) {
-    const f = files[c.file] || c.file; let mat = matFor.get(f);
-    if (!mat) { mat = videoMaterial(f, c.kind, c); M.videos.push(mat); matFor.set(f, mat); }
-    main.segments.push(segment({ kind: 'video', main: true, materialId: mat.id, refs: refs([speedM(), placeholderM(), canvasM(), animM(), soundMapM(), colorM(), vocalM()]), trackIndex: 0, renderIndex: 0,
-      source: { start: c.kind === 'photo' ? 0 : us(c.trimStart), duration: us(c.dur) }, target: { start: us(c.start), duration: us(c.dur) }, volume: c.volume, scale: c.m.scale, x: c.m.x, y: c.m.y, rotation: c.m.rotation, alpha: c.m.alpha, flipH: c.m.flipH, flipV: c.m.flipV, kf: c.m.kf }));
+  // Z Builder fixed arrangement: base still-image track BELOW overlay video track.
+  // Every clip keeps its original target timestamp, even when its track has gaps.
+  // Legacy Z Studio still uses its single mixed main track by default.
+  let ti = 0;
+  const visualGroups = plan.separateLayers
+    ? [{ clips: plan.images.filter(c => c.kind === 'photo'), name: 'Images - Lower Layer' },
+       { clips: plan.images.filter(c => c.kind === 'video'), name: 'Videos - Upper Layer' }]
+    : [{ clips: plan.images, name: '' }];
+  // Avoid an empty base track when a project contains only one media kind.
+  for (const group of visualGroups) {
+    if (!group.clips.length) continue;
+    const main = trackOf('video', group.name);
+    const baseTrack = ti === 0;
+    for (const c of group.clips) {
+      const f = files[c.file] || c.file; let mat = matFor.get(f);
+      if (!mat) { mat = videoMaterial(f, c.kind, c); M.videos.push(mat); matFor.set(f, mat); }
+      main.segments.push(segment({ kind: 'video', main: baseTrack, materialId: mat.id, refs: refs([speedM(), placeholderM(), canvasM(), animM(), soundMapM(), colorM(), vocalM()]), trackIndex: ti, renderIndex: ti,
+        source: { start: c.kind === 'photo' ? 0 : us(c.trimStart), duration: us(c.dur) }, target: { start: us(c.start), duration: us(c.dur) }, volume: c.volume, scale: c.m.scale, x: c.m.x, y: c.m.y, rotation: c.m.rotation, alpha: c.m.alpha, flipH: c.m.flipH, flipV: c.m.flipV, kf: c.m.kf }));
+    }
+    tracks.push(main); ti++;
   }
-  if (main.segments.length) { tracks.push(main); ti++; }
   const audio = (list, name) => {
     if (!list.length) return; const t = trackOf('audio', name);
     for (const a of list) {
@@ -267,7 +279,7 @@ function buildContent(plan, files, timelineId) {
   text(plan.captions, 'Z Studio Captions', true); text(plan.titles, 'Z Studio Titles', false);
   const total = tracks.reduce((m, t) => Math.max(m, ...t.segments.map(s => s.target_timerange.start + s.target_timerange.duration)), 0);
   return { id: timelineId, version: 360000, new_version: '185.0.0', name: '', duration: total, create_time: 0, update_time: 0, fps: plan.fps, is_drop_frame_timecode: false, color_space: 0,
-    config: { video_mute: false, record_audio_last_index: 1, extract_audio_last_index: 1, original_sound_last_index: 1, subtitle_recognition_id: '', subtitle_taskinfo: [], lyrics_recognition_id: '', lyrics_taskinfo: [], subtitle_sync: true, lyrics_sync: true, voice_change_sync: false, sticker_max_index: 1, adjust_max_index: 1, material_save_mode: 0, export_range: null, maintrack_adsorb: !plan.gaps, combination_max_index: 1, attachment_info: [], zoom_info_params: null, system_font_list: [], multi_language_mode: 'none', multi_language_main: 'none', multi_language_current: 'none', multi_language_list: [], subtitle_keywords_config: null, use_float_render: false, hdr_vivid: false },
+    config: { video_mute: false, record_audio_last_index: 1, extract_audio_last_index: 1, original_sound_last_index: 1, subtitle_recognition_id: '', subtitle_taskinfo: [], lyrics_recognition_id: '', lyrics_taskinfo: [], subtitle_sync: true, lyrics_sync: true, voice_change_sync: false, sticker_max_index: 1, adjust_max_index: 1, material_save_mode: 0, export_range: null, maintrack_adsorb: !plan.gaps && !plan.separateLayers, combination_max_index: 1, attachment_info: [], zoom_info_params: null, system_font_list: [], multi_language_mode: 'none', multi_language_main: 'none', multi_language_current: 'none', multi_language_list: [], subtitle_keywords_config: null, use_float_render: false, hdr_vivid: false },
     canvas_config: { ratio: 'original', width: plan.W, height: plan.H, background: null }, tracks, group_container: null, materials: M, keyframes: { videos: [], audios: [], texts: [], stickers: [], filters: [], adjusts: [], handwrites: [], effects: [] }, keyframe_graph_list: [], platform: platform(), last_modified_platform: platform(),
     mutable_config: null, cover: null, retouch_cover: null, extra_info: null, relationships: [], mixed_track_mode_on: false, render_index_track_mode_on: true, free_render_index_mode_on: false, static_cover_image_path: '', source: 'default', time_marks: null, path: '', lyrics_effects: [], uneven_animation_template_info: { composition: '', content: '', order: '', sub_template_info_list: [] },
     draft_type: 'video', smart_ads_info: { page_from: '', routine: '', draft_url: '' },
@@ -332,7 +344,21 @@ function verifyProject(folder, plan) {
   const tl = c.id && path.join(folder, 'Timelines', c.id, 'draft_content.json');
   if (!tl || !fs.existsSync(tl)) issues.push('The timeline copy inside Timelines/ is missing.');
   const byId = new Map(); for (const k of ['videos', 'audios', 'texts']) for (const m of c.materials[k] || []) byId.set(m.id, m);
-  const pic = c.tracks.find(t => t.type === 'video' && t.segments.some(s => s.track_attribute === 1)) || { segments: [] };
+  const visualTracks = c.tracks.filter(t => t.type === 'video');
+  if (plan.separateLayers) {
+    const kinds = plan.images.map(x => x.kind);
+    if (kinds.includes('photo') && kinds.includes('video')) {
+      if (visualTracks.length !== 2 || visualTracks[0].name !== 'Images - Lower Layer' || visualTracks[1].name !== 'Videos - Upper Layer') issues.push('Fixed image/video track order is wrong.');
+      for (const [index, kind] of ['photo', 'video'].entries()) {
+        const expected = plan.images.filter(x => x.kind === kind).length;
+        if ((visualTracks[index]?.segments?.length || 0) !== expected) issues.push(`${kind} track segment count mismatch.`);
+      }
+    }
+  }
+  // The reference array is chronological; a multi-layer draft has two visual
+  // tracks. Compare all clips sorted by original timeline time, not track order.
+  const pic = { segments: visualTracks.flatMap(t => t.segments)
+    .sort((a, b) => a.target_timerange.start - b.target_timerange.start) };
   if (pic.segments.length !== plan.images.length) issues.push(`Picture count differs: plan ${plan.images.length}, project ${pic.segments.length}.`);
   pic.segments.forEach((s, i) => {
     const p = plan.images[i], m = byId.get(s.material_id);

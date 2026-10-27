@@ -452,8 +452,7 @@ def preflight(plan: Plan) -> list[str]:
             issues.append(f'{shot.section}: kind mismatch')
         if not 0.1 <= shot.duration <= 1800:
             issues.append(f'{shot.section}: invalid duration')
-    if plan.sections.get('_FORMAT', {}).get('type') == 'simple_timed_v1' and not plan.narration_path:
-        issues.append('Input: voice MP3/WAV is required for this timed Scene Plan')
+    # Voice is optional. Exact timed Scene Plan is the authority for visuals.
     if plan.narration_path and not Path(plan.narration_path).is_file():
         issues.append('Narration file not found')
     return issues

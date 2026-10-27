@@ -1,51 +1,47 @@
-# Z Builder — Scene Plan + Voice → Media Selection & Timeline → Open in CapCut
+# Z Builder — Scene Plan → Local Media Timeline → Split CapCut Projects
 
-A **small standalone Windows desktop app**, not a copy of the complete VPS Scene Builder. The UI has **three steps**:
+Small standalone Windows desktop application (Python/PySide6), independent of the VPS. The UI has **three steps**:
 
-1. **Input:** load a simple timed Scene Plan `.txt` and the final MP3/WAV voice file.
-2. **Media Selection & Timeline:** select images/videos from the local Media Library (import folder/files, preview, tags, downloadable media summary). Exact filenames are matched automatically; keywords match only when an unambiguous item exists. Replace any selected shot manually. The preview table shows every planned start/end, video trim and image hold.
-3. **Open in CapCut:** preflight voice/media/shot timings, create a new editable CapCut project using the **original Z Studio draft writer**, and open CapCut if available. The resulting project appears under CapCut Home → Projects.
+1. **Input:** import a simple timed Scene Plan `.txt`; voice MP3/WAV is optional.
+2. **Media Selection & Timeline:** import images/videos into the included local Media Library, match scene filenames/keywords, manually replace missing items and inspect exact timing/trim.
+3. **Open in CapCut:** creates **multiple independent, editable CapCut drafts** from the original Z Studio writer. No whole-length draft is created.
+
+## Fixed CapCut tracks, splitting and optional audio
+
+- **Fixed visual layering:** still images always go onto the **lower visual track**, videos onto the **upper visual track** when both types exist. There is **no toggle to reverse** the layers. Original scene start/end times are retained; each part's draft starts at 00:00. This only changes Z Builder's opt-in writer mode, not Z Studio's legacy mixed-track mode.
+- **Part lengths:** target **6 minutes (360 seconds)**, with **5–7 minutes (300–420 seconds)** preferred. Scenes are **never split mid-shot**. Each exported part is **never longer than 7 minutes**. The last leftover part may be shorter than 5 minutes; if a single Scene Plan scene exceeds 7 minutes, export blocks and asks for a shorter plan shot.
+- **Voice:** `Include Voice in CapCut parts` is a checkbox in Step 3, **OFF by default**. If OFF, no narration file or audio track is exported even when voice was selected in Input. If ON, each part receives its properly trimmed section of the source MP3/WAV (the source in-point equals that part's absolute starting time). No audio is fabricated. Source-video audio is muted. You may leave voice unselected and add audio during final editing/rendering.
+- CapCut Home → Projects contains separate drafts named `Your Project - Part 01`, `Your Project - Part 02`, etc. Each contains `Z_Builder_Part_Info.json` with the original time range, `Z_Builder_Timeline.csv`, and `Z_Builder_Warnings.txt`.
+- The exporter uses the source asset files **non-destructively** and verifies written JSON, media and track assignments. Actual compatibility with installed CapCut versions must be tested on the user's PC.
 
 ## Simple Scene Plan format
-
-See `EXAMPLE_SCENE_PLAN.txt` in the ZIP:
 
 ```text
 name=My Video
 aspect=16:9
+resolution=1080p
 fps=30
 00:00.000 --> 00:02.500 | video | Clip 1.mp4 | in=1.250
 00:02.500 --> 00:07.250 | image | Poster 1.jpg
 00:07.250 --> 00:09.000 | video | keyword: tennis | in=0
 ```
 
-Each row specifies **exact target timeline start and end**, the media type, and an **exact filename** or `keyword: ...` for automatic media selection. Videos may optionally specify `in=` to choose where to start inside the source clip (seconds). `text=...` adds an optional editable CapCut text caption. `resolution=1080p`/`720p` and `aspect=16:9`/`9:16` are optional. Times support SS, MM:SS or HH:MM:SS and up to three decimal places. Original `SCENE_PLAN_VERSION=2` plans remain accepted as a legacy compatibility format.
+Each row defines authoritative **absolute start/end** timings and one image/video filename or keyword. Video `in=` (seconds) controls source trim start; optional `text=...` adds an editable caption. Times accept SS, MM:SS or HH:MM:SS with up to 3 decimals. `SCENE_PLAN_VERSION=2` input remains supported for legacy Scene Plans, but its `animation_duration` fallback is only a provisional shot duration, not voice alignment.
 
-**The Scene Plan is the sole timing authority.** The timeline must start at 00:00.000 and have no gaps/overlaps. Voice length is checked against the total scene duration if the audio duration is readable (difference over 0.25 seconds blocks export).
+Every row must be continuous, with no overlap or gap. Original 4-second video clips are trimmed (not re-encoded) to the scene duration, subject to `source in + slot duration <= 4 seconds`. Images hold for their exact slot length. Real source length is checked where FFmpeg can read it; unknown length yields a warning, not a claim of verification.
 
-### Four-second video source rule
+## Run
 
-All source video clips are assumed to be **4 seconds maximum**. For a **2.5-second scene**, Z Builder sets the source range to **2.5 seconds**, not four; if `in=1.250`, it uses source **1.250–3.750**, placed at the scene's exact target range. Images simply hold as long as their scenes require (even more than 4 seconds).
+**Source build**: on Windows (Python 3.11+), extract ZIP and run `start_z_builder.bat`, which installs dependencies if required and bootstraps the official portable Node runtime when needed. The app's catalog lives in `Documents/Z Builder/library.sqlite3` and never deletes original PC media. To build from source: `pip install -r requirements-z-builder.txt && python launch_z_builder.py`.
 
-- No source media is cut or overwritten on disk; CapCut's editable source and target time ranges perform the trims.
-- If `source in + required scene duration` exceeds 4 seconds, export is blocked. No speed-up, slow-motion, frozen footage or silent stretching.
-- Real video file duration is checked at export when FFmpeg/FFprobe is available. If duration cannot be probed, the source is assumed to be 4 seconds **with a warning**.
-- For a scene longer than the available video, split the scene into smaller slots with additional media or use an image. One four-second clip is never stretched to fill it.
+**Windows EXE build**: the `Z Builder Windows EXE` GitHub Actions workflow builds a portable PyInstaller one-file executable with PySide6, the original Z Studio Node exporter and bundled Node runtime. No separate system Python/Node installation is needed for that EXE. Windows SmartScreen may warn because the build is not code-signed. The official CapCut application must still be installed. The EXE is a Windows-only CI artifact, not locally built on Linux.
 
-## Run (Python files only, no EXE)
+## Limitations
 
-1. Extract the ZIP to a folder on Windows.
-2. Double-click `start_z_builder.bat`. Python 3.11+ is recommended. This installs Python dependencies only when missing and uses installed Node or a verified official portable Node.js (internet needed for first setup).
-3. Import a media folder in **2 → Media Library**, add the Scene Plan and voice in **1 → Input**, then click Next to inspect and resolve the timeline. Click **3 → Open in CapCut** after preflight.
+The Z Studio CapCut JSON layout was modeled on CapCut 9.4; validate the produced draft against your installed CapCut version. CapCut does not support a specific-project deep link, so Z Builder opens CapCut but you select each new part from its Home screen. Advanced LUTs, transitions and karaoke animations are not transferred to CapCut; relevant warnings are saved. No Pexels downloader, no unrequested VPS changes, and no modification of your original media or previous drafts.
 
-The app's media catalog is stored in `Documents/Z Builder/library.sqlite3`. Original files are never moved/deleted by the catalog. CapCut export copies referenced files into a new draft; it does not modify any existing draft or the original Z Studio.
-
-## Compatibility limitations
-
-The Z Studio CapCut draft layout is based on CapCut 9.4 and needs testing against installed CapCut versions. CapCut offers no supported direct deep-link to open a specific project; the app starts CapCut, and the newly created project is chosen on its Home screen. Non-cut transitions, LUTs and word-level karaoke effects are not included by the native Z Studio exporter. They are reported as warnings rather than silently faked. Automatic Pexels download is out of scope; the library supplies the media. Only scene timing, source trims, media choices, optional captions and the supplied voice are sent to CapCut. Existing VPS Scene Builder remains unchanged.
-
-## Tests
+## Test
 
 `python -m unittest discover -s tests -p 'test_z_builder*.py' -v`
 
-Includes a real 4-second video → 2.5-second CapCut source trim / correct target times / image hold / voice timeline integration test when FFmpeg and Node are installed.
+Tests cover the 4-second video → 2.5-second source/target trim, fixed image/video track ordering, 345-shot → 3-part splitting, default muted/absent audio, and optional voice source offset across multiple projects.

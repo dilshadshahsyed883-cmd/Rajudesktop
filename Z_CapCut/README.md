@@ -23,6 +23,8 @@ This folder is a persistent engineering record named **Z CapCut**. It is **not**
 
 | Advanced effect + keyframe external research (27 Oct 2026) | Public anonymized schema-360000 CapCut fixtures, custom vs preset animations, filter material variants, active timeline mirrors, safe testing | [07 — Advanced effects research](07_ADVANCED_EFFECTS_RESEARCH_20261027.md) |
 
+| Practical JSON experiments + resource catalog (27 Oct) | 9 Python checks PASS; synthetic 300-photo animation clone; actual owner draft copy-only test; 951 catalog entries, Pendulum 1 ID matched; CapCut runtime rendering pending | [08 — Practical findings](08_PRACTICAL_LAB_RESEARCH_20261027.md) and [catalog excerpt](08_CATALOG_EXCERPT_CANDIDATES_ONLY.json) |
+
 ## Most useful verified facts
 
 - Timeline positions and clip lengths are in **microseconds** using segment `target_timerange`; trims are in `source_timerange`.

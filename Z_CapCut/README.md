@@ -19,6 +19,8 @@ This folder is a persistent engineering record named **Z CapCut**. It is **not**
 | CapCut root-binary ZIP | 177 root-level native/runtime files; sensitive crash dumps excluded from public repo | [05 — Binary ZIP inspection](05_ROOT_BINARY_ZIP.md) |
 | Machine-readable public findings | Sanitized resource IDs, version and verified field names | [capability_manifest.json](capability_manifest.json) |
 
+| Official installer retrieval and next native sample priorities | Overlapping-layer, fill/trim, audio, effects samples; master doc linked; installer fetch attempted but failed | [06 — Next evidence](06_NEXT_EVIDENCE_AND_OFFICIAL_INSTALLER.md) |
+
 ## Most useful verified facts
 
 - Timeline positions and clip lengths are in **microseconds** using segment `target_timerange`; trims are in `source_timerange`.

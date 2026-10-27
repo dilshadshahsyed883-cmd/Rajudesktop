@@ -14,7 +14,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QDoubleSpinBox,
     QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget,
     QTextEdit, QVBoxLayout, QWidget
@@ -110,7 +110,7 @@ class Window(QMainWindow):
         media_layout.addLayout(mcontrols)
         split = QSplitter(Qt.Orientation.Horizontal)
         self.media_table = self._table(['Filename', 'Type', 'Status', 'Tags', 'Full path'])
-        self.media_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
+        self.media_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.media_table.itemSelectionChanged.connect(self.select_library)
         split.addWidget(self.media_table)
         side = QWidget()
@@ -135,7 +135,7 @@ class Window(QMainWindow):
         sl.addWidget(self._button('Save Tags', self.save_tags))
         sl.addWidget(self._button('Remove from Library (keep original)', self.remove_catalog_item))
         sl.addWidget(self._button('Select All Used Media', self.select_all_used))
-        self.render_confirm = QCheckBox('Final video rendered and checked in CapCut')
+        self.render_confirm = QCheckBox('Final CapCut video rendered + checked')
         sl.addWidget(self.render_confirm)
         sl.addWidget(self._button('Delete Selected Used Media (Recycle Bin)', self.delete_used_media))
         sl.addWidget(QLabel('Only media from successful CapCut exports can be recycled.\n'

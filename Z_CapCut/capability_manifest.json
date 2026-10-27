@@ -21,7 +21,21 @@
       "parsed_json_count": 209,
       "json_parse_failures": 0
     },
-    "privacy": "Machine-specific paths, hardware IDs, account information, original draft files, and proprietary assets omitted."
+    "privacy": "Machine-specific paths, hardware IDs, account information, original draft files, and proprietary assets omitted.",
+    "root_binary_zip": {
+      "archive_sha256": "8f07a34999f425674148aa3ab033cce789b8eb7546525b8b28da62a0fcd47d60",
+      "file_entries": 177,
+      "size_uncompressed_bytes": 212604429,
+      "file_types": {
+        ".dll": 155,
+        ".exe": 15,
+        ".node": 3,
+        ".js": 2,
+        ".dmp": 2
+      },
+      "zip_integrity_test": "passed",
+      "note": "Root-level binaries only, no Resources folder; proprietary binaries/crash dumps deliberately not included"
+    }
   },
   "resource_findings": {
     "adjustment_groups": [
@@ -126,6 +140,22 @@
       "face-recognition model references",
       "Chroma",
       "Chroma2"
+    ],
+    "native_binaries_observed": [
+      "lyra_cli_client.dll",
+      "EffectPlatform.dll",
+      "DeepAgentsService.dll",
+      "videoeditor_addon.node",
+      "agent_runtime_addon.node",
+      "ttnet_frontier_addon.node",
+      "clipflow_sdk.dll",
+      "Tracking.dll",
+      "ffmpeg.exe",
+      "avfilter-10.dll",
+      "avformat-61.dll",
+      "SvtAv1Enc.dll",
+      "nvjpeg64_12.dll",
+      "openvino_intel_npu_plugin.dll"
     ]
   },
   "draft_schema": {

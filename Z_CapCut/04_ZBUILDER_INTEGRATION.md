@@ -21,12 +21,12 @@ These are target behaviors, **not** all demonstrated as working external CapCut 
 | Area | Evidence level | Z Builder mapping / safety rule |
 |---|---|---|
 | Local Windows CapCut installation | Observed inventory | Version-pin behavior to tested 9.6.0; preserve isolation |
-| Audio-free video drafts | Observed twice | No \`materials.audios\` or audio tracks needed for the two examples |
+| Audio-free video drafts | Observed twice | No `materials.audios` or audio tracks needed for the two examples |
 | Exact timeline positions | Observed twice | Use integer microseconds; round to chosen 30-fps frame policy consistently |
-| Separate lower-index photo and upper-index video tracks | Observed in draft B | Two \`tracks[]\` and distinct \`render_index\`; actual z-order requires overlap test |
+| Separate lower-index photo and upper-index video tracks | Observed in draft B | Two `tracks[]` and distinct `render_index`; actual z-order requires overlap test |
 | Timeline gaps | Observed in draft B | Preflight check visual coverage (5.0–5.2 and 9.2–9.4 s in example) |
-| Clip source trim vs timeline duration | Observed schema fields | Distinguish \`source_timerange\` and \`target_timerange\`; test real edit |
-| Image/photo storage | Observed twice | \`materials.videos[].type = photo\` |
+| Clip source trim vs timeline duration | Observed schema fields | Distinguish `source_timerange` and `target_timerange`; test real edit |
+| Image/photo storage | Observed twice | `materials.videos[].type = photo` |
 | Pendulum 1 / Halo Shift | Observed in draft A | Refer by valid material IDs and check local cache; names alone not enough |
 | 39 adjustments, 10 blend IDs | Observed in resource files | No guarantee applying config by ID into a draft succeeds |
 | Canvas width/height | Observed twice | Examples are 1920×1362 original; need explicit 16:9 test draft |
@@ -52,7 +52,7 @@ These are target behaviors, **not** all demonstrated as working external CapCut 
 
 ## Validation gates before shipping a generated CapCut draft
 
-1. JSON parser passes; unique IDs exist and every \`material_id\` / \`extra_material_refs\` reference resolves.
+1. JSON parser passes; unique IDs exist and every `material_id` / `extra_material_refs` reference resolves.
 2. All target time ranges are nonnegative, match declared duration, have intentional overlap semantics and no accidental gaps.
 3. All source trims are within available media duration (unless deliberately using an explicit image semantics rule); no missing paths.
 4. Photo and video tracks exist and are presented in the intended order; verify with actual simultaneous overlap.
@@ -70,4 +70,4 @@ These are target behaviors, **not** all demonstrated as working external CapCut 
 
 ## Privacy
 
-Do not commit full draft originals, CapCut cache/effect binaries, personal media, full \`path\` values, device IDs, MAC/hardware IDs, login/auth resources, or crash dumps. Repository visibility is **public** at the time of this research. This documentation is intentionally sanitized.
+Do not commit full draft originals, CapCut cache/effect binaries, personal media, full `path` values, device IDs, MAC/hardware IDs, login/auth resources, or crash dumps. Repository visibility is **public** at the time of this research. This documentation is intentionally sanitized.

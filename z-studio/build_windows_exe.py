@@ -28,7 +28,8 @@ pkg['build'] = {
   'asar': False,
   'files': ['**/*','!**/node_modules/.cache/**'],
   'win': {'icon': 'renderer/assets/icon.ico', 'target': [{'target':'nsis','arch':['x64']}, {'target':'portable','arch':['x64']}]},
-  'nsis': {'oneClick': False, 'allowToChangeInstallationDirectory': True, 'createDesktopShortcut': True, 'createStartMenuShortcut': True},
+  'nsis': {'artifactName': 'Z-Studio-Local-Setup-${version}-${arch}.${ext}', 'oneClick': False, 'allowToChangeInstallationDirectory': True, 'createDesktopShortcut': True, 'createStartMenuShortcut': True},
+  'portable': {'artifactName': 'Z-Studio-Local-Portable-${version}-${arch}.${ext}'},
   'publish': None
 }
 pfile.write_text(json.dumps(pkg,indent=2)+'\n','utf-8')

@@ -1,0 +1,62 @@
+name: Z Studio Windows EXE
+on:
+  workflow_dispatch:
+  push:
+    branches: [z-studio]
+    paths:
+      - 'z-studio/**'
+      - '.github/workflows/zstudio-windows-exe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify and unpack license-free source
+        run: python z-studio/assemble_source.py --extract
+      - name: Prepare standalone EXE metadata and isolated user profile
+        run: python z-studio/build_windows_exe.py
+      - name: Validate JavaScript syntax
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path z-studio/Z-Studio-Local/app -Recurse -Filter *.js | ForEach-Object {
+            & node --check $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Invalid JS: $($_.FullName)" }
+          }
+      - name: Install Electron and Windows packager
+        working-directory: z-studio/Z-Studio-Local/app
+        run: npm install --save-dev --no-audit --no-fund electron@44.5.1 electron-builder@26.0.12
+      - name: Build Windows installer and portable EXE
+        working-directory: z-studio/Z-Studio-Local/app
+        run: npx electron-builder --win nsis portable --x64 --publish never
+      - name: Validate generated executables
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem -Path dist/z-studio-local -Filter *.exe -Recurse)
+          if ($files.Count -lt 2) { throw "Expected installer and portable EXE, got $($files.Count)" }
+          foreach($f in $files) {
+            $s=[IO.File]::OpenRead($f.FullName)
+            try { if ($s.ReadByte() -ne 77 -or $s.ReadByte() -ne 90) { throw "Not a Windows EXE: $($f.FullName)" } }
+            finally { $s.Dispose() }
+            Write-Host "$($f.Name): $([math]::Round($f.Length / 1MB)) MB"
+          }
+      - name: Upload Windows EXE artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Z-Studio-Local-Windows-EXE
+          path: dist/z-studio-local/*.exe
+          retention-days: 14
+          if-no-files-found: error

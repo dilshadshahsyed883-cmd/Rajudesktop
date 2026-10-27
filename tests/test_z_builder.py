@@ -40,7 +40,7 @@ class ZBuilderCoreTests(unittest.TestCase):
             plan = load_plan(sample_plan())
             self.assertFalse(bind_media(plan, catalog.assets()))
             self.assertFalse(preflight(plan))
-            self.assertEqual(plan.shots[0].assigned_path, str(media))
+            self.assertTrue(Path(plan.shots[0].assigned_path).samefile(media))
             other = root / 'sub' / media.name
             other.parent.mkdir()
             other.write_bytes(b'other dummy')

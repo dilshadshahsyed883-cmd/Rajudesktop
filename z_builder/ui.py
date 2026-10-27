@@ -51,6 +51,7 @@ class Window(QMainWindow):
         self.pending_voice = ''
         self.worker = None
         self.assets = []
+        self._last_export_sources = ()
         self.setWindowTitle('Z Builder — Scene Plan · Media Library · CapCut')
         self.resize(1440, 890)
         self.setMinimumSize(1060, 700)
@@ -101,7 +102,7 @@ class Window(QMainWindow):
         mcontrols.addWidget(self._button('Import Files', self.import_files))
         mcontrols.addWidget(self._button('Download Summary .txt', self.save_summary))
         self.media_filter = QComboBox()
-        self.media_filter.addItems(['All Media', 'Images', 'Videos'])
+        self.media_filter.addItems(['All Media', 'Images', 'Videos', 'Used in CapCut Export'])
         self.media_filter.currentIndexChanged.connect(self.refresh_library)
         mcontrols.addWidget(self.media_filter)
         self.media_count = QLabel()
@@ -109,6 +110,7 @@ class Window(QMainWindow):
         media_layout.addLayout(mcontrols)
         split = QSplitter(Qt.Orientation.Horizontal)
         self.media_table = self._table(['Filename', 'Type', 'Status', 'Tags', 'Full path'])
+        self.media_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.media_table.itemSelectionChanged.connect(self.select_library)
         split.addWidget(self.media_table)
         side = QWidget()
@@ -132,6 +134,13 @@ class Window(QMainWindow):
         sl.addWidget(self.tags)
         sl.addWidget(self._button('Save Tags', self.save_tags))
         sl.addWidget(self._button('Remove from Library (keep original)', self.remove_catalog_item))
+        sl.addWidget(self._button('Select All Used Media', self.select_all_used))
+        self.render_confirm = QCheckBox('Final video rendered and checked in CapCut')
+        self.render_confirm.setWordWrap(True)
+        sl.addWidget(self.render_confirm)
+        sl.addWidget(self._button('Delete Selected Used Media (Recycle Bin)', self.delete_used_media))
+        sl.addWidget(QLabel('Only media from successful CapCut exports can be recycled.\n'
+                            'Nothing is deleted automatically; original files go to Recycle Bin.'))
         sl.addStretch()
         split.addWidget(side)
         split.setSizes([970, 360])
@@ -239,15 +248,19 @@ class Window(QMainWindow):
     def refresh_library(self):
         self.assets = self.catalog.assets()
         choice = self.media_filter.currentIndex()
-        self.visible_assets = [a for a in self.assets if choice == 0 or a['kind'] == ('image' if choice == 1 else 'video')]
+        self.visible_assets = [a for a in self.assets
+                               if choice == 0 or (choice == 3 and a['export_count'] > 0)
+                               or (choice in (1, 2) and a['kind'] == ('image' if choice == 1 else 'video'))]
         self.media_table.setRowCount(len(self.visible_assets))
         for i, a in enumerate(self.visible_assets):
-            status = 'Ready' if a['approved'] and a['exists'] else 'Missing / unapproved'
+            status = (f"Exported ×{a['export_count']}" if a['export_count'] and a['exists'] and a['approved']
+                      else 'Ready' if a['approved'] and a['exists'] else 'Missing / unapproved')
             for col, val in enumerate([a['filename'], a['kind'], status, a['tags'], a['path']]):
                 self.media_table.setItem(i, col, QTableWidgetItem(str(val)))
         images = sum(a['kind'] == 'image' for a in self.assets)
         videos = len(self.assets) - images
-        self.media_count.setText(f'{len(self.assets)} items  |  {images} images  |  {videos} videos')
+        used = sum(bool(a['export_count']) for a in self.assets)
+        self.media_count.setText(f'{len(self.assets)} items  |  {images} images  |  {videos} videos  |  {used} exported/used')
         if self.plan:
             self.match_all()
 
@@ -286,6 +299,56 @@ class Window(QMainWindow):
         if 0 <= row < len(self.visible_assets):
             self.catalog.remove(self.visible_assets[row]['id'])
             self.refresh_library()
+
+    def select_all_used(self):
+        self.media_filter.setCurrentIndex(3)
+        self.media_table.selectAll()
+
+    def delete_used_media(self):
+        """Only a user-confirmed action after FINAL video render may recycle originals."""
+        if self.worker is not None and self.worker.isRunning():
+            self.alert('Export in progress', 'Wait for the CapCut draft export to finish.')
+            return
+        selected = [self.visible_assets[i.row()] for i in self.media_table.selectionModel().selectedRows()
+                    if 0 <= i.row() < len(self.visible_assets)]
+        eligible = [a for a in selected if a['export_count'] and a['exists']]
+        if not selected or len(eligible) != len(selected):
+            self.alert('Choose used media', 'Select only available media marked Exported. '
+                       'The Used in CapCut Export filter can help.')
+            return
+        if not self.render_confirm.isChecked():
+            self.alert('Final render confirmation required',
+                       'First render and check your FINAL video in CapCut, then tick the confirmation checkbox.')
+            return
+        total_mb = sum(Path(a['path']).stat().st_size for a in eligible) / (1024 * 1024)
+        names = '\n'.join(a['filename'] for a in eligible[:8])
+        if len(eligible) > 8:
+            names += f'\n... and {len(eligible) - 8} more'
+        answer = QMessageBox.question(
+            self, 'Recycle original PC files?',
+            f'{len(eligible)} exported original file(s), approximately {total_mb:.1f} MB:\n\n'
+            f'{names}\n\n'
+            'This will MOVE these original PC files to the Windows Recycle Bin and '
+            'remove them from the Z Builder Library. They may be used by other projects.\n\n'
+            'Only continue if all final videos using them are rendered and verified.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        # Windows players and image previews may keep handles open.
+        self.player.stop()
+        self.player.setSource(QUrl())
+        self.image.clear()
+        moved, errors = self.catalog.recycle_exported_media([a['id'] for a in eligible])
+        self.render_confirm.setChecked(False)
+        self.refresh_library()
+        self.statusBar().showMessage(f'Moved {len(moved)} original used-media file(s) to Recycle Bin')
+        if errors:
+            self.alert('Some files were not deleted', '\n'.join(errors[:20]))
+        elif moved:
+            QMessageBox.information(self, 'Used media cleaned',
+                                    f'{len(moved)} original file(s) moved to Recycle Bin. '
+                                    'All unselected library media were preserved.')
 
     def save_summary(self):
         path, _ = QFileDialog.getSaveFileName(self, 'Save media summary', str(self.home / 'Media_Summary.txt'), 'Text (*.txt)')
@@ -416,6 +479,7 @@ class Window(QMainWindow):
         if problems:
             self.export_log.setPlainText('EXPORT BLOCKED\n' + '\n'.join(problems[:60]))
             return
+        self._last_export_sources = tuple(sorted({s.assigned_path for s in self.plan.shots if s.assigned_path}))
         self.export_button.setEnabled(False)
         self.export_log.setPlainText('Creating split CapCut drafts and verifying each part...')
         self.worker = ExportWorker(self.plan, self.drafts.text().strip(), self.launch.isChecked(), self.include_voice.isChecked())
@@ -438,9 +502,20 @@ class Window(QMainWindow):
                   'Compatibility: ' + str(compat.get('level', 'unknown')),
                   *compat.get('notes', []), '\nSCENE PLAN EXPORT NOTES',
                   * (issues if issues else ['None'])]
+        if parts:
+            try:
+                marked = self.catalog.record_successful_export(self._last_export_sources)
+                lines += ['', f'{marked} unique original media files marked Exported/Used in Library.',
+                          'After rendering and checking your FINAL CapCut video, '
+                          'open Media Library → Used in CapCut Export to manually recycle selected originals.']
+                self.refresh_library()
+            except Exception as exc:
+                lines += ['', 'WARNING: CapCut drafts succeeded but used-media tracking failed: ' + str(exc)]
+        self._last_export_sources = ()
         self.export_log.setPlainText('\n'.join(lines))
 
     def export_failed(self, message):
+        self._last_export_sources = ()
         self.export_button.setEnabled(True)
         self.export_log.setPlainText('EXPORT FAILED\n' + message)
 

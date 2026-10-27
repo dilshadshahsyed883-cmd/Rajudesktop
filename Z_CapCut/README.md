@@ -20,12 +20,12 @@ This folder is a persistent engineering record named **Z CapCut**. It is **not**
 
 ## Most useful verified facts
 
-- Timeline positions and clip lengths are in **microseconds** using segment \`target_timerange\`; trims are in \`source_timerange\`.
-- Media linkage: \`tracks[].segments[].material_id\` resolves against \`materials.videos[].id\`. In the two supplied drafts **both images and video** are represented in \`materials.videos\`, with material \`type\` = \`photo\` or \`video\`.
+- Timeline positions and clip lengths are in **microseconds** using segment `target_timerange`; trims are in `source_timerange`.
+- Media linkage: `tracks[].segments[].material_id` resolves against `materials.videos[].id`. In the two supplied drafts **both images and video** are represented in `materials.videos`, with material `type` = `photo` or `video`.
 - Sample A: one track, three consecutive items, **14 seconds** at **30 fps**; video 0–4 s, photo 4–9 s, photo 9–14 s.
-- Sample B: **two tracks**, **14.4 seconds** at **30 fps**; photos on \`tracks[0]\` / \`render_index=0\`, video on \`tracks[1]\` / \`render_index=1\`. Photos: 0–5 and 9.4–14.4 s; video: 5.2–9.2 s. Two visible timeline-content gaps of 0.2 s each if no background fills them.
-- Both samples have **1920 × 1362** canvas at ratio \`original\`, **not 16:9**.
-- Sample A links photo animation **Pendulum 1** (resource \`6811007755785081357\`, 5s) and transition **Halo Shift** (resource \`7683535350479817991\`, 2s, overlap=true). Sample B retains Pendulum 1 but has **no transition**.
+- Sample B: **two tracks**, **14.4 seconds** at **30 fps**; photos on `tracks[0]` / `render_index=0`, video on `tracks[1]` / `render_index=1`. Photos: 0–5 and 9.4–14.4 s; video: 5.2–9.2 s. Two visible timeline-content gaps of 0.2 s each if no background fills them.
+- Both samples have **1920 × 1362** canvas at ratio `original`, **not 16:9**.
+- Sample A links photo animation **Pendulum 1** (resource `6811007755785081357`, 5s) and transition **Halo Shift** (resource `7683535350479817991`, 2s, overlap=true). Sample B retains Pendulum 1 but has **no transition**.
 - Zero audio tracks/materials in both samples shows **audio-free drafts exist**, not how audio insertion works.
 - 39 DefaultAdjustBundle subgroups, 10 mix-mode IDs, 9 aspect-ratio presets and named animation publishing routes were found in installed resource files.
 - Common Agent documents a session-dependent timeline draft CLI. **Not evidence of a public, universally callable CapCut API.**

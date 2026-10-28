@@ -20,7 +20,8 @@ For each application, use the **main-branch path below** instead of searching ol
 | **Scene Desktop Studio** | [`scene_desktop/`](scene_desktop/) | [`launch.py`](launch.py), [root README](README.md) | Original editing MVP; different from Scene Builder Desktop and Z Builder |
 | **Project Image Downloader (Chrome)** | [`project-image-downloader/`](project-image-downloader/) | [installation and tests](project-image-downloader/README.md), [version record](project-image-downloader/docs/REPOSITORY_RECORD.md) | v1.1.1 complete source + packaged ZIP; synthetic tests reported passing; live Chrome UX still pending. Getty original downloads require licensing and are **not** auto-supported |
 | **Z Studio Video Editor** | [`z-studio/`](z-studio/) | [`z-studio/README.md`](z-studio/README.md), [`z-studio/start.bat`](z-studio/start.bat) | Independent legacy video editor; source chunk assembler and Windows build scripts; **not** Z Builder |
-| **CapCut Native Export Controller (Windows)** | [`capcut_native_export_app/`](capcut_native_export_app/) | [`start.bat`](capcut_native_export_app/start.bat), [guide](capcut_native_export_app/README.md) | Native CapCut single-project guarded export, MP4 verification; **real desktop acceptance pending**, overnight queue not yet enabled |
+| **CapCut Independent Renderer** | [`capcut_independent_renderer/`](capcut_independent_renderer/) | [`start_capcut_independent_renderer.bat`](start_capcut_independent_renderer.bat), [guide](capcut_independent_renderer/README.md), [record](capcut_independent_renderer/REPOSITORY_RECORD.md) | v0.4; independent FFmpeg export, source-style captions/backgrounds, mapped HDR approximation; owner reports good result on 28 Oct 2026; exact CapCut parity is not claimed |
+| **CapCut Native Export Controller (Windows)** | [`capcut_native_export_app/`](capcut_native_export_app/) | [`start.bat`](capcut_native_export_app/start.bat), [guide](capcut_native_export_app/README.md) | Historical alternate approach, deferred for current work by owner; independent renderer above is selected. Existing native source retained; desktop acceptance pending and overnight queue not enabled |
 | **Z CapCut engineering record** | [`Z_CapCut/`](Z_CapCut/) | [research index](Z_CapCut/README.md) | Native-draft/schema/effects research and lab source, **not** a standalone export application |
 
 ## Latest record merged into main
@@ -38,9 +39,11 @@ Do **not** merge old branches wholesale just because their commits differ from `
 - [`feature/z-builder-full-web-source-20261027`](https://github.com/dilshadshahsyed883-cmd/Rajudesktop/tree/feature/z-builder-full-web-source-20261027): closed, unmerged draft/WIP; not a verified upgrade to the current Z Builder.
 - Earlier Edge TTS licensing/SRT/build branches and earlier single-file Voice-to-SRT EXE branch are not independently promoted over current `main` releases; consult their history for specific changes.
 
-**Not included:** The separate *CapCut Independent Export App* source is not among the audited Rajudesktop app directories/branches in this consolidation. `Z_CapCut/` contains research rather than that executable application. Its latest independently delivered source must be provided or committed before it can be consolidated.
+**Now included (28 October 2026):** The previously missing independent CapCut export source is imported as `capcut_independent_renderer/` v0.4. It is a separate application, not `Z_CapCut/` research, the native-export controller, or Z Builder. See its [release record](capcut_independent_renderer/REPOSITORY_RECORD.md) for validation, owner feedback and approximation limits.
 
 ## Check and run
+
+- CapCut Independent Renderer: `python -m unittest discover -s capcut_independent_renderer/tests -v`; requires Tkinter, FFmpeg/FFprobe with libass and a system font. Run `start_capcut_independent_renderer.bat` on Windows. Source ZIP generation: `python capcut_independent_renderer/build_source_zip.py --output /path/to/output.zip`. No PC/VPS deployment is performed.
 
 - Project Image Downloader: `cd project-image-downloader && npm test` (Node 22+). Install `extension/` as an unpacked Chrome extension per its README; browser acceptance is still pending.
 - Z Studio launcher tests: `python -m unittest discover -s z-studio/tests -p 'test_*.py' -v`. The chunk assembler verifies its bundled source checksum; it is not an automatic build.

@@ -1,0 +1,2 @@
+# Python Standard Library only. No pip packages needed.
+# External executable required: FFmpeg + ffprobe.

@@ -1,0 +1,4 @@
+Optional: Put ffmpeg.exe and ffprobe.exe in this folder.
+Otherwise install FFmpeg and add it to Windows PATH.
+Caption exports require a full FFmpeg build with the libass ass filter.
+Binaries are not bundled. You can copy both files from your working v0.2 setup.

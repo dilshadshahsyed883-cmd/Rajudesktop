@@ -1,0 +1,37 @@
+name: CapCut Native Export source check
+on:
+  pull_request:
+    paths:
+      - 'capcut_native_export_app/**'
+      - '.github/workflows/capcut-native-export-windows.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'capcut_native_export_app/**'
+      - '.github/workflows/capcut-native-export-windows.yml'
+  workflow_dispatch:
+jobs:
+  validate-and-package:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: capcut_native_export_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile source and run unit tests
+        shell: pwsh
+        run: |
+          python -m compileall -q capcut_native_export tests
+          python -m unittest discover -s tests -v
+      - name: Package independent source ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path README.md,start.bat,requirements.txt,capcut_native_export,tests -DestinationPath ..\CapCut_Native_Export_Controller_Source.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CapCut-Native-Export-Controller-Source
+          path: CapCut_Native_Export_Controller_Source.zip
+          retention-days: 30

@@ -1,80 +1,115 @@
-name: Edge Voice Studio - tests and manual Windows package
+name: Edge Voice Studio - Auto SRT standalone Windows EXE
 
 on:
   push:
     branches: [main, "feature/**"]
     paths:
       - "edge_voice_studio/**"
-      - "tests/test_edge_voice.py"
+      - "voice_to_srt_batch/voice_to_srt_studio/engine.py"
+      - "tests/test_edge_voice*.py"
       - "launch_edge_voice.py"
       - "requirements-edge-voice.txt"
       - ".github/workflows/edge-voice.yml"
   pull_request:
     paths:
       - "edge_voice_studio/**"
-      - "tests/test_edge_voice.py"
+      - "voice_to_srt_batch/voice_to_srt_studio/engine.py"
+      - "tests/test_edge_voice*.py"
       - "launch_edge_voice.py"
       - "requirements-edge-voice.txt"
       - ".github/workflows/edge-voice.yml"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   edge-voice-tests:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-edge-voice.txt
+          cache-dependency-path: |
+            requirements-edge-voice.txt
+            voice_to_srt_batch/requirements-voice-to-srt.txt
       - name: Install runtime and test dependencies
         run: python -m pip install -r requirements-edge-voice.txt
       - name: Validate Python sources
-        run: python -m compileall -q edge_voice_studio launch_edge_voice.py
-      - name: Offline rendering and persistent store tests
-        run: python -m unittest discover -s tests -p "test_edge_voice*.py" -v
-      - name: Native Windows GUI smoke test without a TTS network request
+        run: python -m compileall -q edge_voice_studio voice_to_srt_batch/voice_to_srt_studio launch_edge_voice.py
+      - name: Voice pipeline, SRT queue, database and restart tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p "test_edge_voice*.py" -v
+          if ($LASTEXITCODE -ne 0) { throw "Edge Voice / SRT tests failed" }
+          python -m unittest discover -s voice_to_srt_batch/tests -p "test_voice_to_srt_batch.py" -v
+          if ($LASTEXITCODE -ne 0) { throw "Standalone batch engine tests failed" }
+          python launch_edge_voice.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Speech import smoke test failed" }
+      - name: Headless native Windows UI startup
         shell: pwsh
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
-          python -c "from PySide6.QtWidgets import QApplication; from edge_voice_studio.window import StudioWindow; a=QApplication([]); w=StudioWindow(); assert w.stack.count()==6; w.close(); print('UI smoke passed')"
+          python -c "from PySide6.QtWidgets import QApplication; from edge_voice_studio.window import StudioWindow; a=QApplication([]); w=StudioWindow(); assert w.stack.count()==6; assert w.subtitles.isChecked() in (True, False); w.close(); print('UI smoke passed')"
+          if ($LASTEXITCODE -ne 0) { throw "GUI startup failed" }
 
-  edge-voice-portable:
-    if: github.event_name == 'workflow_dispatch'
+  edge-voice-onefile:
     needs: edge-voice-tests
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-edge-voice.txt
-      - name: Install build tools
+          cache-dependency-path: |
+            requirements-edge-voice.txt
+            voice_to_srt_batch/requirements-voice-to-srt.txt
+      - name: Install Edge TTS, Whisper and one-file packaging
         run: python -m pip install -r requirements-edge-voice.txt "pyinstaller>=6.11,<7"
-      - name: Build standalone EdgeVoiceStudio folder
-        run: pyinstaller --noconfirm --clean --onedir --windowed --name EdgeVoiceStudio --collect-all edge_tts --collect-all imageio_ffmpeg launch_edge_voice.py
-      - name: Verify packaged executable and checksum
+      - name: Build single EdgeVoiceStudio.exe (no _internal folder)
         shell: pwsh
         run: |
-          if (!(Test-Path dist/EdgeVoiceStudio/EdgeVoiceStudio.exe)) { throw "Missing EdgeVoiceStudio.exe" }
-          $sha = (Get-FileHash dist/EdgeVoiceStudio/EdgeVoiceStudio.exe -Algorithm SHA256).Hash
-          @{ build_sha = "$env:GITHUB_SHA"; exe_sha256 = $sha; app = "Edge Voice Studio"; install = "Manual"; service = "Online Edge TTS" } |
-            ConvertTo-Json | Set-Content dist/EdgeVoiceStudio/build-manifest.json -Encoding utf8
-          Compress-Archive -Path dist/EdgeVoiceStudio -DestinationPath EdgeVoiceStudio-windows-x64.zip
-          (Get-FileHash EdgeVoiceStudio-windows-x64.zip -Algorithm SHA256).Hash |
-            Set-Content EdgeVoiceStudio-windows-x64.zip.sha256 -Encoding ascii
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name EdgeVoiceStudio `
+            --collect-all edge_tts `
+            --collect-all imageio_ffmpeg `
+            --collect-all faster_whisper `
+            --collect-all ctranslate2 `
+            --collect-all av `
+            --collect-all tokenizers `
+            --collect-all huggingface_hub `
+            --collect-all onnxruntime `
+            launch_edge_voice.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+          if (!(Test-Path 'dist/EdgeVoiceStudio.exe')) { throw "Standalone EXE missing" }
+          if (Test-Path 'dist/EdgeVoiceStudio/_internal') { throw "Unexpected external internal folder" }
+          if ((Get-Item 'dist/EdgeVoiceStudio.exe').Length -lt 10000000) { throw "Executable unexpectedly small" }
+      - name: Smoke test frozen EXE imports and SRT engine
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path 'dist/EdgeVoiceStudio.exe').Path
+          $p = Start-Process -FilePath $exe -ArgumentList '--self-test' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Frozen EXE smoke test failed: $($p.ExitCode)" }
+          (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() | Set-Content 'dist/EdgeVoiceStudio.exe.sha256' -Encoding ascii
+          Write-Host 'Frozen EXE passed; direct EXE and checksum are ready.'
       - uses: actions/upload-artifact@v4
         with:
-          name: EdgeVoiceStudio-windows-x64
+          name: EdgeVoiceStudio-single-exe-windows-x64
           path: |
-            EdgeVoiceStudio-windows-x64.zip
-            EdgeVoiceStudio-windows-x64.zip.sha256
+            dist/EdgeVoiceStudio.exe
+            dist/EdgeVoiceStudio.exe.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+      - name: Publish direct single-EXE release from main only
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "edge-voice-auto-srt-v1-run-$env:GITHUB_RUN_NUMBER"
+          gh release create $tag 'dist/EdgeVoiceStudio.exe' 'dist/EdgeVoiceStudio.exe.sha256' --title 'Edge Voice Studio - Auto SRT (standalone EXE)' --notes 'One-file EdgeVoiceStudio.exe: a single persistent checkbox enables automatic 3-4-second Whisper SRT in the same folder after MP3 completion. SRT processing is independent of voice synthesis. No adjacent _internal folder or Python install required. First use of SRT may download the small Whisper model to the Windows user cache.' --target $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Release publishing failed" }

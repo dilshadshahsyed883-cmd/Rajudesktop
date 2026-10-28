@@ -1,6 +1,6 @@
 # AutoCapCut Animations Only — native Combo animation fixture study
 
-**Status:** Source evidence verified from user-provided `before.zip` and `after.zip` for project `Animation_Test_01` (28 October 2026). **Analysis only: no animation app built or existing app modified.**
+**Status:** Native image-only evidence verified from user-provided `before.zip` and `after.zip` (28 October 2026). **Owner requirement: apply Trending Combo animations to photos/images ONLY; video animation is expressly out of scope.** Original AutoCapCut EXE, Transitions Only and Z Builder remain unchanged.
 
 ## Experimental setup and boundaries
 
@@ -42,7 +42,7 @@ draft_content.json
     -> corresponding unique materials.material_animations[].id
 ```
 
-Note: `animations[].material_type: "video"` is present **even on JPG photo segments**. It is not proof that MP4 clips have been tested. `category_name: "Trending-3"` is the category label **observed in this CapCut version**; do not rely on it as a universal future label.
+Note: `animations[].material_type: "video"` is present **even on JPG photo segments**. No MP4 animation testing is necessary: video animation is explicitly prohibited by the owner. `category_name: "Trending-3"` is the category label **observed in this CapCut version**; do not rely on it as a universal future label.
 
 ## Before / after integrity checks
 
@@ -72,13 +72,10 @@ An independently authored, non-destructive editor can be **designed for a contro
 
 Also require: same-PC path availability check for existing `Cache/effect/<resource_id>/<resource_hash>`; preview/validation; safe active-timeline mirror and top-level draft writes; idempotency; backup and rollback; and explicit no-write while CapCut runs. Never fetch extra effects or attempt Pro entitlement bypass.
 
-**Not yet proven:** Whether cloned animation records apply successfully to MP4 clips, handling of 4-second target clips versus 5-second source animation, reuse across multiple CapCut versions, effect rendering, and whether fields such as `request_id` require regeneration. The user-provided ZIPs **do not contain the actual downloaded cache resources**.
+**In scope:** native Trending Combo animations already **used by images in saved projects**, applied only to target images. **Out of scope:** any animation on video clips, including sample tests. The existing 3 JPG animation fixtures are the full baseline for this requirement.
 
-## Smallest next fixture
+**Live validation still needed:** programmatic image-to-image animation reuse in the owner's actual CapCut installation, checking the visual animation and final render. For safety, shorter image clips are skipped until native animation-duration behavior is confirmed. The user-provided ZIPs do not contain installed CapCut cache resources.
 
-In the same test project, apply **one saved native Trending → Combo animation to Video 1 (.mp4)**, save, fully close CapCut, and provide the new **after_video.zip** snapshot. No new empty baseline is needed, because the supplied `after.zip` already serves as the before-state for this next experiment. Compare:
-- MP4 clip reference to `material_animations`,
-- record schema and `duration`,
-- whether existing photo animations and all media/timing remain unchanged.
+**Engineering status (28 Oct):** A separate standard-library Python/Tkinter **image-only source prototype** was created and 11 synthetic tests plus a read-only native CapCut 9.6 in-memory dry-run passed. It has not yet undergone an actual Windows CapCut live acceptance test. Do not confuse this prototype status with a live installation or native export verification.
 
 **Change control:** The existing original AutoCapCut v0.1.2 EXE, Transitions Only v0.1, Z Builder, and VPS projects remain untouched. A standalone Animations Only application should be built only after fixture-based compatibility verification.

@@ -79,3 +79,38 @@ jobs:
           name: Z-Builder-Windows-EXE-v5-Transitions
           path: Z-Builder-Windows-EXE-v5-Transitions.zip
           retention-days: 30
+
+  publish-v5-release:
+    name: Publish downloadable Windows EXE after successful main build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: windows-exe
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Z-Builder-Windows-EXE-v5-Transitions
+      - name: Verify executable and generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          test -s Z-Builder-Windows-EXE-v5-Transitions.zip
+          unzip -q Z-Builder-Windows-EXE-v5-Transitions.zip -d release
+          test -s release/Z_Builder.exe
+          sha256sum release/Z_Builder.exe Z-Builder-Windows-EXE-v5-Transitions.zip > SHA256SUMS-v5.txt
+      - name: Publish v5 GitHub Release with direct EXE and ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create z-builder-capcut-transitions-v5-20261028 \
+            release/Z_Builder.exe \
+            Z-Builder-Windows-EXE-v5-Transitions.zip \
+            SHA256SUMS-v5.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Z Builder Windows v5 — Capcut Transitions (4th tab)" \
+            --notes "Z Builder v4 scene plan, media library and CapCut exporter retained. Adds 4th independent Capcut Transitions tab using previously owner-tested native transition-only engine. Supports local catalog, favorites, single/mix, Edit File JSON, Preview and Apply with backups. Confirm actual CapCut behavior using a copied project; no live CapCut GUI validation in CI." \
+            --latest

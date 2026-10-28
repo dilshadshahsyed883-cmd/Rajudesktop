@@ -31,17 +31,19 @@ class ExportWorker(QThread):
     failed = Signal(str)
     progress = Signal(int, int, str)
 
-    def __init__(self, plan, drafts_root, launch, include_voice, mode):
+    def __init__(self, plan, drafts_root, launch, include_voice, mode, effect_roots=None):
         super().__init__()
         self.plan, self.drafts_root, self.launch = Plan.from_dict(plan.to_dict()), drafts_root, launch
         self.include_voice = include_voice
         self.mode = mode
+        self.effect_roots = effect_roots
 
     def run(self):
         try:
             self.succeeded.emit(export_capcut(
                 self.plan, self.drafts_root, self.launch, self.include_voice,
-                mode=self.mode, progress_callback=self.progress.emit))
+                mode=self.mode, progress_callback=self.progress.emit,
+                effect_roots=self.effect_roots))
         except Exception as e:
             self.failed.emit(str(e))
 
@@ -640,8 +642,12 @@ class Window(QMainWindow):
         self.export_log.setPlainText(
             'Creating and verifying one complete CapCut draft...' if mode == 'complete'
             else 'Creating split CapCut drafts and verifying each part...')
+        # Catalogs come from the independently configured CapCut Controls roots.
+        effect_roots = (str(self.animations_tab.projects_root),
+                        str(self.transitions_tab.projects_root))
         self.worker = ExportWorker(self.plan, self.drafts.text().strip(),
-                                   self.launch.isChecked(), self.include_voice.isChecked(), mode)
+                                   self.launch.isChecked(), self.include_voice.isChecked(),
+                                   mode, effect_roots=effect_roots)
         self.worker.progress.connect(self.export_progress_update)
         self.worker.succeeded.connect(self.export_complete)
         self.worker.failed.connect(self.export_failed)
@@ -673,6 +679,10 @@ class Window(QMainWindow):
             label = 'Complete project' if is_complete else f"Part {part['index']:02d}"
             lines.append(f"{label}: {part['original_start_seconds']:.3f}–{part['original_end_seconds']:.3f}s  "
                          f"({part['duration_seconds']:.3f}s)\n{part['folder']}")
+        native = result.get('native_effects', {})
+        if native.get('active'):
+            lines += [f"SCENE PLAN EFFECTS APPLIED: {native.get('animations', 0)} images animated, "
+                      f"{native.get('transitions', 0)} same-track transitions attached."]
         lines += ['\nOpen each draft in CapCut Home > Projects.',
                   'Compatibility: ' + str(compat.get('level', 'unknown')),
                   *compat.get('notes', []), '\nSCENE PLAN EXPORT NOTES',

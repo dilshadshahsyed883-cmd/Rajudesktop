@@ -12,7 +12,7 @@ One Windows desktop program with four separate native tabs. Uses the existing te
 
 ## Windows download and run
 
-From GitHub Releases download the latest **SmartMediaManager-Windows.zip** (V2 or newer) after the Windows build succeeds on main. Extract everything into a folder such as **D:\Apps\SmartMediaManager**. Double-click **SmartMediaManager.exe**. No Python or system FFmpeg installation is needed for the GitHub Windows release; FFmpeg and yt-dlp are bundled.
+From GitHub Releases download **SmartMediaManager.exe** directly from the latest **V3 Single Portable EXE** release. Save it anywhere (for example D:\\Apps\\SmartMediaManager.exe), then double-click. There is **no ZIP to extract and no adjacent support folder**. The single EXE embeds Python runtime, FFmpeg, FFprobe, yt-dlp and all four tool modules. The PyInstaller one-file bootloader automatically extracts temporary internal components at runtime; user data and output clips are saved to the selected output folder and persistent settings/queue live under LOCALAPPDATA. The EXE is not an installer; it does not modify other apps. First launch may be slower because the EXE unpacks its embedded files.
 
 Source run: `python launch_smart_media_manager.py`
 
@@ -26,4 +26,10 @@ All processing is local. Existing files are never overwritten automatically. Def
 - Smart Media Manager is the only integrated app changed. Independent standalone clip cutter, legacy Image Renamer and Smart Clip Renamer remain intact.
 - New modules: `smart_media_manager/cutter_queue.py` and `smart_media_manager/cutter_queue_ui.py`.
 - Queue records persist under `%LOCALAPPDATA%\\SmartMediaManager\\cutter_queue.json`. YouTube cutter source cache is kept at `%LOCALAPPDATA%\\SmartMediaManager\\cutter_sources`; it is not auto-purged.
-- On Windows releases the runnable `SmartMediaManager.exe` resides inside `SmartMediaManager-Windows.zip` alongside bundled libraries, FFmpeg, and FFprobe. Extract the entire ZIP before running. The canonical source of truth is Rajudesktop `main`; Windows builds and SHA256 files are published as release assets by GitHub Actions.
+- **V3 single-file release:** GitHub Actions builds `--onefile --windowed` and publishes a directly downloadable `SmartMediaManager.exe` plus `SmartMediaManager.exe.sha256` as independent release assets. Do not ZIP the EXE or distribute a sidecar `_internal` directory. The EXE bundles the Python runtime, FFmpeg, FFprobe and yt-dlp. The canonical source of truth is Rajudesktop `main`; release assets are built and tested on a Windows GitHub runner.
+
+## V3 distribution rule — 28 October 2026
+
+- **Deliver exactly one user-runnable file:** `SmartMediaManager.exe`, linked directly from GitHub Release assets, similar to Z Studio. A separate optional SHA-256 verification text file is published but is not needed for running the app.
+- No ZIP extraction, no copied program directories, no Python/FFmpeg installation. One-file PyInstaller does require a temporary unpack directory during startup (managed and cleaned by the bootloader); this is not an installer or permanent app folder.
+- Future Smart Media Manager Windows builds should keep one-file packaging and direct EXE release delivery unless the owner explicitly changes this rule.

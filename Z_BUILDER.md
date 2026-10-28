@@ -1,10 +1,26 @@
 # Z Builder — Scene Plan → Local Media Timeline → CapCut Projects
 
-Small standalone Windows desktop application (Python/PySide6), independent of the VPS. The UI has **three steps**:
+Standalone Windows desktop application (Python/PySide6), independent of the VPS. **Windows v5 adds a fourth independent Capcut Transitions tab** while preserving the three existing production steps:
 
 1. **Input:** import a simple timed Scene Plan `.txt`; voice MP3/WAV is optional.
 2. **Media Selection & Timeline:** import images/videos into the included local Media Library, match scene filenames/keywords, manually replace missing items and inspect exact timing/trim.
 3. **Open in CapCut:** choose **Create Editable CapCut Parts (5–7 min)** or **Create Complete Project in CapCut**. Both use the original Z Studio writer and preserve editable media/track timing.
+
+## Fourth tab — Capcut Transitions (Windows v5)
+
+This is a **separate, independent workflow** in the same Z Builder window (tab \`4  Capcut Transitions\`). It does not use the active Scene Plan, Media Library, export mode or Z Studio timeline writer. It directly uses the independently authored, owner-tested \`autocapcut_transitions_only.transition_engine\` (not the third-party AutoCapCut EXE).
+
+- Browse/change the CapCut projects root independently; choose an **existing saved CapCut project**.
+- Refresh transitions from \`materials.transitions\` already present in saved local CapCut drafts; search/filter, favorites, **Single**, **Random mix**, choose duration.
+- \`Edit file\` accepts v1 JSON with \`after\` filename, \`transition\`, optional \`effect_id\` and optional \`duration\`. Loaded rules override matching baseline cuts.
+- \`Validate / Preview\` reports **Will Apply**, **Missing**, **Skipped**, selected cuts, and gap/overlap warnings.
+- **Apply transitions only** requires CapCut closed and explicit confirmation, writes recoverable timestamped backups, checks stale edits and verifies no unrelated timeline fields change. Selected existing same-track adjacent transitions are linked by native CapCut references.
+- No visual media segments are rebuilt, reordered, removed, or re-trimmed; voice, audio, layer order, source files, keyframes/motions, and all original Z Builder 1–3 step functions are preserved.
+- Cross-track junctions and unsafe gaps/overlaps are skipped. Unsupported/missing effects are **not downloaded**.
+- Initial independent app test (28 October 2026): **owner reported native transitions successfully applied, with videos and layers preserved**. This is not a guarantee that every installed CapCut version/effect or final render works.
+- Source code: \`z_builder/transitions_tab.py\` (PySide6 interface) and \`autocapcut_transitions_only/transition_engine.py\` (unchanged native transition engine). The original AutoCapCut v0.1.2 EXE is untouched.
+
+The GitHub Actions \`Z Builder Windows EXE v5 — Capcut Transitions\` workflow packages this as one \`Z_Builder.exe\`. The v4 executable/release is retained separately for rollback. For first use on any new CapCut build, **duplicate the project before Apply**.
 
 ## Fixed CapCut tracks, splitting and optional audio
 

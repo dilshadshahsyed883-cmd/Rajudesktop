@@ -341,16 +341,24 @@ def save_project(project: Path, opts: Options, expected: dict[str, str] | None =
         root_meta = project.parent / "root_meta_info.json"
         if root_meta.is_file():
             index = _read_json(root_meta)
-            normalized = str(project).replace("\\", "/").rstrip("/").casefold()
+            def normalized_path(raw: str) -> str:
+                value = str(raw or "").replace("\\", "/").rstrip("/").casefold()
+                # Some Windows tools return the extended-length path prefix.
+                return value[4:] if value.startswith("//?/") else value
+
+            normalized = normalized_path(str(project))
             entries = index.get("all_draft_store") or []
             if isinstance(entries, list):
-                for ent in entries:
-                    if not isinstance(ent, dict):
-                        continue
-                    if str(ent.get("draft_fold_path", "")).replace("\\", "/").rstrip("/").casefold() == normalized:
-                        ent["tm_draft_modified"] = now_us
-                        changes[root_meta] = json.dumps(index, ensure_ascii=False, separators=(",", ":")).encode("utf8")
-                        break
+                candidates = [ent for ent in entries if isinstance(ent, dict)]
+                matches = [ent for ent in candidates if normalized_path(ent.get("draft_fold_path")) == normalized]
+                if not matches:
+                    # Unique project-folder-name fallback; never update a peer.
+                    matches = [ent for ent in candidates if
+                               normalized_path(ent.get("draft_fold_path")).split("/")[-1] == project.name.casefold()
+                               or str(ent.get("draft_name") or "").casefold() == project.name.casefold()]
+                if len(matches) == 1:
+                    matches[0]["tm_draft_modified"] = now_us
+                    changes[root_meta] = json.dumps(index, ensure_ascii=False, separators=(",", ":")).encode("utf8")
         originals = {p: p.read_bytes() for p in changes}
         hashes = {p: _sha(b) for p, b in originals.items()}
         backup = project / ".visual_controls_backups" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")

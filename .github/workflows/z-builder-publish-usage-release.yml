@@ -1,0 +1,43 @@
+name: Publish Z Builder Windows v4 Media Usage Counts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/z-builder-publish-usage-release.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download and verify existing tested Windows build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p package extracted
+          gh run download 40646284936 --repo "$GITHUB_REPOSITORY" --name "Z-Builder-Windows-EXE-v4" --dir package
+          echo "1fca4ef024711b2250eedbe4a36f9c857c9139c5fbf9bc80d0ab0dd096aeba3f  package/Z-Builder-Windows-EXE-v4.zip" | sha256sum --check
+          unzip -q package/Z-Builder-Windows-EXE-v4.zip -d extracted
+          test -s extracted/Z_Builder.exe
+          test -s extracted/README_Z_BUILDER.md
+          sha256sum extracted/Z_Builder.exe package/Z-Builder-Windows-EXE-v4.zip > SHA256SUMS.txt
+      - name: Publish permanent GitHub Release direct downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create z-builder-usage-counts-v4-20261028 \
+            extracted/Z_Builder.exe \
+            package/Z-Builder-Windows-EXE-v4.zip \
+            SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Z Builder Windows v4 - Media Usage Counts" \
+            --notes "Windows executable built and tested in GitHub Actions run 40646284936. Media Library Summary TXT includes per-file used=0/1/2/3... counters from successful verified CapCut exports. Includes standalone Z_Builder.exe and packaged ZIP. Existing PC media, project files and export history are preserved." \
+            --latest

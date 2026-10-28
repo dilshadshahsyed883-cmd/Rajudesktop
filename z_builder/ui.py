@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from .core import Catalog, Plan, bind_media, kind_of, load_plan, open_project, preflight, save_project, timeline
 from .capcut import export_capcut
 from .capcut_controls_tab import CapcutControlsTab
+from .effects_summary import scan_effects_summary
 
 
 class ExportWorker(QThread):
@@ -165,6 +166,14 @@ class Window(QMainWindow):
         b.addWidget(self._button('Open Z Builder Project', self.open_project))
         b.addWidget(self._button('Save Z Builder Project', self.save_project))
         pl.addLayout(b)
+        effect_summary_row = QHBoxLayout()
+        self.effects_summary_button = self._button(
+            'Download CapCut Effects Summary .txt', self.save_effects_summary)
+        effect_summary_row.addWidget(self.effects_summary_button)
+        effects_hint = QLabel('Saved native Combo animations + transitions for ChatGPT Scene Plan creation.')
+        effects_hint.setWordWrap(True)
+        effect_summary_row.addWidget(effects_hint, 1)
+        pl.addLayout(effect_summary_row)
         self.plan_info = QLabel('Simple plan: 00:00 --> 00:02.500 | video | clip1.mp4 | in=0.500  (or  | image | photo.jpg)')
         voice_row = QHBoxLayout()
         voice_row.addWidget(self._button('Choose Voice MP3/WAV', self.choose_voice))
@@ -468,6 +477,33 @@ class Window(QMainWindow):
         if path:
             Path(path).write_text(self.catalog.summary(), encoding='utf-8')
             self.statusBar().showMessage(f'Summary saved: {path}')
+
+    def save_effects_summary(self):
+        """Export the two CapCut Controls native catalogs for ChatGPT; never edit a draft."""
+        try:
+            report = scan_effects_summary(
+                self.transitions_tab.projects_root,
+                self.animations_tab.projects_root,
+            )
+        except (OSError, ValueError) as exc:
+            self.alert('Cannot scan CapCut effects', str(exc))
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self, 'Download available animations and transitions',
+            str(self.home / 'CapCut_Effects_Summary.txt'), 'Text files (*.txt)')
+        if not filename:
+            return
+        try:
+            Path(filename).write_text(report, encoding='utf-8')
+        except OSError as exc:
+            self.alert('Could not save effects summary', str(exc))
+            return
+        self.statusBar().showMessage(f'CapCut effects summary saved: {filename}')
+        QMessageBox.information(
+            self, 'CapCut Effects Summary saved',
+            'Upload this TXT to ChatGPT along with Media Summary, SRT and the '
+            'Scene Plan Master Prompt. The report contains local native effect IDs, '
+            'not your PC paths.')
 
     def import_plan(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Import timed Scene Plan TXT', '', 'Scene Plan (*.txt *.ini)')

@@ -1,4 +1,4 @@
-name: Smart Media Manager - Windows ZIP
+name: Smart Media Manager - Single EXE
 
 on:
   workflow_dispatch:
@@ -17,6 +17,8 @@ on:
       - "smart_media_manager/**"
       - "launch_smart_media_manager.py"
       - "tests/test_smart_media_manager.py"
+      - "tests/test_cutter_queue.py"
+      - "tests/test_snapshots_local.py"
       - "SMART_MEDIA_MANAGER.md"
       - ".github/workflows/smart-media-manager-windows.yml"
 
@@ -64,28 +66,44 @@ jobs:
           if (-not $ffmpeg -or -not $ffprobe) { throw 'FFmpeg executables missing' }
           Copy-Item $ffmpeg.FullName 'video_clip_cutter\bin\ffmpeg.exe'
           Copy-Item $ffprobe.FullName 'video_clip_cutter\bin\ffprobe.exe'
-      - name: Build standalone SmartMediaManager.exe and ZIP
+      - name: Build portable all-in-one SmartMediaManager.exe
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name SmartMediaManager --collect-all yt_dlp --add-binary 'video_clip_cutter/bin/ffmpeg.exe;bin' --add-binary 'video_clip_cutter/bin/ffprobe.exe;bin' launch_smart_media_manager.py
-          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
-          Compress-Archive -Path 'dist\SmartMediaManager\*' -DestinationPath 'SmartMediaManager-Windows.zip' -Force
-          (Get-FileHash 'SmartMediaManager-Windows.zip' -Algorithm SHA256).Hash.ToLower() | Set-Content 'SmartMediaManager-Windows.zip.sha256'
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name SmartMediaManager --collect-all yt_dlp --add-binary 'video_clip_cutter/bin/ffmpeg.exe;bin' --add-binary 'video_clip_cutter/bin/ffprobe.exe;bin' launch_smart_media_manager.py
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller onefile build failed' }
+          if (-not (Test-Path 'dist\SmartMediaManager.exe' -PathType Leaf)) { throw 'Single EXE missing' }
+          $bytes = (Get-Item 'dist\SmartMediaManager.exe').Length
+          if ($bytes -lt 10000000) { throw "Unexpectedly small single EXE: $bytes bytes" }
+          (Get-FileHash 'dist\SmartMediaManager.exe' -Algorithm SHA256).Hash.ToLower() | Set-Content 'dist\SmartMediaManager.exe.sha256'
+      - name: Smoke test standalone EXE launch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path 'dist\SmartMediaManager.exe').Path
+          $proc = Start-Process -FilePath $exe -PassThru
+          try {
+            Start-Sleep -Seconds 12
+            $proc.Refresh()
+            if ($proc.HasExited) { throw "Single EXE exited unexpectedly during GUI launch (code $($proc.ExitCode))" }
+          }
+          finally {
+            & taskkill.exe /F /T /PID $proc.Id 2>$null | Out-Null
+          }
       - uses: actions/upload-artifact@v4
         with:
-          name: SmartMediaManager-Windows
+          name: SmartMediaManager-Single-EXE
           path: |
-            SmartMediaManager-Windows.zip
-            SmartMediaManager-Windows.zip.sha256
+            dist/SmartMediaManager.exe
+            dist/SmartMediaManager.exe.sha256
           if-no-files-found: error
-      - name: Publish release on main
+      - name: Publish direct EXE release on main
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = "smart-media-manager-v1-run-$env:GITHUB_RUN_NUMBER"
-          gh release create $tag SmartMediaManager-Windows.zip SmartMediaManager-Windows.zip.sha256 --title "Smart Media Manager Windows V2" --notes "Four-tool Windows EXE with redesigned mixed-source batch Video Clip Cutter (PC and YouTube downloads), persistent queue, retry and progress; PC video or YouTube snapshots; Image Renamer and Smart Clip Renamer preserved. Extract ZIP and run SmartMediaManager.exe. FFmpeg bundled." --target $env:GITHUB_SHA --latest
-          if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed' }
+          $tag = "smart-media-manager-v3-onefile-run-$env:GITHUB_RUN_NUMBER"
+          gh release create $tag dist/SmartMediaManager.exe dist/SmartMediaManager.exe.sha256 --title "Smart Media Manager V3 — Single Portable EXE" --notes "Direct download: SmartMediaManager.exe. No ZIP, no manual extraction, no adjacent folders. Bundles FFmpeg, FFprobe, yt-dlp and all four tools including mixed PC/YouTube batch cutter and PC snapshots. Windows may temporarily unpack internal resources automatically during execution." --target $env:GITHUB_SHA --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Direct EXE release publishing failed' }

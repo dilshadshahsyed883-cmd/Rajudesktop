@@ -1,6 +1,6 @@
 # Z Builder — Scene Plan → Local Media Timeline → CapCut Projects
 
-Standalone Windows desktop application (Python/PySide6), independent of the VPS. **Windows v6 adds a fourth main CapCut Controls tab with Transitions and Animations sub-tabs** while preserving the three existing production steps:
+Standalone Windows desktop application (Python/PySide6), independent of the VPS. **Windows v7 retains the fourth main CapCut Controls tab with Transitions and Animations sub-tabs** while preserving the three existing production steps:
 
 1. **Input:** import a simple timed Scene Plan `.txt`; voice MP3/WAV is optional.
 2. **Media Selection & Timeline:** import images/videos into the included local Media Library, match scene filenames/keywords, manually replace missing items and inspect exact timing/trim.
@@ -27,6 +27,21 @@ A new PySide6 panel, `z_builder/animations_tab.py`, reuses the independently aut
 The two sub-tabs are UI peers within the fourth main tab, **not separate Windows apps**; the first three workflow steps and scene/media exporter remain unchanged. The original third-party AutoCapCut EXE and previous Transitions Only source remain available for rollback.
 
 **EXE:** GitHub Actions `Z Builder Windows EXE v6 — CapCut Controls` builds and tests portable `Z_Builder.exe` and publishes the v6 release on successful main-branch build. The v5 release remains available for rollback.
+
+## Scene Plan effects summary for ChatGPT (Windows v7)
+
+From **Step 1 → Input — Scene Plan + Voice**, click **Download CapCut Effects Summary .txt** before generating the Scene Plan. This **does not require importing a Scene Plan first**. Z Builder reads the CapCut project roots currently configured in the fourth **CapCut Controls → Transitions / Animations** sub-tabs, scans saved native materials, and saves a text file using a standard Windows Save dialog (default `Documents/Z Builder/CapCut_Effects_Summary.txt`).
+
+The report includes:
+
+- **Available** native **Combo → Trending photo animations** actually used in saved projects whose local cache paths exist: exact preset names, native resource/effect IDs, categories and original durations.
+- **Missing-cache animations** in a separate DO NOT USE section.
+- Native transitions found in saved CapCut draft materials: exact names, native effect IDs and categories, marked **cache not independently verified**. A listed transition is not a guarantee that the specific cut or installed effect will apply.
+- A privacy-safe prompt instruction block (no absolute PC paths, original filenames, project names or cached-resource file paths).
+
+Upload `CapCut_Effects_Summary.txt` to ChatGPT alongside the **Media Summary TXT**, synchronized **SRT** and **Z Builder Master Scene Plan prompt**. ChatGPT should use only available listed animation IDs and documented transition names/IDs when proposing effects. Native Combo is restricted to image clips; same-track constraints apply to current transitions.
+
+**Important:** This release adds a *downloadable catalog*, not yet direct Scene Plan effect application. The current timed Scene Plan parser **does not accept** `combo=` or `transition_after=` extras. The report tells ChatGPT to produce a valid timed Scene Plan and a separate shot-ID effect-intent mapping until the next parser/integration phase. This keeps current exports safe and compatible. This export is read-only; none of the transition/animation apply engines change.
 
 ## Fixed CapCut tracks, splitting and optional audio
 

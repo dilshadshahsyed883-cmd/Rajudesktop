@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "transitions": [
+    { "after": "0-00.png", "transition": "Flash Zoom", "duration": 0.6 },
+    { "after": "1-41.mp4", "transition": "Blink", "effect_id": "REPLACE_WITH_REAL_EFFECT_ID" }
+  ]
+}

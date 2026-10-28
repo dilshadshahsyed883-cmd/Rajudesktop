@@ -1,0 +1,35 @@
+VALIDATION - v0.4 - 28 OCTOBER 2026
+==================================
+26/26 automated tests PASS on Linux with FFmpeg and libass.
+Previous queue, cancellation, media, audio, caption timing, decoding, preservation
+and output publication regressions remain covered.
+
+New tests:
+- Actual 1028 caption schema: black text + yellow rounded background drawn.
+- Font family read from a real system font file, not guessed from filename.
+- Full-text ranges are not incorrectly described as word-highlight animations.
+- 404 empty animation holders are not reported as skipped/unsupported animations.
+- Timed rounded ASS background and black glyph pixels are verified in output.
+- HDR source parameter preservation and explicit non-equivalence reporting.
+- Unsupported/unknown/masked effects rejected from the supported mapping.
+- Effect range adds frame-aligned boundaries.
+- HDR on/off outputs have identical decoded pixels before and after the effect
+  timerange and different pixels inside it, at the actual 0.02 source intensity.
+
+Actual uploaded draft analysis:
+404 captions parsed; 404 original yellow backgrounds detected.
+404 empty animation holders; zero nonempty animation holders.
+One HDR effect mapped; zero unmapped effect-track segments.
+HDR time range: 0 to 1107.533333 seconds.
+No original source media or source CapCut en.ttf file are available here.
+
+8-second 1920x1080 proxy validation:
+Used the previous uploaded TEST_60s.mp4 as the footage/audio proxy, while using
+caption/effect settings from the real uploaded draft. Four captions/backgrounds
+included, HDR approximation applied, full decode PASS. Representative frame at
+3 seconds inspected visually in the private delivery; proxy images/media are excluded from this repository.
+This is not original-source or native CapCut visual-equivalence verification.
+
+Pending external verification:
+Windows GUI/launcher/sleep hold, the real CapCut source font, original media render,
+full 18-minute timeline playback and comparison with a native CapCut export.

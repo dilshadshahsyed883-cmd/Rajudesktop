@@ -1,0 +1,65 @@
+name: CapCut Independent Renderer — source verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'capcut_independent_renderer/**'
+      - 'start_capcut_independent_renderer.bat'
+      - '.github/workflows/capcut-independent-renderer.yml'
+  pull_request:
+    paths:
+      - 'capcut_independent_renderer/**'
+      - 'start_capcut_independent_renderer.bat'
+      - '.github/workflows/capcut-independent-renderer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  renderer:
+    name: Renderer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Linux media tools and fonts
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg python3-tk fonts-dejavu-core
+      - name: Windows media tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ffmpeg --yes --no-progress
+      - name: Synthetic media and queue regressions
+        run: python -m unittest discover -s capcut_independent_renderer/tests -v
+      - name: Windows GUI startup smoke (isolated user state)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          LOCALAPPDATA: ${{ runner.temp }}/capcut-independent-gui-state
+        run: |
+          @'
+          import sys
+          sys.path.insert(0, 'capcut_independent_renderer')
+          from app import App
+          app = App()
+          app.update()
+          assert app.title().startswith('CapCut Independent Renderer')
+          assert app.mapped_effects.get() is True
+          app.close_app()
+          '@ | python -
+      - name: Build source-only archive
+        run: python capcut_independent_renderer/build_source_zip.py --output release-source/CapCut_Independent_Renderer_v04_source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CapCut-Independent-Renderer-v04-source-${{ matrix.os }}
+          path: release-source/*
+          if-no-files-found: error

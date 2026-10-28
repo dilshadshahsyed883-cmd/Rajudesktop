@@ -1,6 +1,6 @@
 # Z Builder — Scene Plan → Local Media Timeline → CapCut Projects
 
-Standalone Windows desktop application (Python/PySide6), independent of the VPS. **Windows v8 retains the fourth main CapCut Controls tab with Transitions and Animations sub-tabs** while preserving the three existing production steps:
+Standalone Windows desktop application (Python/PySide6), independent of the VPS. **Windows v9 retains the fourth main CapCut Controls tab with Transitions and Animations sub-tabs** while preserving the three existing production steps:
 
 1. **Input:** import a simple timed Scene Plan `.txt`; voice MP3/WAV is optional.
 2. **Media Selection & Timeline:** import images/videos into the included local Media Library, match scene filenames/keywords, manually replace missing items and inspect exact timing/trim.
@@ -43,7 +43,7 @@ Upload `CapCut_Effects_Summary.txt` to ChatGPT alongside the **Media Summary TXT
 
 **Important:** This release adds a *downloadable catalog*, not yet direct Scene Plan effect application. The current timed Scene Plan parser **does not accept** `combo=` or `transition_after=` extras. The report tells ChatGPT to produce a valid timed Scene Plan and a separate shot-ID effect-intent mapping until the next parser/integration phase. This keeps current exports safe and compatible. This export is read-only; none of the transition/animation apply engines change.
 
-## Scene Plan → automatic native CapCut effects (Windows v8)
+## Scene Plan → automatic native CapCut effects (Windows v8+, single track in v9)
 
 **New integrated export:** Import a valid simple timed Scene Plan, match media, then select **Create Editable CapCut Parts** or **Create Complete Project**. Z Builder now resolves native Combo animations and native transitions from saved local CapCut catalogs **before writing drafts**, creates the normal timed two-layer CapCut project, and attaches original native effects without rebuilding its clips.
 
@@ -64,22 +64,30 @@ transition_duration=0.5
 00:05.000 --> 00:09.000 | video | clip1.mp4 | in=0 | transition_after=none
 ```
 
-Replace placeholder IDs with the **exact ID from the generated effects summary** and filenames with approved Media Library names. To avoid an invalid explicit transition, only put `transition_after=id:...` on a scene that is followed immediately by another scene **of the same media type on the same track in the same project part**. An outgoing image → video boundary is cross-layer and does **not** support a native same-track transition. This example uses `transition_after=none` to make that explicit.
+Replace placeholder IDs with the **exact ID from the generated effects summary** and filenames with approved Media Library names. To avoid an invalid explicit transition, only put `transition_after=id:...` on a scene that is followed immediately by another scene **of the same media type on the same track in the same project part**. In v9 an outgoing image → video boundary is eligible because both clips share the same visual track. This example uses `transition_after=none` only as a deliberate per-shot opt-out.
 
 **Rules:**
 - `combo_default=random_saved` applies locally available native Trending Combo animations **to images only**; video clips are always excluded.
 - `combo=<exact display name>` or `combo=id:<native resource ID>` selects a specific image animation; `combo=none` opts out. Native animation duration is fitted within the image time range without changing shot timing.
-- `transition_default=random_saved` assigns saved native transitions to **eligible same-track adjacent outgoing cuts**; unsupported cross-track, gapped or cross-part cuts are reported rather than silently rewritten. `transition_after=<exact name>` or `transition_after=id:<effect ID>` selects a cut; `transition_after=none` opts out.
-- Seeds produce deterministic choices for a given plan and saved catalog. Exact effect names must be unambiguous. Unknown IDs, missing animation caches, explicit cross-track transitions or missing folders **block before creating drafts**.
+- `transition_default=random_saved` assigns saved native transitions to **eligible same-track adjacent outgoing cuts**; unsupported gapped or cross-part cuts are reported rather than silently rewritten. `transition_after=<exact name>` or `transition_after=id:<effect ID>` selects a cut; `transition_after=none` opts out.
+- Seeds produce deterministic choices for a given plan and saved catalog. Exact effect names must be unambiguous. Unknown IDs, missing animation caches, explicit cross-part transitions or missing folders **block before creating drafts**.
 - The original Scene Plan **`animation`** field remains reserved for pre-existing keyframe motions, not native Combo; old Scene Plans without these new directives retain their former export behavior.
 - All new draft native effects are applied from verified saved-project templates to original generated segments and written to top-level + nested CapCut JSON with backups and readback verification. No timeline rebuild, clip deletion, retiming, audio or layer changes.
 - The v7 effects summary, v6 CapCut Controls tab and previous EXE releases remain available for rollback. **Actual visual validation of short native Combo presets on the installed CapCut version is still recommended on a duplicate project.**
 
-## Fixed CapCut tracks, splitting and optional audio
+## Single-track timeline export — Windows v9
 
-- **Fixed visual layering:** still images always go onto the **lower visual track**, videos onto the **upper visual track** when both types exist. There is **no toggle to reverse** the layers. Original scene start/end times are retained; each part's draft starts at 00:00. This only changes Z Builder's opt-in writer mode, not Z Studio's legacy mixed-track mode.
+By owner request, **every new CapCut draft created by Z Builder** (both complete-project and 5–7-minute-part exports) contains **one mixed visual track** named `Images + Videos - Single Layer`. The original timed Scene Plan dictates clip order, image/video alternation, trim and timing. Audio and editable captions remain separate non-visual tracks if enabled.
+
+**Native transitions now work across immediately adjacent photo↔video, video↔photo, photo↔photo and video↔video cuts on this visual track**, subject to the existing local native transition availability and strict cut/time validation. No transitions are invented at boundaries between separate CapCut parts. Native Combo/Trending animations still apply **to images only**, never videos. Previously installed native effects are reused; no resources downloaded or entitlements bypassed.
+
+The native writer verifies one visual track, correct chronological media types, and unchanged source/target ranges. Automatic CI tests check real Node draft exports, 345-clip part splits and Scene Plan effect attachments. A versioned v8 EXE remains available for rollback. New v9 exports are different from previously exported projects; **no existing CapCut drafts are edited/migrated automatically**.
+
+## CapCut visual tracks, splitting and optional audio
+
+- **Single visual track (v9):** images and videos go onto the **same visual track**, in exact Scene Plan order. There is no layer toggle in this export. Original scene start/end times are retained; each part's draft starts at 00:00. This only changes Z Builder's opt-in writer mode, not Z Studio's legacy mixed-track mode.
 - **Split export:** target **6 minutes (360 seconds)**, with **5–7 minutes (300–420 seconds)** preferred. Scenes are **never split mid-shot**. Each exported part is **never longer than 7 minutes**. The last leftover part may be shorter than 5 minutes; if a single Scene Plan scene exceeds 7 minutes, export blocks and asks for a shorter plan shot.
-- **Complete project:** writes **one** native CapCut project under the Scene Plan's name, even when the plan exceeds seven minutes. It preserves the full timeline with no part offsets, and uses the same lower-image / upper-video track order. This is an alternative to split export, not an automatic additional copy.\n- **Export progress:** a built-in animated busy bar and stage label stay on Step 3, showing preparation, per-draft creation, and genuine verified draft counts. It never displays a made-up percentage. Windows Node/FFmpeg subprocesses use hidden consoles so they do not flash over the UI.\n- **Voice:** `Include Voice in CapCut export` is a checkbox in Step 3, **OFF by default**. If OFF, no narration file or audio track is exported even when voice was selected in Input. If ON, each part receives its properly trimmed section of the source MP3/WAV (the source in-point equals that part's absolute starting time). No audio is fabricated. Source-video audio is muted. You may leave voice unselected and add audio during final editing/rendering.
+- **Complete project:** writes **one** native CapCut project under the Scene Plan's name, even when the plan exceeds seven minutes. It preserves the full timeline with no part offsets, and uses the same single image/video visual track. This is an alternative to split export, not an automatic additional copy.\n- **Export progress:** a built-in animated busy bar and stage label stay on Step 3, showing preparation, per-draft creation, and genuine verified draft counts. It never displays a made-up percentage. Windows Node/FFmpeg subprocesses use hidden consoles so they do not flash over the UI.\n- **Voice:** `Include Voice in CapCut export` is a checkbox in Step 3, **OFF by default**. If OFF, no narration file or audio track is exported even when voice was selected in Input. If ON, each part receives its properly trimmed section of the source MP3/WAV (the source in-point equals that part's absolute starting time). No audio is fabricated. Source-video audio is muted. You may leave voice unselected and add audio during final editing/rendering.
 - Split mode creates separate CapCut Home → Projects drafts named `Your Project - Part 01`, `Your Project - Part 02`, etc., with `Z_Builder_Part_Info.json`. Complete mode creates one draft with `Z_Builder_Project_Info.json`. Both include `Z_Builder_Timeline.csv` and `Z_Builder_Warnings.txt`.
 - The exporter uses the source asset files **non-destructively** and verifies written JSON, media and track assignments. Actual compatibility with installed CapCut versions must be tested on the user's PC.
 
@@ -142,4 +150,4 @@ The Z Studio CapCut JSON layout was modeled on CapCut 9.4; validate the produced
 
 `python -m unittest discover -s tests -p 'test_z_builder*.py' -v`
 
-Tests cover the 4-second video → 2.5-second source/target trim, fixed image/video track ordering, 345-shot → 3-part splitting, complete-project export beyond 7 minutes, genuine progress callbacks, default muted/absent audio, and optional voice source offset across multiple projects.
+Tests cover the 4-second video → 2.5-second source/target trim, single mixed-image/video track ordering, 345-shot → 3-part splitting, complete-project export beyond 7 minutes, genuine progress callbacks, default muted/absent audio, and optional voice source offset across multiple projects.

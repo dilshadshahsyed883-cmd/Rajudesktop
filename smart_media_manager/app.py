@@ -22,6 +22,7 @@ from image_renamer.core import (
 )
 from smart_clip_renamer.core import RenamerError, create_plan as clip_create_plan, execute_plan as clip_execute_plan
 from smart_media_manager.youtube_downloader import YoutubeTab
+from smart_media_manager.cutter_queue_ui import BatchCutterTab
 from video_clip_cutter.core import (
     default_output_folder, prepare_job, process_job, read_settings, write_settings,
 )
@@ -503,8 +504,8 @@ class SmartMediaManager(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Smart Media Manager — Rajudesktop")
-        self.geometry("1180x840")
-        self.minsize(940, 690)
+        self.geometry("1260x900")
+        self.minsize(1020, 760)
         self.configure(bg=PALE)
         style = ttk.Style(self)
         style.theme_use("clam")
@@ -515,7 +516,22 @@ class SmartMediaManager(tk.Tk):
         style.configure("Section.TLabel", foreground=INK, font=("Segoe UI", 10, "bold"))
         style.configure("TNotebook", background=PALE, borderwidth=0)
         style.configure("TNotebook.Tab", font=("Segoe UI", 11, "bold"), padding=(24, 13))
-        style.configure("TButton", padding=(12, 8), font=("Segoe UI", 10))
+        style.configure("TButton", padding=(12, 8), font=("Segoe UI", 10),
+                        background="#e6edf7", foreground=NAVY, relief="flat")
+        style.map("TButton", background=[("active", "#d6e6ff"), ("disabled", "#edf0f4")])
+        style.configure("Primary.TButton", padding=(16, 9), font=("Segoe UI", 10, "bold"),
+                        background=BLUE, foreground="white", relief="flat")
+        style.map("Primary.TButton", background=[("active", "#164db4"), ("disabled", "#b6c7e4")],
+                  foreground=[("disabled", "#f6f8fc")])
+        style.configure("TLabelframe", background=PALE, bordercolor="#d4deeb", relief="solid")
+        style.configure("TLabelframe.Label", background=PALE, foreground=NAVY,
+                        font=("Segoe UI", 10, "bold"))
+        style.configure("Queue.Treeview", background="white", fieldbackground="white", rowheight=29,
+                        foreground=INK, font=("Segoe UI", 9), borderwidth=0)
+        style.configure("Queue.Treeview.Heading", font=("Segoe UI", 9, "bold"),
+                        background="#dfe8f5", foreground=NAVY, padding=(8, 7))
+        style.map("Queue.Treeview", background=[("selected", "#cde2ff")],
+                  foreground=[("selected", NAVY)])
         style.configure("Horizontal.TProgressbar", background=BLUE, troughcolor="#dbe3ef")
         header = tk.Frame(self, bg=NAVY, height=95)
         header.pack(fill="x")
@@ -528,7 +544,7 @@ class SmartMediaManager(tk.Tk):
         notebook.pack(fill="both", expand=True, padx=14, pady=12)
         preferences = Preferences()
         self.tabs = [
-            CutterTab(notebook, preferences),
+            BatchCutterTab(notebook, preferences),
             ImagesTab(notebook, preferences),
             ClipsTab(notebook, preferences),
             YoutubeTab(notebook, preferences),

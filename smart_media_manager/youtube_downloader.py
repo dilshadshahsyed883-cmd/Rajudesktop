@@ -94,15 +94,22 @@ def download_video(item, cancel, notify):
         raise RuntimeError("Cancelled — part files kept for resume")
 
 def snapshot_video(config, cancel, pause, notify):
-    import yt_dlp
-    if not valid_url(config["url"]):
-        raise ValueError("Invalid YouTube URL")
+    """Extract snapshots from a downloaded YouTube video or directly from a PC video."""
+    local = str(config.get("local_video") or "").strip()
+    if not local and not valid_url(config.get("url", "")):
+        raise ValueError("Choose a video from PC or enter a valid YouTube URL")
     ffmpeg, ffprobe = ffmpeg_paths()
     if not ffmpeg or not ffprobe:
         raise RuntimeError("FFmpeg and FFprobe required")
     folder = Path(config["output"]).expanduser()
-    cache = folder / ".snapshot_cache"
-    cache.mkdir(parents=True, exist_ok=True)
+    if local:
+        from smart_media_manager.cutter_queue import safe_name, VIDEO_TYPES
+        source = Path(local).expanduser().resolve()
+        if not source.is_file() or source.suffix.lower() not in VIDEO_TYPES:
+            raise ValueError("Choose a valid video file on your PC")
+        # A dedicated folder avoids accidental filename collisions between videos.
+        folder = folder / (safe_name(source.stem) + " snapshots")
+    folder.mkdir(parents=True, exist_ok=True)
     start = timestamp(config["start"])
     end = timestamp(config["end"]) if config["end"].strip() else None
     interval = int(config["interval"])
@@ -110,24 +117,28 @@ def snapshot_video(config, cancel, pause, notify):
         raise ValueError("Interval must be 1–3600 seconds")
     if end is not None and end <= start:
         raise ValueError("End must follow start")
-    notify("Reading video information", 0, 0)
-    opts = {"format": "best[ext=mp4]/best", "outtmpl": str(cache / "%(id)s.%(ext)s"),
-            "noplaylist": True, "quiet": True, "continuedl": True,
-            "ffmpeg_location": str(Path(ffmpeg).parent)}
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(config["url"], download=False)
-        video_id = str(info.get("id", "video"))
-        source = next((p for p in cache.glob(video_id + ".*")
-                       if p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov")), None)
-        if source is None:
-            if cancel.is_set():
-                return 0
-            notify("Downloading snapshot source", 0, 0)
-            ydl.extract_info(config["url"], download=True)
+    notify("Reading local video" if local else "Reading YouTube video", 0, 0)
+    if not local:
+        import yt_dlp
+        cache = folder / ".snapshot_cache"
+        cache.mkdir(parents=True, exist_ok=True)
+        opts = {"format": "best[ext=mp4]/best", "outtmpl": str(cache / "%(id)s.%(ext)s"),
+                "noplaylist": True, "quiet": True, "continuedl": True,
+                "ffmpeg_location": str(Path(ffmpeg).parent)}
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(config["url"], download=False)
+            video_id = str(info.get("id", "video"))
             source = next((p for p in cache.glob(video_id + ".*")
                            if p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov")), None)
-    if source is None:
-        raise RuntimeError("Source video missing after download")
+            if source is None:
+                if cancel.is_set():
+                    return 0
+                notify("Downloading snapshot source", 0, 0)
+                ydl.extract_info(config["url"], download=True)
+                source = next((p for p in cache.glob(video_id + ".*")
+                               if p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov")), None)
+        if source is None:
+            raise RuntimeError("Source video missing after download")
     probe = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration",
                             "-of", "default=noprint_wrappers=1:nokey=1", str(source)],
                            capture_output=True, text=True, timeout=40, check=True)
@@ -189,6 +200,7 @@ class YoutubeTab(ttk.Frame):
         self.video_format = tk.StringVar(value=prefs.get("yt_video_format", "MP4"))
         self.audio_format = tk.StringVar(value=prefs.get("yt_audio_format", "MP3"))
         self.snapshot_url = tk.StringVar()
+        self.snapshot_local = tk.StringVar()
         self.snapshot_output = tk.StringVar(value=prefs.get("yt_snap_output", str(Path.home() / "Documents" / "YouTube Snapshots")))
         self.interval = tk.StringVar(value="5")
         self.snap_format = tk.StringVar(value="JPG")
@@ -281,8 +293,14 @@ class YoutubeTab(ttk.Frame):
         ttk.Label(dl, textvariable=self.status).pack(anchor="w")
         ttk.Label(dl, text="Only download content you have permission to use.",
                   style="Muted.TLabel").pack(anchor="w", pady=12)
-        ttk.Label(sn, text="One YouTube URL").pack(anchor="w")
+        ttk.Label(sn, text="YouTube URL (optional if using a video from PC)").pack(anchor="w")
         ttk.Entry(sn, textvariable=self.snapshot_url).pack(fill="x", pady=6)
+        ttk.Label(sn, text="Or select a local video — no download needed").pack(anchor="w")
+        source_row = ttk.Frame(sn)
+        source_row.pack(fill="x", pady=(5, 9))
+        ttk.Entry(source_row, textvariable=self.snapshot_local).pack(side="left", fill="x", expand=True)
+        ttk.Button(source_row, text="Choose Video from PC", command=self.choose_snapshot_video).pack(side="left", padx=(6, 0))
+        ttk.Button(source_row, text="Clear", command=lambda: self.snapshot_local.set("")).pack(side="left", padx=(6, 0))
         ttk.Label(sn, text="Output folder").pack(anchor="w")
         self._folder(sn, self.snapshot_output)
         row = ttk.Frame(sn)
@@ -394,11 +412,23 @@ class YoutubeTab(ttk.Frame):
         self._save()
         self._refresh()
 
+    def choose_snapshot_video(self):
+        chosen = filedialog.askopenfilename(title="Choose video for snapshots", filetypes=[
+            ("Video files", "*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.wmv *.ts"),
+            ("All files", "*.*")])
+        if chosen:
+            self.snapshot_local.set(chosen)
+
     def start_snapshots(self):
         if self.snap_running:
             return
-        if not valid_url(self.snapshot_url.get()):
-            messagebox.showerror("URL", "Enter a valid YouTube URL")
+        local = self.snapshot_local.get().strip()
+        if not local and not valid_url(self.snapshot_url.get()):
+            messagebox.showerror("Source", "Choose a PC video or enter a valid YouTube URL")
+            return
+        if local and (not Path(local).is_file() or Path(local).suffix.lower() not in
+                      (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".ts")):
+            messagebox.showerror("Source", "Selected PC video is missing or unsupported")
             return
         try:
             assert 1 <= int(self.interval.get()) <= 3600
@@ -414,7 +444,7 @@ class YoutubeTab(ttk.Frame):
         self.snap_cancel.clear()
         self.snap_pause.clear()
         self.snap_running = self.running = True
-        config = {"url": self.snapshot_url.get(), "output": self.snapshot_output.get(),
+        config = {"url": self.snapshot_url.get(), "local_video": local, "output": self.snapshot_output.get(),
                   "interval": self.interval.get(), "format": self.snap_format.get(),
                   "quality": self.snap_quality.get(), "resolution": self.resolution.get(),
                   "start": self.start_time.get(), "end": self.end_time.get()}
@@ -427,7 +457,7 @@ class YoutubeTab(ttk.Frame):
                 status = "Failed: " + str(exc)
             self.events.put(("snapshot_done", status))
         threading.Thread(target=work, daemon=True).start()
-        self.snap_status.set("Preparing snapshots...")
+        self.snap_status.set("Preparing local snapshots..." if local else "Preparing YouTube snapshots...")
 
     def pause_snapshots(self):
         if self.snap_running:

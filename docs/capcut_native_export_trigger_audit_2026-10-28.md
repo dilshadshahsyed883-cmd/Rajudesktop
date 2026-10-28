@@ -55,3 +55,14 @@ Control-plane alternatives:
 - https://github.com/leileqiTHU/reverse-cli-anything/blob/main/capcut-cli/capcut_editor_worker.py
 - https://github.com/leileqiTHU/reverse-cli-anything/blob/main/capcut-cli/docs/implementation.md
 - https://github.com/yousefomar724/capcut-desktop-editing (native CapCut GUI export fallback; 9.4.0.4015)
+
+## Follow-up binary fingerprint result — Windows CI PASS
+- CI run: https://github.com/dilshadshahsyed883-cmd/Rajudesktop/actions/runs/40746599446
+- Evidence artifact: https://github.com/dilshadshahsyed883-cmd/Rajudesktop/actions/runs/40746599446/artifacts/12842215931
+- Target signed installer: **CapCut 9.3.0.3970**; native adapter pin reference: **CapCut 9.5.0.4050**.
+- `lyra_cli_client.dll`: present but SHA-256 **does not match** reference.
+- `videoeditor.dll`: present but SHA-256 **does not match** reference.
+- `VECreator.dll`: present but SHA-256 **does not match** reference.
+- `Qt6Core.dll`: present but SHA-256 **does not match** reference.
+- **Determination:** Native adapter's fail-closed hash gate must reject audited CapCut 9.3. The underlying native API exists in some form, but direct 9.5 bridge compatibility is **not established**. Do not disable pin checks or reuse hardcoded 9.5 offsets.
+- Test was read-only: no CapCut process launched, no Frida injected, no MP4 exported.

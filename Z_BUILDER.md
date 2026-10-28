@@ -17,6 +17,7 @@ Small standalone Windows desktop application (Python/PySide6), independent of th
 ## Used Media — manual cleanup after final CapCut rendering
 
 - A local asset is marked **Exported ×N** only after all CapCut draft(s) for the chosen mode finish successfully and verification passes; merely adding it to the library or matching a Scene Plan never makes it eligible for cleanup.
+- **Download Summary .txt** writes `used=N` alongside every image and video name/ID: `used=0` for never used, `used=1`, `used=2`, etc. for the number of verified CapCut exports that included the asset. Multiple appearances within one export count once, not once per timeline occurrence. The report also gives the total number of never-used assets.
 - In **Step 2 → Media Library**, select the **Used in CapCut Export** filter. Select individual rows with Ctrl/Shift or use **Select All Used Media**.
 - After you manually finish and inspect your **final rendered video in CapCut**, check **Final video rendered and checked in CapCut**, then click **Delete Selected Used Media (Recycle Bin)**.
 - Z Builder displays original filenames, counts, total size, and a final destructive-action confirmation. Only those selected original PC files are moved to the **Windows Recycle Bin** using `send2trash` and removed from the catalog. No automatic cleanup, permanent deletion, or change to unselected media.

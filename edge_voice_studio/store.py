@@ -25,6 +25,8 @@ class Store:
                     pitch INTEGER NOT NULL,
                     volume INTEGER NOT NULL,
                     subtitles INTEGER NOT NULL DEFAULT 1,
+                    srt_status TEXT NOT NULL DEFAULT 'off',
+                    srt_error TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'queued',
                     completed INTEGER NOT NULL DEFAULT 0,
                     total INTEGER NOT NULL DEFAULT 0,
@@ -36,7 +38,21 @@ class Store:
                 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS favorites (voice TEXT PRIMARY KEY);
             """)
+            # Backwards-compatible migration; never transcribe old completed projects
+            # unexpectedly on first launch.
+            columns = {row["name"] for row in con.execute("PRAGMA table_info(jobs)")}
+            if "srt_status" not in columns:
+                con.execute("ALTER TABLE jobs ADD COLUMN srt_status TEXT NOT NULL DEFAULT 'off'")
+                con.execute("ALTER TABLE jobs ADD COLUMN srt_error TEXT NOT NULL DEFAULT ''")
+                for row in con.execute("SELECT id, output, subtitles FROM jobs WHERE status='done'"):
+                    if row["subtitles"] and row["output"] and Path(row["output"]).with_suffix(".srt").is_file():
+                        con.execute("UPDATE jobs SET srt_status='done' WHERE id=?", (row["id"],))
+            elif "srt_error" not in columns:
+                con.execute("ALTER TABLE jobs ADD COLUMN srt_error TEXT NOT NULL DEFAULT ''")
             con.execute("UPDATE jobs SET status='queued' WHERE status='processing'")
+            # An interrupted transcription is safe to retry; an existing SRT
+            # is checked before any transcription work begins.
+            con.execute("UPDATE jobs SET srt_status='pending' WHERE srt_status='processing' AND status='done'")
 
     @contextmanager
     def connect(self):
@@ -64,11 +80,62 @@ class Store:
         id_ = uuid4().hex
         with self.connect() as con:
             con.execute("""INSERT INTO jobs
-                (id,title,script,voice,rate,pitch,volume,subtitles,total)
-                VALUES (?,?,?,?,?,?,?,?,?)""",
+                (id,title,script,voice,rate,pitch,volume,subtitles,srt_status,total)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (id_, safe_title(title), script.strip(), voice, int(rate), int(pitch),
-                 int(volume), int(bool(subtitles)), len(chunks)))
+                 int(volume), int(bool(subtitles)), "waiting" if subtitles else "off", len(chunks)))
         return id_
+
+    def complete_voice(self, id_: str, output: str, completed: int) -> None:
+        # MP3 success is independent of the SRT stage.
+        with self.connect() as con:
+            con.execute("""
+                UPDATE jobs SET status='done', completed=?, output=?,
+                    srt_status=CASE WHEN subtitles=1 THEN 'pending' ELSE 'off' END,
+                    srt_error='', updated_at=CURRENT_TIMESTAMP WHERE id=?
+            """, (completed, output, id_))
+
+    def claim_srt_job(self) -> dict | None:
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("""
+                SELECT * FROM jobs WHERE status='done' AND subtitles=1
+                AND srt_status='pending'
+                ORDER BY created_at, rowid LIMIT 1
+            """).fetchone()
+            if row:
+                con.execute("UPDATE jobs SET srt_status='processing', srt_error='' WHERE id=?",
+                            (row["id"],))
+                return dict(row)
+        return None
+
+    def set_srt_status(self, id_: str, status: str, error: str = "") -> None:
+        if status not in {"pending", "processing", "done", "failed", "skipped"}:
+            raise ValueError("Invalid SRT state")
+        with self.connect() as con:
+            con.execute("""UPDATE jobs SET srt_status=?, srt_error=?,
+                updated_at=CURRENT_TIMESTAMP WHERE id=?""",
+                (status, error[:2000], id_))
+
+    def retry_srt(self, id_: str) -> None:
+        with self.connect() as con:
+            row = con.execute("SELECT status, subtitles, output, srt_status FROM jobs WHERE id=?",
+                              (id_,)).fetchone()
+            if not row or row["status"] != "done" or not row["subtitles"] or not row["output"]:
+                raise ValueError("A completed MP3 with SRT enabled is required")
+            if row["srt_status"] == "processing":
+                raise ValueError("SRT generation already processing")
+            con.execute("UPDATE jobs SET srt_status='pending', srt_error='' WHERE id=?", (id_,))
+
+    def has_voice_work(self) -> bool:
+        with self.connect() as con:
+            return bool(con.execute(
+                "SELECT 1 FROM jobs WHERE status IN ('queued', 'processing') LIMIT 1").fetchone())
+
+    def fail_pending_srt(self, error: str) -> None:
+        with self.connect() as con:
+            con.execute("""UPDATE jobs SET srt_status='failed', srt_error=?
+                WHERE srt_status='pending' AND status='done'""", (error[:2000],))
 
     def all_jobs(self) -> list[dict]:
         with self.connect() as con:

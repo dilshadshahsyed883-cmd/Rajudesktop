@@ -53,7 +53,7 @@ with its original code and Windows build workflow untouched.
 ```powershell
 python -m pip install -r requirements-edge-voice.txt
 python -m unittest discover -s tests -p "test_edge_voice*.py" -v
-python -m unittest discover -s voice_to_srt_batch/tests -v
+cd voice_to_srt_batch && python -m unittest discover -s tests -v && cd ..
 python launch_edge_voice.py --self-test
 python launch_edge_voice.py
 ```

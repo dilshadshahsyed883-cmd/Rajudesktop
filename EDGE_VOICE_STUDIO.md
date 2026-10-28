@@ -1,49 +1,63 @@
-# Edge Voice Studio V1 — Windows app
+# Edge Voice Studio - Auto SRT integrated Windows executable
 
-A native PySide6 Kokoro-inspired English Edge TTS voiceover app built alongside,
-not inside, Scene Desktop Studio. The original video editor and media files stay unchanged.
+Canonical source: `edge_voice_studio/` on `main`. The existing
+`voice_to_srt_batch/voice_to_srt_studio/engine.py` is reused directly
+without running the separate Tk batch SRT application.
 
-## Features
+## Single EXE / one control
 
-- Live English neural voice browser (locale/gender/search), with cached voice choices.
-- Starred favorites, speed/pitch/volume presets, script drafts, dark/light theme.
-- TXT scripts and multi-file batch import.
-- SQLite queued narration jobs with restart recovery.
-- Long-script sentence-aware chunks and resumable MP3 segment generation.
-- Bounded network retries, pause, cancel and resume.
-- Finished MP3, optional word-timed SRT when available, background WAV conversion.
-- Audio preview and library player, independent output/cache folder locations.
-- Scripts, favorites, outputs and queue stay local to the Windows PC.
+The standard EdgeVoiceStudio application contains one persistent checkbox in
+the left navigation: **Auto SRT after MP3 (3-4 sec)**. It applies to both the
+single script **Add to Queue** and **Batch Studio** multi-TXT submission.
+The checkbox state is persisted as a preference and copied to each job on
+submission; changing it later does not alter existing queue jobs.
 
-## Developer launch
+- Unchecked: create MP3 only.
+- Checked: complete and save MP3, then automatically enqueue its audio for
+  Whisper `small` / English / `Recommended (3-4 sec)` word-aligned SRT.
+- The SRT worker is separate from voice synthesis; the next queued voice
+  continues while subtitle transcription runs.
+- Output paths always share one parent and base name:
+  `VideoName-<job-id>.mp3` and `VideoName-<job-id>.srt`.
+- An existing nonempty SRT is preserved rather than overwritten.
+- Subtitle transcription errors leave the completed MP3 safe and visible.
+  Select a completed job and choose **Resume / Retry** to retry subtitles.
+- Queued SRT and speech jobs survive restart; interrupted SRT jobs become pending.
+- A failed model download marks affected pending jobs failed; retry from queue
+  after network/model issues are resolved.
+- Existing completed older jobs are not silently re-transcribed on upgrade.
 
-Use Python 3.11 or newer:
+SRT cues target 3-4 seconds, respecting real spoken word boundaries and pauses;
+unusual phrases/silences may produce a shorter/longer cue.
 
-    python -m pip install -r requirements-edge-voice.txt
-    python launch_edge_voice.py
+## Distribution
 
-The existing Scene Desktop Studio continues to use:
+GitHub Actions workflow `.github/workflows/edge-voice.yml` runs Windows unit
+tests, native GUI smoke test, `--onefile` PyInstaller compilation and a **frozen
+EXE speech-engine import smoke test**. On a successful push to main, it publishes
+a GitHub Release containing **EdgeVoiceStudio.exe** directly and a checksum.
+The executable does **not** need an adjacent `_internal` directory. Do not
+ship a `--onedir` bundle or ask users to start a separate SRT app.
 
-    python launch.py
+This is a self-contained Windows binary for Python application dependencies;
+the Whisper `small` model is downloaded once on first SRT use into the normal
+Windows user cache, NOT an EXE-adjacent internal folder. The packed program
+temporarily extracts its runtime to Windows temporary storage when launched.
+Edge TTS synthesis requires a network connection.
 
-## Storage and recovery
+The old VoiceToSRTStudioBatch executable remains a separate standalone utility
+with its original code and Windows build workflow untouched.
 
-SQLite data is stored under the Windows application data directory; output MP3/WAV
-and chunk cache are stored in the configurable folders. Choose a folder on the D
-drive in Settings if C drive space is limited. Completed segments remain in cache
-so jobs can recover after interruption. Removing a queue row never deletes
-a generated audio file or any Scene editor media.
+## Developer/test
 
-The Microsoft Edge voice endpoint is online and is not under this application's
-control. Upstream rate limits, protocol changes and network problems may interrupt
-speech synthesis. Timing-based subtitle export depends on word-boundary events.
+```powershell
+python -m pip install -r requirements-edge-voice.txt
+python -m unittest discover -s tests -p "test_edge_voice*.py" -v
+python -m unittest discover -s voice_to_srt_batch/tests -v
+python launch_edge_voice.py --self-test
+python launch_edge_voice.py
+```
 
-## Tests and releases
-
-    python -m unittest discover -s tests -p "test_edge_voice*.py" -v
-
-Windows CI runs offline tests and a GUI startup smoke test. EdgeVoiceStudio EXE
-packaging is manual via workflow dispatch, not part of ordinary commits or PRs.
-A manually triggered release provides a Windows portable ZIP and SHA-256 checksums.
-
-No VPS deployment, background uploader, cloning, or access to the existing editor.
+SQLite lives in normal application data. Output folder and cache folder remain
+configurable, independent of the bundled EXE. No VPS or existing CapCut/Z Builder
+configuration is changed.

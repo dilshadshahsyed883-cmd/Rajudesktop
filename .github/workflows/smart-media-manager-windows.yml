@@ -8,6 +8,8 @@ on:
       - "smart_media_manager/**"
       - "launch_smart_media_manager.py"
       - "tests/test_smart_media_manager.py"
+      - "tests/test_cutter_queue.py"
+      - "tests/test_snapshots_local.py"
       - "SMART_MEDIA_MANAGER.md"
       - ".github/workflows/smart-media-manager-windows.yml"
   pull_request:
@@ -43,6 +45,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Manager tests failed' }
           python -m unittest discover -s tests -p test_youtube_downloader.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Downloader tests failed' }
+          python -m unittest discover -s tests -p test_cutter_queue.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Batch cutter tests failed' }
+          python -m unittest discover -s tests -p test_snapshots_local.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Local snapshot tests failed' }
           python -m compileall -q smart_media_manager
       - name: Install Windows packager
         run: python -m pip install pyinstaller==6.16.0 "yt-dlp[default]>=2025.1.1"
@@ -81,5 +87,5 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = "smart-media-manager-v1-run-$env:GITHUB_RUN_NUMBER"
-          gh release create $tag SmartMediaManager-Windows.zip SmartMediaManager-Windows.zip.sha256 --title "Smart Media Manager Windows V1" --notes "One Windows app with four tabs: Video Clip Cutter, Image Renamer, Smart Clip Renamer, YouTube Downloader (downloads, snapshots, saved queue). Extract ZIP and run SmartMediaManager.exe. FFmpeg bundled." --target $env:GITHUB_SHA --latest
+          gh release create $tag SmartMediaManager-Windows.zip SmartMediaManager-Windows.zip.sha256 --title "Smart Media Manager Windows V2" --notes "Four-tool Windows EXE with redesigned mixed-source batch Video Clip Cutter (PC and YouTube downloads), persistent queue, retry and progress; PC video or YouTube snapshots; Image Renamer and Smart Clip Renamer preserved. Extract ZIP and run SmartMediaManager.exe. FFmpeg bundled." --target $env:GITHUB_SHA --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed' }

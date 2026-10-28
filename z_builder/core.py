@@ -225,12 +225,15 @@ class Catalog:
                  f'Videos: {sum(a["kind"] == "video" for a in assets)}',
                  f'Approved: {sum(a["approved"] for a in assets)}',
                  f'Used in verified CapCut exports: {sum(a["export_count"] > 0 for a in assets)}',
+                 f'Never used in verified CapCut exports: {sum(a["export_count"] == 0 for a in assets)}',
+                 'Usage: used=0 means not used; used=N means included in N verified CapCut exports.',
+                 'Repeated appearances within the same export count once per media file.',
                  'Only approved and existing files can be selected.', '']
         for kind in ('image', 'video'):
             lines.append(kind.upper() + 'S')
             for a in assets:
                 if a['kind'] == kind:
-                    lines.append(f'- {a["filename"]} | id={a["id"]} | approved={a["approved"]} | exists={a["exists"]} | tags={a["tags"]}')
+                    lines.append(f'- {a["filename"]} | id={a["id"]} | used={a["export_count"]} | approved={a["approved"]} | exists={a["exists"]} | tags={a["tags"]}')
             lines.append('')
         return '\n'.join(lines)
 

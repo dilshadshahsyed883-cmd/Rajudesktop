@@ -37,9 +37,9 @@ def export_project(title: str) -> str | None:
     return match.group(1).strip() if match else None
 
 def is_editor(w: WindowInfo) -> bool:
-    return (w.title.strip().casefold() == "capcut" and
-            w.class_name.startswith("MainWindow_QMLTYPE_") and
-            w.width >= 900 and w.height >= 500)
+    return ((w.title.strip().casefold() == "capcut" or w.title.strip().casefold().startswith("capcut -")) and
+            (w.class_name.startswith("MainWindow_QMLTYPE_") or w.class_name == "MainWindow") and
+            w.width >= 640 and w.height >= 380)
 
 def is_export(w: WindowInfo) -> bool:
     return (bool(export_project(w.title)) and
@@ -61,6 +61,20 @@ def ensure_export(windows: list[WindowInfo], editor: WindowInfo, expected: str) 
     actual = export_project(dialog.title)
     if actual is None or actual.casefold() != expected.casefold():
         raise GuardError(f"Export dialog project mismatch: expected {expected!r}, saw {actual!r}.")
+    return dialog
+
+def ensure_matching_dialog(windows: list[WindowInfo], expected: str, editor: WindowInfo | None = None) -> WindowInfo:
+    """Input windows must already be verified as belonging to CapCut.exe."""
+    expected=validate_project_name(expected)
+    dialogs=[w for w in windows if is_export(w)]
+    if len(dialogs)!=1:
+        raise GuardError(f"Expected exactly one native CapCut export dialog; found {len(dialogs)}.")
+    dialog=dialogs[0]
+    actual=export_project(dialog.title)
+    if actual is None or actual.casefold()!=expected.casefold():
+        raise GuardError(f"Export dialog project mismatch: expected {expected!r}, saw {actual!r}.")
+    if editor is not None and dialog.pid!=editor.pid:
+        raise GuardError("CapCut editor and export dialog belong to different processes.")
     return dialog
 
 def validate_project_name(name: str) -> str:

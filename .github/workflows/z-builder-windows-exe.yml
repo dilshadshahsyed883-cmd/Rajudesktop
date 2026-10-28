@@ -1,16 +1,18 @@
-name: Z Builder Windows EXE
+name: Z Builder Windows EXE v5 — Capcut Transitions
 
 on:
   push:
     branches: [main]
     paths:
       - 'z_builder/**'
+      - 'autocapcut_transitions_only/**'
       - 'launch_z_builder.py'
       - 'tests/test_z_builder*.py'
       - '.github/workflows/z-builder-windows-exe.yml'
   pull_request:
     paths:
       - 'z_builder/**'
+      - 'autocapcut_transitions_only/**'
       - 'launch_z_builder.py'
       - 'tests/test_z_builder*.py'
       - '.github/workflows/z-builder-windows-exe.yml'
@@ -36,6 +38,8 @@ jobs:
         shell: pwsh
         run: |
           python -m unittest discover -s tests -p 'test_z_builder*.py' -v
+          python -m unittest discover -s autocapcut_transitions_only/tests -p 'test_*.py' -v
+          python -m compileall -q z_builder autocapcut_transitions_only
       - name: Include official Node runtime for PCs without Node.js
         shell: pwsh
         run: |
@@ -48,6 +52,7 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name Z_Builder `
             --collect-all imageio_ffmpeg `
+            --collect-submodules autocapcut_transitions_only `
             --add-data 'z_builder/capcut-draft.js;z_builder' `
             --add-data 'z_builder/capcut_bridge.js;z_builder' `
             --add-binary '.runtime/node/node.exe;.runtime/node' `
@@ -68,9 +73,9 @@ jobs:
         run: |
           Copy-Item 'Z_BUILDER.md' 'dist/README_Z_BUILDER.md'
           Copy-Item 'EXAMPLE_SCENE_PLAN.txt' 'dist/EXAMPLE_SCENE_PLAN.txt'
-          Compress-Archive -Path 'dist/Z_Builder.exe','dist/README_Z_BUILDER.md','dist/EXAMPLE_SCENE_PLAN.txt' -DestinationPath 'Z-Builder-Windows-EXE-v4.zip' -CompressionLevel Optimal
+          Compress-Archive -Path 'dist/Z_Builder.exe','dist/README_Z_BUILDER.md','dist/EXAMPLE_SCENE_PLAN.txt' -DestinationPath 'Z-Builder-Windows-EXE-v5-Transitions.zip' -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
-          name: Z-Builder-Windows-EXE-v4
-          path: Z-Builder-Windows-EXE-v4.zip
+          name: Z-Builder-Windows-EXE-v5-Transitions
+          path: Z-Builder-Windows-EXE-v5-Transitions.zip
           retention-days: 30

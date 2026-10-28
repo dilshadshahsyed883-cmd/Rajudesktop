@@ -14,6 +14,7 @@ import tempfile
 from typing import NamedTuple
 
 from .core import Plan, preflight, write_timeline_csv, timeline, MAX_VIDEO_CLIP_SECONDS, TIMING_EPSILON
+from .native_scene_effects import prepare_effects, apply_effects_to_draft
 
 
 SUPPORTED_ANIMATIONS = {'none', 'pan_left', 'pan_right', 'right_zoom', 'zoom_1', 'zoom_in', 'zoom_out'}
@@ -225,7 +226,7 @@ def split_into_parts(plan: Plan) -> list[Part]:
 
 def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
                   include_voice: bool = False, mode: str = 'parts',
-                  progress_callback=None) -> dict:
+                  progress_callback=None, effect_roots: tuple[str, str] | None = None) -> dict:
     """Create either verified 5-7 minute drafts or one complete editable draft.
 
     Progress events report real completed/verified draft counts. The UI stays
@@ -252,6 +253,9 @@ def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
         if not slots:
             raise ValueError('No scenes to export')
         parts = [Part(1, slots[0][0], slots[-1][1], Plan.from_dict(plan.to_dict()))]
+    # Preflight all Scene Plan native effects before creating any CapCut draft.
+    roots = effect_roots or (drafts_root, drafts_root)
+    native = prepare_effects(plan, parts, roots[0], roots[1])
     if progress_callback:
         progress_callback(0, len(parts), 'Preparing CapCut timeline and source media...')
     prepared = []
@@ -262,13 +266,15 @@ def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
     output_parts = []
     all_warnings = []
     compatibility = {}
+    applied_native = []
     # Each part is verified before the next is created; on failure report exact
     # created drafts, leaving them visible instead of secretly deleting data.
     for part, request, warnings in prepared:
         if progress_callback:
             label = ('Complete project' if mode == 'complete' else f'Part {part.index}/{len(parts)}')
             progress_callback(len(output_parts), len(parts), f'Creating {label}: copying media and writing draft...')
-        request['launch'] = launch and part.index == len(parts)
+        # Native edits must finish before CapCut is allowed to open.
+        request['launch'] = launch and not native['active'] and part.index == len(parts)
         with tempfile.TemporaryDirectory(prefix='zb-capcut-') as directory:
             input_path, output_path = Path(directory) / 'request.json', Path(directory) / 'result.json'
             input_path.write_text(json.dumps(request, ensure_ascii=False), encoding='utf-8')
@@ -284,6 +290,13 @@ def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
                 raise RuntimeError(f'Part {part.index} failed verification at {out.get("folder", "?")}:\n'
                                    + '\n'.join(out.get('verify_issues') or [done.stderr]))
             folder = Path(out['folder'])
+            if native['active']:
+                if progress_callback:
+                    progress_callback(len(output_parts), len(parts),
+                                      f'Attaching Scene Plan native effects to {folder.name}...')
+                effect_stats = apply_effects_to_draft(folder, part, native)
+                applied_native.append(effect_stats)
+                combined_warnings += native['warnings']
             write_timeline_csv(part.plan, folder / 'Z_Builder_Timeline.csv')
             (folder / 'Z_Builder_Warnings.txt').write_text('\n'.join(combined_warnings) + '\n', encoding='utf-8')
             info = {'index': part.index, 'folder': str(folder),
@@ -301,6 +314,16 @@ def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
         if progress_callback:
             progress_callback(len(output_parts), len(parts),
                               f'Verified {len(output_parts)}/{len(parts)} CapCut draft(s)')
+    launched = bool(launch and output_parts and not native['active'])
+    if launch and output_parts and native['active'] and os.name == 'nt':
+        try:
+            os.startfile('capcut:')
+            launched = True
+        except OSError:
+            all_warnings.append('CapCut auto-launch unavailable; open it manually.')
     return {'parts': output_parts, 'count': len(output_parts), 'mode': mode,
             'warnings': list(dict.fromkeys(all_warnings)),
-            'capcut': compatibility, 'launched': bool(launch and output_parts)}
+            'native_effects': {'active': native['active'],
+                               'animations': sum(x.get('animations', 0) for x in applied_native),
+                               'transitions': sum(x.get('transitions', 0) for x in applied_native)},
+            'capcut': compatibility, 'launched': launched}

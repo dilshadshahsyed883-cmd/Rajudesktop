@@ -1,3 +1,5 @@
+> **Looking for an app?** See the [Rajudesktop App Directory](APP_INDEX.md) for every application, the canonical main-branch files, launchers, test commands, and preserved legacy branches.
+
 # Scene Desktop Studio — Rajudesktop
 
 A **new, independent Windows desktop video editor** combining an indexed-media-library direction with Scene Builder-inspired planning and CapCut-like editing. The **initial MVP** is intentionally focused on a functional cut timeline, rather than presenting unfinished advanced controls.

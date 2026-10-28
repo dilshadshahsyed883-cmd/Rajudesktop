@@ -1,0 +1,43 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> project-image-downloader@1.1.1 test
+> node --experimental-vm-modules --test tests/*.test.js
+
+✔ Google result imgurl preserves full original and independent source URL (4.537548ms)
+✔ Google external preview image becomes an original with actual dimensions (0.996584ms)
+✔ Getty images remain license-required previews; no page actions are invoked (1.893655ms)
+✔ JSON-LD and page images dedupe exact URLs and ignore non-HTTP content (1.585155ms)
+✔ separate query/prefix/count survive CSV and escaped text (5.983163ms)
+✔ bulk import supports tabs, rejects bad rows atomically (0.910717ms)
+✔ direct search URLs encode query without filename coupling (0.683402ms)
+✔ safe Windows names cannot escape folder or use reserved device names (0.381764ms)
+✔ HTTP(S) public image URLs only; fragments dedupe, signed query stays intact (0.659472ms)
+✔ same sanitized filename keyword shares monotonic numbering across rows (0.596842ms)
+✔ sniff actual image bytes, never save HTML masquerading as JPEG (0.77503ms)
+✔ queue caps per-row targets, dedupes URLs across project, blocks Getty previews (1.26172ms)
+✔ reports preserve source attribution and report real shortages (0.975119ms)
+(node:28) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ worker confirms completion, exact bytes, reports and durable reopen (44.941685ms)
+✔ worker rejects HTML, below-quality images and HTTP errors without counting success (18.6555ms)
+✔ worker suppresses exact byte duplicates across different original URLs (16.992834ms)
+✔ pause aborts validation, resume continues; cancel keeps completed files (21.997402ms)
+✔ failed job retries do not reuse reserved filenames or overwrite files (16.728261ms)
+✔ restart reconciles a completed Chrome download that missed its event (14.137742ms)
+✔ search creates an encoded direct URL and failed edits are atomic (4.819918ms)
+✔ Getty preview candidates cannot be selected or queued (6.486966ms)
+✔ rapid pause/resume cannot dispatch the same pending job twice (27.000632ms)
+✔ Auto Download replaces failed originals, counts Chrome completion and stops at target (12.584401ms)
+✔ Auto Download replaces duplicate bytes with the next distinct image (11.92705ms)
+✔ Auto stop cancels its work, preserves records and never replenishes it (21.888506ms)
+✔ Auto mode displays Getty shortage without attempting preview downloads (5.582846ms)
+✔ Auto collects available originals from the current source page (14.144052ms)
+✔ Auto intent and target reservations survive a worker restart (21.622013ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 28
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 448.382789

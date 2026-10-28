@@ -5,9 +5,10 @@ import re
 import threading
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 from smart_media_manager.youtube_downloader import ffmpeg_paths, valid_url
-from video_clip_cutter.core import prepare_job, process_job, parse_duration
+from video_clip_cutter.core import prepare_job, process_job, parse_duration, RESERVED_NAMES
 
 VIDEO_TYPES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".ts"}
 
@@ -15,7 +16,10 @@ VIDEO_TYPES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".ts"}
 def safe_name(value: str) -> str:
     result = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", str(value))
     result = re.sub(r"\s+", " ", result).strip(" .")[:85].rstrip(" .")
-    return result or "Video"
+    result = result or "Video"
+    if result.split(".")[0].upper() in RESERVED_NAMES:
+        result = "Video " + result
+    return result
 
 
 def new_job(source: str, kind: str, duration: str, output: str, keyword: str = "") -> dict:
@@ -24,7 +28,9 @@ def new_job(source: str, kind: str, duration: str, output: str, keyword: str = "
     if kind == "YouTube":
         if not valid_url(source):
             raise ValueError("Invalid YouTube link")
-        default_name = "YouTube Video"
+        parsed = urlparse(source)
+        video_id = parse_qs(parsed.query).get("v", [""])[0] or parsed.path.rstrip("/").split("/")[-1]
+        default_name = "YouTube " + safe_name(video_id)[:28]
     else:
         if not Path(source).is_file() or Path(source).suffix.lower() not in VIDEO_TYPES:
             raise ValueError("Select an existing supported video file")

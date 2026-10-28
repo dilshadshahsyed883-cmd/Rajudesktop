@@ -6,7 +6,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from captions import parse_caption, literal_text, write_ass
@@ -153,6 +153,14 @@ class CaptionTests(unittest.TestCase):
 
 
 class QueueTests(unittest.TestCase):
+    def test_windows_locked_byte_read_releases_second_handle(self):
+        stream=MagicMock()
+        stream.read.side_effect=PermissionError('byte locked by first instance')
+        with patch('state.open',return_value=stream,create=True):
+            with self.assertRaisesRegex(RuntimeError,'already running'):
+                InstanceLock('instance.lock')
+        stream.close.assert_called_once()
+
     def test_atomic_restore_interrupted_and_corrupt(self):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'queue.json'

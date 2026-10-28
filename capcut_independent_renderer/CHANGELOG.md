@@ -11,8 +11,9 @@ Owner reports a good result and approves updating repository/master records.
 - Stop treating a full-caption style range or inactive companion material as a missing animation/effect.
 - Retain FIFO persistence, cancellation, technical/full-decode verification and no-overwrite MP4 publication.
 - Force a fresh export after renderer/effect settings change, including upgrade from v0.3.
+- Repository Windows hardening: catch a second instance's denied lock-byte read and close that file handle before reporting that the app is already running.
 
-Local development validation: 26/26 tests passed before repository import. Source CI results are authoritative only after the corresponding GitHub run completes.
+Local development validation: 26/26 tests passed before repository import. The Windows lock cleanup regression raises the repository suite to 27 tests. Source CI results are authoritative only after the corresponding GitHub run completes.
 
 ## v0.3 — prior private delivery
 

@@ -61,12 +61,14 @@ def completed_for(item, settings):
 class InstanceLock:
     def __init__(self, path):
         self.stream = open(path, 'a+b')
-        self.stream.seek(0)
-        if self.stream.read(1) == b'':
-            self.stream.write(b'0')
-            self.stream.flush()
-        self.stream.seek(0)
         try:
+            # Windows denies reads of the byte already locked by the first
+            # instance. Initialization belongs inside the same cleanup guard.
+            self.stream.seek(0)
+            if self.stream.read(1) == b'':
+                self.stream.write(b'0')
+                self.stream.flush()
+            self.stream.seek(0)
             if os.name == 'nt':
                 import msvcrt
                 msvcrt.locking(self.stream.fileno(), msvcrt.LK_NBLCK, 1)

@@ -1,0 +1,154 @@
+{
+  "source": "https://github.com/renezander030/capcut-cli/blob/master/src/enums.json",
+  "source_type": "unofficial third-party metadata",
+  "catalog_total_entries": 951,
+  "status": "CANDIDATE_ONLY_NOT_INSTALLED_EFFECT_PROOF",
+  "owner_verified_resource_identity_match": "6811007755785081357",
+  "known_owner_missing_from_public_catalog": "7683535350479817991",
+  "entries": [
+    {
+      "category": "image_intros",
+      "title": "Fade In",
+      "slug": "fade-in",
+      "resource_id": "6798320778182922760",
+      "default_duration_us": 500000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_intros",
+      "title": "Zoom In",
+      "slug": "zoom-in",
+      "resource_id": "6798332733694153230",
+      "default_duration_us": 500000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_intros",
+      "title": "Slide Left",
+      "slug": "slide-left",
+      "resource_id": "6798332871267324423",
+      "default_duration_us": 500000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_outros",
+      "title": "Fade Out",
+      "slug": "fade-out",
+      "resource_id": "6798320902548230669",
+      "default_duration_us": 500000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_outros",
+      "title": "Zoom Out",
+      "slug": "zoom-out",
+      "resource_id": "6798332648814023181",
+      "default_duration_us": 500000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_combos",
+      "title": "Pendulum 1",
+      "slug": "pendulum-1",
+      "resource_id": "6811007755785081357",
+      "default_duration_us": 4000000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_combos",
+      "title": "Pendulum 2",
+      "slug": "pendulum-2",
+      "resource_id": "6811007833069326862",
+      "default_duration_us": 1000000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_combos",
+      "title": "Pan Right",
+      "slug": "pan-right",
+      "resource_id": "6772415374165021191",
+      "default_duration_us": 4500000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_combos",
+      "title": "Pan Left",
+      "slug": "pan-left",
+      "resource_id": "6772415248973435395",
+      "default_duration_us": 4500000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_combos",
+      "title": "Zoom 1",
+      "slug": "zoom-1",
+      "resource_id": "6759078592740594184",
+      "default_duration_us": 4000000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_combos",
+      "title": "Right Zoom",
+      "slug": "right-zoom",
+      "resource_id": "6772415063216099848",
+      "default_duration_us": 4500000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "image_combos",
+      "title": "Left Zoom",
+      "slug": "left-zoom",
+      "resource_id": "6772415148423385607",
+      "default_duration_us": 5000000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "transitions",
+      "title": "Dissolve",
+      "slug": "dissolve",
+      "resource_id": "6724846004274729480",
+      "default_duration_us": 466666,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "transitions",
+      "title": "Black Fade",
+      "slug": "black-fade",
+      "resource_id": "6724239388189921806",
+      "default_duration_us": 466666,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "transitions",
+      "title": "White Flash",
+      "slug": "white-flash",
+      "resource_id": "6724845376098013708",
+      "default_duration_us": 466666,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "transitions",
+      "title": "Twinkle Zoom",
+      "slug": "twinkle-zoom",
+      "resource_id": "7452646287326843393",
+      "default_duration_us": 1000000,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "scene_effects",
+      "title": "Blur",
+      "slug": "blur",
+      "resource_id": "6739752823140913675",
+      "default_duration_us": null,
+      "owner_9_6_runtime_verified": false
+    },
+    {
+      "category": "scene_effects",
+      "title": "Motion Blur",
+      "slug": "motion-blur",
+      "resource_id": "7011333202614686210",
+      "default_duration_us": null,
+      "owner_9_6_runtime_verified": false
+    }
+  ]
+}

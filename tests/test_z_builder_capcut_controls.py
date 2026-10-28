@@ -60,6 +60,7 @@ class AnimationsPanelQtTests(unittest.TestCase):
             mock.patch("z_builder.animations_tab.harvest_animations", return_value=catalog()),
             mock.patch("z_builder.animations_tab.load_project", return_value=(demo(), [], [])),
             mock.patch("z_builder.animations_tab.resource_is_available", return_value=True),
+            mock.patch("autocapcut_animations_only.animation_engine.resource_is_available", return_value=True),
             mock.patch("z_builder.animations_tab.capcut_running", return_value=False),
         ]
         for p in patches:

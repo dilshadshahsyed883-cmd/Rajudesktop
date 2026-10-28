@@ -123,7 +123,7 @@ function motionOf(c, dur, zoomMin) {
 function makePlan(payload, media) {
   const notes = [], warn = m => { if (!notes.includes(m)) notes.push(m); };
   const W = payload.W || 1920, H = payload.H || 1080, zoomMin = payload.zoomMinSec || 5;
-  const plan = { name: payload.name || 'Z Studio Project', W, H, fps: +payload.fps || 30, images: [], voice: [], music: [], sfx: [], captions: [], titles: [], notes, gaps: 0, separateLayers: payload.separateLayers === true };
+  const plan = { name: payload.name || 'Z Studio Project', W, H, fps: +payload.fps || 30, images: [], voice: [], music: [], sfx: [], captions: [], titles: [], notes, gaps: 0, separateLayers: payload.separateLayers === true, singleVisualTrack: payload.singleVisualTrack === true };
   let prev = 0;
   const imgs = (payload.images || []).filter(c => c && c.image).slice().sort((a, b) => a.start - b.start);
   imgs.forEach((c, i) => {
@@ -245,7 +245,7 @@ function buildContent(plan, files, timelineId) {
   const visualGroups = plan.separateLayers
     ? [{ clips: plan.images.filter(c => c.kind === 'photo'), name: 'Images - Lower Layer' },
        { clips: plan.images.filter(c => c.kind === 'video'), name: 'Videos - Upper Layer' }]
-    : [{ clips: plan.images, name: '' }];
+    : [{ clips: plan.images, name: plan.singleVisualTrack ? 'Images + Videos - Single Layer' : '' }];
   // Avoid an empty base track when a project contains only one media kind.
   for (const group of visualGroups) {
     if (!group.clips.length) continue;
@@ -345,6 +345,18 @@ function verifyProject(folder, plan) {
   if (!tl || !fs.existsSync(tl)) issues.push('The timeline copy inside Timelines/ is missing.');
   const byId = new Map(); for (const k of ['videos', 'audios', 'texts']) for (const m of c.materials[k] || []) byId.set(m.id, m);
   const visualTracks = c.tracks.filter(t => t.type === 'video');
+  if (plan.singleVisualTrack) {
+    if (visualTracks.length !== 1) issues.push('Scene Plan requires exactly one visual track for images and videos.');
+    if (visualTracks[0] && visualTracks[0].name !== 'Images + Videos - Single Layer') {
+      issues.push('The single mixed visual track has the wrong name.');
+    }
+    const matsById = new Map((c.materials.videos || []).map(m => [m.id, m]));
+    const actualKinds = (visualTracks[0]?.segments || []).map(s => matsById.get(s.material_id)?.type);
+    const expectedKinds = plan.images.map(x => x.kind);
+    if (JSON.stringify(actualKinds) !== JSON.stringify(expectedKinds)) {
+      issues.push('Scene Plan image/video sequence on the single track is incorrect.');
+    }
+  }
   if (plan.separateLayers) {
     const kinds = plan.images.map(x => x.kind);
     if (kinds.includes('photo') && kinds.includes('video')) {

@@ -1,4 +1,4 @@
-name: Z Builder Windows EXE v8 — Native Scene Plan Effects
+name: Z Builder Windows EXE v9 — Single Visual Track
 
 on:
   push:
@@ -77,14 +77,14 @@ jobs:
         run: |
           Copy-Item 'Z_BUILDER.md' 'dist/README_Z_BUILDER.md'
           Copy-Item 'EXAMPLE_SCENE_PLAN.txt' 'dist/EXAMPLE_SCENE_PLAN.txt'
-          Compress-Archive -Path 'dist/Z_Builder.exe','dist/README_Z_BUILDER.md','dist/EXAMPLE_SCENE_PLAN.txt' -DestinationPath 'Z-Builder-Windows-EXE-v8-Scene-Plan-Effects.zip' -CompressionLevel Optimal
+          Compress-Archive -Path 'dist/Z_Builder.exe','dist/README_Z_BUILDER.md','dist/EXAMPLE_SCENE_PLAN.txt' -DestinationPath 'Z-Builder-Windows-EXE-v9-Single-Track.zip' -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
-          name: Z-Builder-Windows-EXE-v8-Scene-Plan-Effects
-          path: Z-Builder-Windows-EXE-v8-Scene-Plan-Effects.zip
+          name: Z-Builder-Windows-EXE-v9-Single-Track
+          path: Z-Builder-Windows-EXE-v9-Single-Track.zip
           retention-days: 30
 
-  publish-v8-release:
+  publish-v9-release:
     name: Publish downloadable Windows EXE after successful main build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: windows-exe
@@ -96,25 +96,25 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: Z-Builder-Windows-EXE-v8-Scene-Plan-Effects
+          name: Z-Builder-Windows-EXE-v9-Single-Track
       - name: Verify executable and generate SHA256SUMS
         run: |
           set -euo pipefail
-          test -s Z-Builder-Windows-EXE-v8-Scene-Plan-Effects.zip
-          unzip -q Z-Builder-Windows-EXE-v8-Scene-Plan-Effects.zip -d release
+          test -s Z-Builder-Windows-EXE-v9-Single-Track.zip
+          unzip -q Z-Builder-Windows-EXE-v9-Single-Track.zip -d release
           test -s release/Z_Builder.exe
-          sha256sum release/Z_Builder.exe Z-Builder-Windows-EXE-v8-Scene-Plan-Effects.zip > SHA256SUMS-v8.txt
-      - name: Publish v8 GitHub Release with direct EXE and ZIP
+          sha256sum release/Z_Builder.exe Z-Builder-Windows-EXE-v9-Single-Track.zip > SHA256SUMS-v9.txt
+      - name: Publish v9 GitHub Release with direct EXE and ZIP
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create z-builder-scene-effects-v8-20261028 \
+          gh release create z-builder-single-track-v9-20261028 \
             release/Z_Builder.exe \
-            Z-Builder-Windows-EXE-v8-Scene-Plan-Effects.zip \
-            SHA256SUMS-v8.txt \
+            Z-Builder-Windows-EXE-v9-Single-Track.zip \
+            SHA256SUMS-v9.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Z Builder Windows v8 — Scene Plan Native Combo and Transitions" \
-            --notes "Z Builder v8 applies native saved CapCut Combo animations to image shots and same-track transitions directly from Scene Plan directives during part/complete draft creation, preserving video, layers and timings. Missing IDs and explicit cross-layer requests block preflight; offline v7 and v6 releases remain for rollback. Native shortened animation playback requires live CapCut verification." \
+            --title "Z Builder Windows v9 — Single Visual Track (Images + Videos)" \
+            --notes "Z Builder v9 exports images and videos on ONE CapCut visual track in exact Scene Plan order/timing. Native transitions now work on eligible image↔video, image↔image and video↔video same-track cuts; native Trending Combo animations remain image-only. Includes 5–7 minute parts, complete export, verified windows tests. v8/v7 retained for rollback. Native visual CapCut playback remains user acceptance." \
             --latest

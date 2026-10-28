@@ -221,7 +221,7 @@ class Window(QMainWindow):
         path_row.addWidget(self._button('Browse', self.choose_drafts))
         form.addRow('CapCut drafts folder', path_row)
         ex.addLayout(form)
-        ex.addWidget(QLabel('Fixed layers: IMAGES lower track / VIDEOS upper track. Export as 5–7 minute parts or one complete project.'))
+        ex.addWidget(QLabel('Single visual track: images + videos in Scene Plan order. Export as 5–7 minute parts or one complete project.'))
         self.include_voice = QCheckBox('Include Voice in CapCut export (optional; OFF by default)')
         self.include_voice.setChecked(False)
         ex.addWidget(self.include_voice)
@@ -673,7 +673,7 @@ class Window(QMainWindow):
         parts = result.get('parts', [])
         lines = ['CREATED COMPLETE EDITABLE CAPCUT PROJECT' if is_complete
                  else f'CREATED {len(parts)} EDITABLE CAPCUT PARTS',
-                 'Images = lower track | Videos = upper track (fixed)',
+                 'ONE VISUAL TRACK: images + videos in Scene Plan order (fixed)',
                  'Voice included: ' + ('YES' if parts and parts[0]['voice_included'] else 'NO'), '']
         for part in parts:
             label = 'Complete project' if is_complete else f"Part {part['index']:02d}"

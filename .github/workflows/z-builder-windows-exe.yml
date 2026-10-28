@@ -1,4 +1,4 @@
-name: Z Builder Windows EXE v5 — Capcut Transitions
+name: Z Builder Windows EXE v6 — CapCut Controls
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
     paths:
       - 'z_builder/**'
       - 'autocapcut_transitions_only/**'
+      - 'autocapcut_animations_only/**'
       - 'launch_z_builder.py'
       - 'tests/test_z_builder*.py'
       - '.github/workflows/z-builder-windows-exe.yml'
@@ -13,6 +14,7 @@ on:
     paths:
       - 'z_builder/**'
       - 'autocapcut_transitions_only/**'
+      - 'autocapcut_animations_only/**'
       - 'launch_z_builder.py'
       - 'tests/test_z_builder*.py'
       - '.github/workflows/z-builder-windows-exe.yml'
@@ -26,7 +28,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - uses: actions/setup-node@v4
@@ -39,7 +41,8 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_z_builder*.py' -v
           python -m unittest discover -s autocapcut_transitions_only/tests -p 'test_*.py' -v
-          python -m compileall -q z_builder autocapcut_transitions_only
+          python -m unittest discover -s autocapcut_animations_only/tests -p 'test_*.py' -v
+          python -m compileall -q z_builder autocapcut_transitions_only autocapcut_animations_only
       - name: Include official Node runtime for PCs without Node.js
         shell: pwsh
         run: |
@@ -53,6 +56,7 @@ jobs:
           pyinstaller --noconfirm --clean --onefile --windowed --name Z_Builder `
             --collect-all imageio_ffmpeg `
             --collect-submodules autocapcut_transitions_only `
+            --collect-submodules autocapcut_animations_only `
             --add-data 'z_builder/capcut-draft.js;z_builder' `
             --add-data 'z_builder/capcut_bridge.js;z_builder' `
             --add-binary '.runtime/node/node.exe;.runtime/node' `
@@ -73,14 +77,14 @@ jobs:
         run: |
           Copy-Item 'Z_BUILDER.md' 'dist/README_Z_BUILDER.md'
           Copy-Item 'EXAMPLE_SCENE_PLAN.txt' 'dist/EXAMPLE_SCENE_PLAN.txt'
-          Compress-Archive -Path 'dist/Z_Builder.exe','dist/README_Z_BUILDER.md','dist/EXAMPLE_SCENE_PLAN.txt' -DestinationPath 'Z-Builder-Windows-EXE-v5-Transitions.zip' -CompressionLevel Optimal
+          Compress-Archive -Path 'dist/Z_Builder.exe','dist/README_Z_BUILDER.md','dist/EXAMPLE_SCENE_PLAN.txt' -DestinationPath 'Z-Builder-Windows-EXE-v6-CapCut-Controls.zip' -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
-          name: Z-Builder-Windows-EXE-v5-Transitions
-          path: Z-Builder-Windows-EXE-v5-Transitions.zip
+          name: Z-Builder-Windows-EXE-v6-CapCut-Controls
+          path: Z-Builder-Windows-EXE-v6-CapCut-Controls.zip
           retention-days: 30
 
-  publish-v5-release:
+  publish-v6-release:
     name: Publish downloadable Windows EXE after successful main build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: windows-exe
@@ -92,25 +96,25 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: Z-Builder-Windows-EXE-v5-Transitions
+          name: Z-Builder-Windows-EXE-v6-CapCut-Controls
       - name: Verify executable and generate SHA256SUMS
         run: |
           set -euo pipefail
-          test -s Z-Builder-Windows-EXE-v5-Transitions.zip
-          unzip -q Z-Builder-Windows-EXE-v5-Transitions.zip -d release
+          test -s Z-Builder-Windows-EXE-v6-CapCut-Controls.zip
+          unzip -q Z-Builder-Windows-EXE-v6-CapCut-Controls.zip -d release
           test -s release/Z_Builder.exe
-          sha256sum release/Z_Builder.exe Z-Builder-Windows-EXE-v5-Transitions.zip > SHA256SUMS-v5.txt
-      - name: Publish v5 GitHub Release with direct EXE and ZIP
+          sha256sum release/Z_Builder.exe Z-Builder-Windows-EXE-v6-CapCut-Controls.zip > SHA256SUMS-v6.txt
+      - name: Publish v6 GitHub Release with direct EXE and ZIP
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create z-builder-capcut-transitions-v5-20261028 \
+          gh release create z-builder-capcut-controls-v6-20261028 \
             release/Z_Builder.exe \
-            Z-Builder-Windows-EXE-v5-Transitions.zip \
-            SHA256SUMS-v5.txt \
+            Z-Builder-Windows-EXE-v6-CapCut-Controls.zip \
+            SHA256SUMS-v6.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Z Builder Windows v5 — Capcut Transitions (4th tab)" \
-            --notes "Z Builder v4 scene plan, media library and CapCut exporter retained. Adds 4th independent Capcut Transitions tab using previously owner-tested native transition-only engine. Supports local catalog, favorites, single/mix, Edit File JSON, Preview and Apply with backups. Confirm actual CapCut behavior using a copied project; no live CapCut GUI validation in CI." \
+            --title "Z Builder Windows v6 — CapCut Controls (Transitions + Animations)" \
+            --notes "Z Builder retains Scene Plan, Media Library and CapCut exporter. Fourth main tab is CapCut Controls with two nested sub-tabs: Transitions (owner-tested native transitions engine), Animations (photo-only Trending Combo from saved drafts, Random All, favorites, auto-fit duration and backups). Windows CI regression pass; check shortened animation playback on a copy in CapCut." \
             --latest

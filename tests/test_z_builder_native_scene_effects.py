@@ -45,13 +45,12 @@ def sample_draft():
                 'extra_material_refs': [], 'volume': 1}
     return {'materials': {'videos': photos, 'material_animations': [], 'transitions': [], 'audios': []},
             'tracks': [
-                {'id': 'lower', 'name': 'Images - Lower Layer', 'type': 'video',
+                {'id': 'mixed', 'name': 'Images + Videos - Single Layer', 'type': 'video',
                  'segments': [
                     segment('s1', 'mat-first', 0, 2_500_000),
                     segment('s2', 'mat-second', 2_500_000, 3_000_000),
+                    segment('s3', 'mat-video', 5_500_000, 4_000_000),
                     segment('s4', 'mat-third', 9_500_000, 2_000_000)]},
-                {'id': 'upper', 'name': 'Videos - Upper Layer', 'type': 'video',
-                 'segments': [segment('s3', 'mat-video', 5_500_000, 4_000_000)]},
                 {'id': 'voice', 'type': 'audio', 'segments': [{'id': 'voice1', 'volume': 1}]}],
             'duration': 11_500_000}
 
@@ -88,8 +87,8 @@ class ScenePlanEffectTests(unittest.TestCase):
 
     def test_effects_mapping_preserves_all_video_and_layers(self):
         plan = sample_plan()
-        # Remove an explicit transition across image/video tracks: it is not safe.
-        plan.shots[1].native_transition_after = ''
+        # One visual track permits image→video and video→image transitions.
+        # Keep the explicit Pendulum / Pull in instructions untouched.
         part = SimpleNamespace(plan=plan)
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
@@ -98,18 +97,19 @@ class ScenePlanEffectTests(unittest.TestCase):
                   mock.patch('z_builder.native_scene_effects.harvest_transitions', return_value=t)):
                 resolved = prepare_effects(plan, [part], root, root)
             self.assertEqual(len(resolved['animations']), 2)
-            self.assertEqual(len(resolved['transitions']), 1)
+            self.assertEqual(len(resolved['transitions']), 3)
             self.assertEqual(resolved['animations'][plan.shots[1].section], 'anim-pendulum')
             self.assertNotIn(plan.shots[3].section, resolved['animations'])
             raw = sample_draft()
             original = copy.deepcopy(raw)
             out, stats = apply_effects_in_memory(raw, part, resolved)
             self.assertEqual(stats['animations'], 2)
-            self.assertEqual(stats['transitions'], 1)
+            self.assertEqual(stats['transitions'], 3)
             self.assertEqual(len(out['materials']['material_animations']), 2)
-            self.assertEqual(len(out['materials']['transitions']), 1)
+            self.assertEqual(len(out['materials']['transitions']), 3)
+            self.assertEqual(len([t for t in out['tracks'] if t['type'] == 'video']), 1)
             self.assertEqual(out['tracks'][1], original['tracks'][1])
-            self.assertEqual(out['tracks'][2], original['tracks'][2])
+            self.assertEqual(out['tracks'][0]['name'], 'Images + Videos - Single Layer')
             self.assertEqual(out['materials']['videos'], original['materials']['videos'])
             for prev, after in zip(original['tracks'][0]['segments'], out['tracks'][0]['segments']):
                 for field in ('id', 'material_id', 'target_timerange', 'source_timerange',
@@ -117,7 +117,7 @@ class ScenePlanEffectTests(unittest.TestCase):
                     self.assertEqual(prev[field], after[field])
             self.assertEqual(out['materials']['material_animations'][0]['animations'][0]['duration'], 2_500_000)
 
-    def test_explicit_cross_layer_transition_blocks_before_draft_write(self):
+    def test_explicit_image_to_video_cut_is_supported(self):
         plan = sample_plan()
         part = SimpleNamespace(plan=plan)
         with tempfile.TemporaryDirectory() as root:
@@ -126,8 +126,27 @@ class ScenePlanEffectTests(unittest.TestCase):
                              return_value=anim_catalog(root)),
                   mock.patch('z_builder.native_scene_effects.harvest_transitions',
                              return_value=transition_catalog())):
-                with self.assertRaisesRegex(ValueError, 'cross-layer or cross-part'):
-                    prepare_effects(plan, [part], root, root)
+                prepared = prepare_effects(plan, [part], root, root)
+        self.assertEqual(prepared['transitions'][plan.shots[1].section], 'pull-id')
+        actual, stats = apply_effects_in_memory(sample_draft(), part, prepared)
+        self.assertEqual(stats['transitions'], 3)
+        self.assertEqual(len(actual['tracks'][0]['segments']), 4)
+
+    def test_explicit_end_of_part_transition_fails_preflight(self):
+        plan = sample_plan()
+        part1 = SimpleNamespace(plan=copy.deepcopy(plan))
+        part1.plan.shots = plan.shots[:2]
+        part2 = SimpleNamespace(plan=copy.deepcopy(plan))
+        part2.plan.shots = plan.shots[2:]
+        # End of part 1 has an outgoing transition instruction.
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            with (mock.patch('z_builder.native_scene_effects.harvest_animations',
+                             return_value=anim_catalog(root)),
+                  mock.patch('z_builder.native_scene_effects.harvest_transitions',
+                             return_value=transition_catalog())):
+                with self.assertRaisesRegex(ValueError, 'end-of-part'):
+                    prepare_effects(plan, [part1, part2], root, root)
 
     def test_explicit_combo_on_video_blocks(self):
         plan = sample_plan()

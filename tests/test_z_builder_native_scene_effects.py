@@ -128,7 +128,9 @@ class ScenePlanEffectTests(unittest.TestCase):
                              return_value=transition_catalog())):
                 prepared = prepare_effects(plan, [part], root, root)
         self.assertEqual(prepared['transitions'][plan.shots[1].section], 'pull-id')
-        actual, stats = apply_effects_in_memory(sample_draft(), part, prepared)
+        with mock.patch('autocapcut_animations_only.animation_engine.resource_is_available',
+                        return_value=True):
+            actual, stats = apply_effects_in_memory(sample_draft(), part, prepared)
         self.assertEqual(stats['transitions'], 3)
         self.assertEqual(len(actual['tracks'][0]['segments']), 4)
 

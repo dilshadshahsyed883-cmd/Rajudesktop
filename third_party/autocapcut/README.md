@@ -3,7 +3,7 @@
 **Added:** 2026-10-28  
 **Category:** External Windows/CapCut automation tool; **not a Rajudesktop product**  
 **Status:** Installer fingerprinted and Electron ASAR application source recovered for private static inspection; runtime behavior **not verified**  
-**Repository role:** Research reference for `Z_CapCut/` and `z_builder/` only. No integration or deploy is enabled.
+**Repository role:** Owner-selected **standalone original EXE** for the AutoCapCut workflow; documentation and static audit only. **No Z Builder code changes or integration.** See [operating decision](OPERATING_DECISION_20261028.md).
 
 ## Source and identity
 
@@ -19,7 +19,7 @@ A user-provided Google Drive download named `AutoCapCut-0.1.2.exe` was available
 | Sections | `.text`, `.rdata`, `.data`, `.ndata`, `.rsrc` |
 | Estimated data after PE sections | 73,150,270 bytes (likely packed installer payload; contents not inspected) |
 | Authenticode | No certificate table recorded by this PE parser; not a complete trust assessment |
-| Execution / extraction | **Not performed** |
+| Execution / extraction | **Execution not performed**; archived Electron application files extracted for read-only research (see recovery findings) |
 | Source-code availability | **Recovered for private static inspection** as readable Electron modules; third-party source is **not** committed to this public repository |
 
 **Update (28 Oct):** Read-only inspection found a valid embedded 7z archive, extracted `resources/app.asar`, and recovered 25 Electron application files with 17 JS/CJS modules passing syntax checks. See [verified recovery findings](RECOVERY_FINDINGS_20261028.md). The recovered source itself remains private; it was **not** committed or merged into Z Builder. This is not runtime validation.
@@ -47,6 +47,8 @@ This utility never launches, extracts, or modifies the EXE. It calculates the fi
 | Resource persistence | Ensure previously downloaded effect IDs continue to resolve | Tested for a limited owner-provided effect, not all CapCut versions/effects |
 | Audio/timeline timing | Voice optional; SRT / Scene Plan is authoritative | Existing Z Builder behavior must remain unchanged |
 | Full effects parity / native export | Avoid mistaking an editable draft generator for a universal renderer | **Not claimed** by the installer scan |
+
+**Current owner decision (28 October 2026):** Use the original `AutoCapCut-0.1.2.exe` itself, not an AutoCapCut-inspired implementation inside Z Builder. The independent engineering table above is historical research, **not an active Z Builder implementation mandate**. The user's screenshot confirms visible UI entries for configurable projects folder, video-clip volume under Motion, and Edit file JSON with validation statuses. See [OPERATING_DECISION_20261028.md](OPERATING_DECISION_20261028.md).
 
 ### Guardrails
 

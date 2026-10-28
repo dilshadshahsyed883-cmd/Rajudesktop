@@ -420,11 +420,13 @@ def load_simple_plan(text: str) -> Plan:
     options = {'name': 'Z Builder Project', 'aspect_ratio': '16:9',
                'resolution': '1080p', 'fps': '30',
                'combo_default': 'none', 'transition_default': 'none',
-               'combo_seed': '42', 'transition_seed': '43'}
+               'combo_seed': '42', 'transition_seed': '43',
+               'transition_duration': '0.5'}
     names = {'project': 'name', 'name': 'name', 'aspect': 'aspect_ratio',
              'aspect_ratio': 'aspect_ratio', 'resolution': 'resolution', 'fps': 'fps',
              'combo_default': 'combo_default', 'transition_default': 'transition_default',
-             'combo_seed': 'combo_seed', 'transition_seed': 'transition_seed'}
+             'combo_seed': 'combo_seed', 'transition_seed': 'transition_seed',
+             'transition_duration': 'transition_duration'}
     row_pattern = re.compile(r'^(.*?)\s*-->\s*(.*?)\s*\|\s*(image|video)\s*\|\s*([^|]+)(.*)$', re.I)
     shots = []
     prev = 0.0
@@ -496,7 +498,7 @@ def load_simple_plan(text: str) -> Plan:
     return Plan(options['name'], 'library_only', width, height, fps, shots,
                 sections={'_FORMAT': {'type': 'simple_timed_v1'},
                            'CAPCUT_EFFECTS': {key: options[key] for key in
-                               ('combo_default', 'transition_default', 'combo_seed', 'transition_seed')}})
+                               ('combo_default', 'transition_default', 'combo_seed', 'transition_seed', 'transition_duration')}})
 
 
 def bind_media(plan: Plan, assets: list[dict]) -> list[str]:

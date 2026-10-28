@@ -55,7 +55,7 @@ class EffectsSummaryTests(unittest.TestCase):
         report = render_effects_summary(self.sample_animations(), self.sample_transitions())
         for sensitive in ["C:/Users/", "C:/private/", "Personal Project", "secret", "Private", "Deleted"]:
             self.assertNotIn(sensitive, report)
-        self.assertIn("current Z Builder parser does NOT accept", report)
+        self.assertIn("Z Builder v8 accepts combo=", report)
         self.assertIn("images/photos, NEVER video clips", report)
 
     def test_empty_catalog_explicit_and_safe(self):

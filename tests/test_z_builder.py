@@ -99,6 +99,26 @@ class ZBuilderCoreTests(unittest.TestCase):
             self.assertEqual(len(data['tracks'][0]['segments']), 1)
 
 
+    def test_media_summary_lists_verified_usage_count_for_every_asset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            filenames = ['Never Used.jpg', 'Used Once.jpg', 'Used Twice.mp4', 'Used Three Times.mp4']
+            files = [root / name for name in filenames]
+            for file in files:
+                file.write_bytes(b'dummy')
+            catalog = Catalog(root / 'catalog.sqlite')
+            ids = [catalog.add(file) for file in files]
+            # Each completed export increments each distinct media only once,
+            # even if a clip appears multiple times on the same timeline.
+            self.assertEqual(3, catalog.record_successful_export(files[1:] + [files[3]]))
+            self.assertEqual(2, catalog.record_successful_export(files[2:]))
+            self.assertEqual(1, catalog.record_successful_export([files[3]]))
+            summary = catalog.summary()
+            self.assertIn('Never used in verified CapCut exports: 1', summary)
+            self.assertIn('Usage: used=0 means not used', summary)
+            for filename, identity, count in zip(filenames, ids, range(4)):
+                self.assertIn(f'- {filename} | id={identity} | used={count} | approved=True | exists=True | tags=', summary)
+
     def test_used_media_requires_verified_export_and_manual_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

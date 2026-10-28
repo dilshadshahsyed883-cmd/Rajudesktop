@@ -1,0 +1,33 @@
+name: AutoCapCut Animations Only — safe native JSON tests
+
+on:
+  pull_request:
+    paths:
+      - 'autocapcut_animations_only/**'
+      - '.github/workflows/autocapcut-animations-only.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'autocapcut_animations_only/**'
+      - '.github/workflows/autocapcut-animations-only.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image-only-native-animations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Check desktop Python syntax
+        run: python -m compileall -q autocapcut_animations_only
+      - name: Validate random assignments and preservation invariants
+        run: python -m unittest discover -s autocapcut_animations_only/tests -p 'test_*.py' -v

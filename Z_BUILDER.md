@@ -1,6 +1,6 @@
 # Z Builder — Scene Plan → Local Media Timeline → CapCut Projects
 
-Standalone Windows desktop application (Python/PySide6), independent of the VPS. **Windows v7 retains the fourth main CapCut Controls tab with Transitions and Animations sub-tabs** while preserving the three existing production steps:
+Standalone Windows desktop application (Python/PySide6), independent of the VPS. **Windows v8 retains the fourth main CapCut Controls tab with Transitions and Animations sub-tabs** while preserving the three existing production steps:
 
 1. **Input:** import a simple timed Scene Plan `.txt`; voice MP3/WAV is optional.
 2. **Media Selection & Timeline:** import images/videos into the included local Media Library, match scene filenames/keywords, manually replace missing items and inspect exact timing/trim.
@@ -42,6 +42,38 @@ The report includes:
 Upload `CapCut_Effects_Summary.txt` to ChatGPT alongside the **Media Summary TXT**, synchronized **SRT** and **Z Builder Master Scene Plan prompt**. ChatGPT should use only available listed animation IDs and documented transition names/IDs when proposing effects. Native Combo is restricted to image clips; same-track constraints apply to current transitions.
 
 **Important:** This release adds a *downloadable catalog*, not yet direct Scene Plan effect application. The current timed Scene Plan parser **does not accept** `combo=` or `transition_after=` extras. The report tells ChatGPT to produce a valid timed Scene Plan and a separate shot-ID effect-intent mapping until the next parser/integration phase. This keeps current exports safe and compatible. This export is read-only; none of the transition/animation apply engines change.
+
+## Scene Plan → automatic native CapCut effects (Windows v8)
+
+**New integrated export:** Import a valid simple timed Scene Plan, match media, then select **Create Editable CapCut Parts** or **Create Complete Project**. Z Builder now resolves native Combo animations and native transitions from saved local CapCut catalogs **before writing drafts**, creates the normal timed two-layer CapCut project, and attaches original native effects without rebuilding its clips.
+
+The **Step 1 Download CapCut Effects Summary .txt** button remains the source of truth for ChatGPT to select actual saved effects. Use `CapCut_Effects_Summary.txt` + `Media_Summary.txt` + synchronized SRT + Master Prompt to generate the following *directly importable* Scene Plan fields:
+
+```text
+name=Scene Plan Native Effects
+aspect=16:9
+resolution=1080p
+fps=30
+combo_default=random_saved
+transition_default=random_saved
+combo_seed=42
+transition_seed=43
+transition_duration=0.5
+00:00.000 --> 00:02.500 | image | photo1.jpg | combo=id:<real available animation ID>
+00:02.500 --> 00:05.000 | image | photo2.jpg | transition_after=none
+00:05.000 --> 00:09.000 | video | clip1.mp4 | in=0 | transition_after=none
+```
+
+Replace placeholder IDs with the **exact ID from the generated effects summary** and filenames with approved Media Library names. To avoid an invalid explicit transition, only put `transition_after=id:...` on a scene that is followed immediately by another scene **of the same media type on the same track in the same project part**. An outgoing image → video boundary is cross-layer and does **not** support a native same-track transition. This example uses `transition_after=none` to make that explicit.
+
+**Rules:**
+- `combo_default=random_saved` applies locally available native Trending Combo animations **to images only**; video clips are always excluded.
+- `combo=<exact display name>` or `combo=id:<native resource ID>` selects a specific image animation; `combo=none` opts out. Native animation duration is fitted within the image time range without changing shot timing.
+- `transition_default=random_saved` assigns saved native transitions to **eligible same-track adjacent outgoing cuts**; unsupported cross-track, gapped or cross-part cuts are reported rather than silently rewritten. `transition_after=<exact name>` or `transition_after=id:<effect ID>` selects a cut; `transition_after=none` opts out.
+- Seeds produce deterministic choices for a given plan and saved catalog. Exact effect names must be unambiguous. Unknown IDs, missing animation caches, explicit cross-track transitions or missing folders **block before creating drafts**.
+- The original Scene Plan **`animation`** field remains reserved for pre-existing keyframe motions, not native Combo; old Scene Plans without these new directives retain their former export behavior.
+- All new draft native effects are applied from verified saved-project templates to original generated segments and written to top-level + nested CapCut JSON with backups and readback verification. No timeline rebuild, clip deletion, retiming, audio or layer changes.
+- The v7 effects summary, v6 CapCut Controls tab and previous EXE releases remain available for rollback. **Actual visual validation of short native Combo presets on the installed CapCut version is still recommended on a duplicate project.**
 
 ## Fixed CapCut tracks, splitting and optional audio
 

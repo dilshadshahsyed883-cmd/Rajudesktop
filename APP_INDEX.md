@@ -20,6 +20,7 @@ For each application, use the **main-branch path below** instead of searching ol
 | **Scene Desktop Studio** | [`scene_desktop/`](scene_desktop/) | [`launch.py`](launch.py), [root README](README.md) | Original editing MVP; different from Scene Builder Desktop and Z Builder |
 | **Project Image Downloader (Chrome)** | [`project-image-downloader/`](project-image-downloader/) | [installation and tests](project-image-downloader/README.md), [version record](project-image-downloader/docs/REPOSITORY_RECORD.md) | v1.1.1 complete source + packaged ZIP; synthetic tests reported passing; live Chrome UX still pending. Getty original downloads require licensing and are **not** auto-supported |
 | **Z Studio Video Editor** | [`z-studio/`](z-studio/) | [`z-studio/README.md`](z-studio/README.md), [`z-studio/start.bat`](z-studio/start.bat) | Independent legacy video editor; source chunk assembler and Windows build scripts; **not** Z Builder |
+| **CapCut Native Export Controller (Windows)** | [`capcut_native_export_app/`](capcut_native_export_app/) | [`start.bat`](capcut_native_export_app/start.bat), [guide](capcut_native_export_app/README.md) | Native CapCut single-project guarded export, MP4 verification; **real desktop acceptance pending**, overnight queue not yet enabled |
 | **Z CapCut engineering record** | [`Z_CapCut/`](Z_CapCut/) | [research index](Z_CapCut/README.md) | Native-draft/schema/effects research and lab source, **not** a standalone export application |
 
 ## Latest record merged into main

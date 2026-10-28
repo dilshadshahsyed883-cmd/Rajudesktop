@@ -1,0 +1,33 @@
+name: AutoCapCut Transitions Only — source tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'autocapcut_transitions_only/**'
+      - '.github/workflows/autocapcut-transitions-only.yml'
+  pull_request:
+    paths:
+      - 'autocapcut_transitions_only/**'
+      - '.github/workflows/autocapcut-transitions-only.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safe-transition-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile desktop source (no GUI startup)
+        run: python -m compileall -q autocapcut_transitions_only
+      - name: Test transition-only engine and write rollback
+        run: python -m unittest discover -s autocapcut_transitions_only/tests -p 'test_*.py' -v

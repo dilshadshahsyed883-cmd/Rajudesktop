@@ -69,10 +69,11 @@ def needs_native_effects(plan: Plan) -> bool:
 
 def prepare_effects(plan: Plan, parts: list, animation_root: str | Path,
                     transition_root: str | Path) -> dict:
-    """Preflight all requested effects BEFORE writing any CapCut draft.
+    """Preflight effects before writing any CapCut draft.
 
-    Returns frozen, deterministic per-shot effect IDs. Cross-layer explicit
-    transitions fail safely; random transitions only choose eligible cuts.
+    Z Builder now puts images and videos on the same visual track. Native
+    transitions may connect image→video and video→image cuts when the shots
+    touch in this CapCut part. Cross-part cuts remain unsupported.
     """
     if not needs_native_effects(plan):
         return {'active': False, 'animations': {}, 'transitions': {}, 'warnings': [],
@@ -117,15 +118,17 @@ def prepare_effects(plan: Plan, parts: list, animation_root: str | Path,
                     errors.append(str(exc))
         if transition.casefold() in {'', 'none', 'off', 'hard_cut', 'cut'}:
             continue
-        # A transition attaches to the outgoing segment only if the next shot
-        # abuts it on the same track INSIDE THE SAME CAPCUT PROJECT.
+        # All shots share one visual track. Check the exact part-local
+        # OUTGOING/INCOMING timing, not media type, so image↔video is eligible.
         current_part = next(p for p in parts if any(s.section == shot.section for s in p.plan.shots))
-        group = current_part.plan.shots
-        local_index = next(j for j, s in enumerate(group) if s.section == shot.section)
-        eligible = local_index + 1 < len(group) and group[local_index + 1].media_type == shot.media_type
+        local = list(timeline(current_part.plan))
+        local_index = next(j for j, (_, _, s) in enumerate(local) if s.section == shot.section)
+        eligible = (local_index + 1 < len(local)
+                    and abs(round(local[local_index][1] * 1_000_000)
+                            - round(local[local_index + 1][0] * 1_000_000)) <= 1)
         if not eligible:
-            msg = (f'{shot.section}: no adjacent same-track cut in this CapCut part; '
-                   'cross-layer or cross-part transitions cannot safely be applied.')
+            msg = (f'{shot.section}: no adjacent cut on the single visual track '
+                   'within this CapCut part (end-of-part/gap).')
             if shot.native_transition_after.strip():
                 errors.append(msg)
             else:

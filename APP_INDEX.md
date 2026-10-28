@@ -54,3 +54,12 @@ Do **not** merge old branches wholesale just because their commits differ from `
 - Z CapCut's research examples should not be presented as verified native CapCut runtime behavior. Its lab test file refers to local fixtures not committed in the research branch.
 
 **Protection:** Never commit user footage, machine-specific paths, credentials, OAuth tokens, private CapCut draft data, or private project media. No deployment or production environment is modified by this source consolidation.
+
+
+## CapCut Visual Controls — standalone test V2 (2026-10-28)
+
+- Folder: `capcut_visual_controls_standalone/`. **Independent Windows Tkinter draft editor; Z Builder and original third-party AutoCapCut are unchanged.**
+- Native CapCut canvas blur (all visual clips), video scale 115–125%, video X=0/Y −220..−120 px, image scale 105–110%/Y −50..0 px.
+- Detect native `materials.video_effects` Filters/Effects, preview their existing dedicated FX tracks, independently stretch safe single-segment tracks to the **audio timeline endpoint** (fallback to visual endpoint only without audio).
+- Never fabricate a filter/effect, reorder media, change audio/transition trims, overlap multi-segment FX tracks, or promote per-clip FX. Backup, fingerprint, active nested timeline mirroring, and rollback required. Actual CapCut playback acceptance pending.
+- Run: `capcut_visual_controls_standalone/start.bat`; tests: `python -m unittest discover -s capcut_visual_controls_standalone/tests -v`; EXE built by `capcut-visual-controls-standalone.yml` Windows workflow artifact after CI succeeds.

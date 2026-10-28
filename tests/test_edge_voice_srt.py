@@ -53,6 +53,7 @@ class AutomaticSRTTests(unittest.TestCase):
                 con.execute("""INSERT INTO jobs (id,title,script,voice,rate,pitch,volume,
                     subtitles,status,total) VALUES ('old','old','text',
                     'en-US-AndrewNeural',0,0,0,1,'done',1)""")
+            con.close()  # sqlite3 connection context does not close its Windows file handle
             store = Store(db)
             self.assertEqual(store.get("old")["srt_status"], "off")
             self.assertIsNone(store.claim_srt_job())

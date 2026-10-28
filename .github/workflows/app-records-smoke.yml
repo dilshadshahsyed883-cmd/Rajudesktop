@@ -8,6 +8,7 @@ on:
       - 'project-image-downloader/**'
       - 'z-studio/**'
       - 'Z_CapCut/**'
+      - 'third_party/autocapcut/**'
       - '.github/workflows/app-records-smoke.yml'
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - 'project-image-downloader/**'
       - 'z-studio/**'
       - 'Z_CapCut/**'
+      - 'third_party/autocapcut/**'
       - '.github/workflows/app-records-smoke.yml'
   workflow_dispatch:
 
@@ -40,8 +42,11 @@ jobs:
           test -f project-image-downloader/package.json
           test -f z-studio/assemble_source.py
           test -f Z_CapCut/capability_manifest.json
+          test -f third_party/autocapcut/analyze_installer.py
       - name: Project Image Downloader logic tests
         working-directory: project-image-downloader
         run: npm test
       - name: Z Studio offline launcher tests
         run: python -m unittest discover -s z-studio/tests -p 'test_*.py' -v
+      - name: AutoCapCut read-only analyzer fixture tests
+        run: python -m unittest discover -s third_party/autocapcut -p 'test_*.py' -v

@@ -1,0 +1,25 @@
+{
+  "filename": "AutoCapCut-0.1.2.exe",
+  "size_bytes": 73231678,
+  "sha256": "ea0590f1a18d723792746d55260b83313b6e2feada04260effb6b31b04a99157",
+  "format": "Windows PE",
+  "machine_hex": "0x014c",
+  "pe_type": "PE32",
+  "subsystem": 2,
+  "sections": [
+    ".text",
+    ".rdata",
+    ".data",
+    ".ndata",
+    ".rsrc"
+  ],
+  "possible_installer": "NSIS",
+  "embedded_marker_hits": [
+    "NSIS",
+    "Nullsoft"
+  ],
+  "authenticode_certificate_table_present": false,
+  "signature_verified": false,
+  "possible_appended_payload_bytes": 73150270,
+  "note": "Static metadata only. No installer execution, source recovery, or malware verdict."
+}

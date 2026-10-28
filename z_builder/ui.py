@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog,
     QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QDoubleSpinBox,
     QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget,
-    QTextEdit, QVBoxLayout, QWidget
+    QProgressBar, QTextEdit, QVBoxLayout, QWidget
 )
 
 from .core import Catalog, Plan, bind_media, kind_of, load_plan, open_project, preflight, save_project, timeline
@@ -27,15 +27,19 @@ from .capcut import export_capcut
 class ExportWorker(QThread):
     succeeded = Signal(object)
     failed = Signal(str)
+    progress = Signal(int, int, str)
 
-    def __init__(self, plan, drafts_root, launch, include_voice):
+    def __init__(self, plan, drafts_root, launch, include_voice, mode):
         super().__init__()
         self.plan, self.drafts_root, self.launch = Plan.from_dict(plan.to_dict()), drafts_root, launch
         self.include_voice = include_voice
+        self.mode = mode
 
     def run(self):
         try:
-            self.succeeded.emit(export_capcut(self.plan, self.drafts_root, self.launch, self.include_voice))
+            self.succeeded.emit(export_capcut(
+                self.plan, self.drafts_root, self.launch, self.include_voice,
+                mode=self.mode, progress_callback=self.progress.emit))
         except Exception as e:
             self.failed.emit(str(e))
 
@@ -89,6 +93,8 @@ class Window(QMainWindow):
             QTabBar::tab:selected {background:#2669ad;color:white;}
             QPushButton {background:#2467a4;border:1px solid #4b83ba;border-radius:5px;padding:8px 12px;color:white;font-weight:600;}
             QPushButton:hover {background:#3386d0;}
+            QProgressBar {background:#14243a;border:1px solid #405473;border-radius:5px;min-height:12px;}
+            QProgressBar::chunk {background:#3394e7;border-radius:4px;}
             QTableWidget,QTextEdit,QLineEdit,QDoubleSpinBox {background:#14243a;color:#f6f9ff;border:1px solid #405473;}
             QHeaderView::section {background:#253b57;color:#eef6ff;padding:7px;}
             QTableWidget::item:selected {background:#235d9a;}
@@ -203,18 +209,30 @@ class Window(QMainWindow):
         path_row.addWidget(self._button('Browse', self.choose_drafts))
         form.addRow('CapCut drafts folder', path_row)
         ex.addLayout(form)
-        ex.addWidget(QLabel('Fixed layers: IMAGES lower track / VIDEOS upper track. Split at scene boundaries into 5–7 minute parts (6-minute target).'))
-        self.include_voice = QCheckBox('Include Voice in CapCut parts (optional; OFF by default)')
+        ex.addWidget(QLabel('Fixed layers: IMAGES lower track / VIDEOS upper track. Export as 5–7 minute parts or one complete project.'))
+        self.include_voice = QCheckBox('Include Voice in CapCut export (optional; OFF by default)')
         self.include_voice.setChecked(False)
         ex.addWidget(self.include_voice)
-        self.launch = QCheckBox('Launch CapCut after creating verified parts (open from CapCut Home)')
+        self.launch = QCheckBox('Launch CapCut after creating verified draft(s) (open from CapCut Home)')
         self.launch.setChecked(True)
         ex.addWidget(self.launch)
         controls = QHBoxLayout()
         controls.addWidget(self._button('Preflight', self.show_preflight))
-        self.export_button = self._button('Create Editable CapCut Parts (5–7 min)', self.start_export)
+        self.export_button = self._button('Create Editable CapCut Parts (5–7 min)',
+                                          lambda: self.start_export('parts'))
         controls.addWidget(self.export_button)
         ex.addLayout(controls)
+        self.complete_export_button = self._button('Create Complete Project in CapCut',
+                                                  lambda: self.start_export('complete'))
+        ex.addWidget(self.complete_export_button)
+        self.export_progress = QProgressBar()
+        self.export_progress.setRange(0, 0)  # Busy animation: no invented ETA or fake percentage.
+        self.export_progress.setTextVisible(False)
+        self.export_progress.setVisible(False)
+        ex.addWidget(self.export_progress)
+        self.export_progress_label = QLabel('')
+        self.export_progress_label.setVisible(False)
+        ex.addWidget(self.export_progress_label)
         self.export_log = QTextEdit()
         self.export_log.setReadOnly(True)
         self.export_log.setText('Native CapCut draft writing follows the Z Studio 9.4 format. CapCut version compatibility must be checked on your PC.')
@@ -559,7 +577,9 @@ class Window(QMainWindow):
         self.export_log.setPlainText('\n'.join(issues) if issues else 'PREFLIGHT PASS: all timeline slots have media and 4-second video trims fit. Voice is optional in CapCut.')
         self.tabs.setCurrentIndex(2)
 
-    def start_export(self):
+    def start_export(self, mode='parts'):
+        if self.worker is not None and self.worker.isRunning():
+            return
         if not self.plan:
             self.alert('No plan', 'Import Scene Plan first')
             return
@@ -569,22 +589,46 @@ class Window(QMainWindow):
             return
         self._last_export_sources = tuple(sorted({s.assigned_path for s in self.plan.shots if s.assigned_path}))
         self.export_button.setEnabled(False)
-        self.export_log.setPlainText('Creating split CapCut drafts and verifying each part...')
-        self.worker = ExportWorker(self.plan, self.drafts.text().strip(), self.launch.isChecked(), self.include_voice.isChecked())
+        self.complete_export_button.setEnabled(False)
+        self.export_progress.setRange(0, 0)
+        self.export_progress.setVisible(True)
+        self.export_progress_label.setText('Preparing CapCut export...')
+        self.export_progress_label.setVisible(True)
+        self.export_log.setPlainText(
+            'Creating and verifying one complete CapCut draft...' if mode == 'complete'
+            else 'Creating split CapCut drafts and verifying each part...')
+        self.worker = ExportWorker(self.plan, self.drafts.text().strip(),
+                                   self.launch.isChecked(), self.include_voice.isChecked(), mode)
+        self.worker.progress.connect(self.export_progress_update)
         self.worker.succeeded.connect(self.export_complete)
         self.worker.failed.connect(self.export_failed)
         self.worker.start()
 
-    def export_complete(self, result):
+    def export_progress_update(self, verified, total, message):
+        self.export_progress_label.setText(f'{message}  |  Verified: {verified}/{total}')
+        self.statusBar().showMessage(message)
+
+    def export_finish_ui(self, message):
         self.export_button.setEnabled(True)
+        self.complete_export_button.setEnabled(True)
+        self.export_progress.setVisible(False)
+        self.export_progress_label.setText(message)
+        self.statusBar().showMessage(message)
+
+    def export_complete(self, result):
+        is_complete = result.get('mode') == 'complete'
+        self.export_finish_ui('Complete CapCut project created and verified.' if is_complete
+                              else 'All CapCut parts created and verified.')
         issues = result.get('warnings', [])
         compat = result.get('capcut', {}).get('compatibility', {})
         parts = result.get('parts', [])
-        lines = [f'CREATED {len(parts)} EDITABLE CAPCUT PARTS',
+        lines = ['CREATED COMPLETE EDITABLE CAPCUT PROJECT' if is_complete
+                 else f'CREATED {len(parts)} EDITABLE CAPCUT PARTS',
                  'Images = lower track | Videos = upper track (fixed)',
                  'Voice included: ' + ('YES' if parts and parts[0]['voice_included'] else 'NO'), '']
         for part in parts:
-            lines.append(f"Part {part['index']:02d}: {part['original_start_seconds']:.3f}–{part['original_end_seconds']:.3f}s  "
+            label = 'Complete project' if is_complete else f"Part {part['index']:02d}"
+            lines.append(f"{label}: {part['original_start_seconds']:.3f}–{part['original_end_seconds']:.3f}s  "
                          f"({part['duration_seconds']:.3f}s)\n{part['folder']}")
         lines += ['\nOpen each draft in CapCut Home > Projects.',
                   'Compatibility: ' + str(compat.get('level', 'unknown')),
@@ -604,7 +648,7 @@ class Window(QMainWindow):
 
     def export_failed(self, message):
         self._last_export_sources = ()
-        self.export_button.setEnabled(True)
+        self.export_finish_ui('CapCut export failed; see details below.')
         self.export_log.setPlainText('EXPORT FAILED\n' + message)
 
 

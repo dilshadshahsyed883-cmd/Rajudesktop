@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from typing import Callable
 
-from .core import english_voice, safe_title, settings_hash, split_script, write_srt
+from .core import english_voice, safe_title, settings_hash, split_script
 from .store import Store
 
 
@@ -129,7 +129,6 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
     output_dir.mkdir(parents=True, exist_ok=True)
     store.update(job_id, status="processing", error="")
     parts: list[Path] = []
-    subtitle_parts: list[tuple[list[dict], int]] = []
     try:
         for index, text in enumerate(chunks):
             if stopped() or store.get(job_id)["status"] != "processing":
@@ -164,8 +163,6 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
             except (OSError, ValueError):
                 words = []
             parts.append(audio)
-            if job["subtitles"]:
-                subtitle_parts.append((words, audio_duration_ms(audio)))
             store.update(job_id, completed=index + 1)
             progress(index + 1, len(chunks))
 
@@ -174,9 +171,9 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
         stem = safe_title(job["title"]) + "-" + job_id[:8]
         destination = output_dir / (stem + ".mp3")
         concat_mp3(parts, destination)
-        if job["subtitles"]:
-            write_srt(subtitle_parts, output_dir / (stem + ".srt"))
-        store.update(job_id, status="done", completed=len(chunks), output=str(destination))
+        # A separate queue starts transcription immediately after the MP3 is
+        # committed, without blocking synthesis of the next voice job.
+        store.complete_voice(job_id, str(destination), len(chunks))
         return destination
     except RenderStopped:
         if store.get(job_id)["status"] == "processing":

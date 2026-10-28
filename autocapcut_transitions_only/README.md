@@ -49,13 +49,21 @@ Before each actual change, original project JSONs + `draft_meta_info.json` and m
 
 The backup directory contains `manifest.json` identifying each original path and backup. For manual restore, close CapCut, **first make a copy of the current project**, then copy each backed-up file to the exact original path listed in the manifest. Editing is blocked while CapCut is open; no unprompted automatic restore is performed. Atomic per-file writes are rolled back after a detected error.
 
+## First owner-reported Windows/CapCut result — 2026-10-28
+
+**Reported:** "transitions applied successfully" when testing the standalone AutoCapCut Transitions Only prototype on the owner's CapCut setup. This is a positive live application report beyond the synthetic unit tests.
+
+**Follow-up owner confirmation:** Existing **video clips** and **timeline layers** were also preserved successfully after transitions were applied. Record these as **owner-reported live PASS** alongside successful transition application. These are observed results from the owner's test, not an independently inspected before/after draft or final MP4 export. Audio preservation, exact source/target timestamps, every multi-track junction and exported-render parity remain unverified.
+
+**Change-control decision:** Freeze the presently working behavior. No changes to the original third-party AutoCapCut EXE, this application's engine, Z Builder, or the independent renderer are authorized by this success report. Continue testing new scenarios only on duplicate drafts.
+
 ## Testing
 
 ```sh
 python -m unittest discover -s tests -v
 ```
 
-16 synthetic unit tests passed in the supplied development environment. These tests cover mixed image/video preservation, editspec v1, missing transitions, duplicate names, same-track restrictions, idempotency, CapCut-open write block, backups, mirrored draft sync, stale preview and failed-write rollback. **Live Windows + actual CapCut version acceptance is not yet verified.** Test only on a duplicate first.
+16 synthetic unit tests passed in the supplied development environment. These tests cover mixed image/video preservation, editspec v1, missing transitions, duplicate names, same-track restrictions, idempotency, CapCut-open write block, backups, mirrored draft sync, stale preview and failed-write rollback. **Owner-reported live PASS (28 October 2026): transition application, existing video clips retained, and timeline layers retained**; timing, audio and final exported-render acceptance have not yet been independently verified. Test new cases only on a duplicate first.
 
 ## Privacy / ownership
 

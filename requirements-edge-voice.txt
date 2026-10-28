@@ -1,3 +1,6 @@
 -r requirements.txt
 edge-tts>=7.0,<9
 mutagen>=1.47,<2
+
+# Shared batch transcription engine, bundled in the one-file EXE.
+-r voice_to_srt_batch/requirements-voice-to-srt.txt

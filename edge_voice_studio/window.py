@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from .core import english_voice, safe_title
 from .engine import generate_preview, list_english_voices, render_job, to_wav
 from .store import Store
+from .srt_tasks import Cancelled, make_model, transcribe_completed_voice
 
 DARK = {
     "bg": "#0B1120", "panel": "#141E30", "input": "#1D2A40", "text": "#F0F4FD",
@@ -131,6 +132,55 @@ class QueueWorker(QThread):
             self.changed.emit()
 
 
+class SRTQueueWorker(QThread):
+    """One background CPU transcription worker; synthesis remains independent."""
+    changed = Signal()
+    note = Signal(str)
+
+    def __init__(self, store: Store):
+        super().__init__()
+        self.store = store
+        self.stop_flag = threading.Event()
+
+    def stop(self):
+        self.stop_flag.set()
+
+    def run(self):
+        model = None
+        while not self.stop_flag.is_set():
+            job = self.store.claim_srt_job()
+            if not job:
+                if self.store.has_voice_work():
+                    self.stop_flag.wait(0.6)  # Keep the Whisper model hot across a batch.
+                    continue
+                return
+            try:
+                path = Path(job["output"])
+                target = path.with_suffix(".srt")
+                if not (target.is_file() and target.stat().st_size > 0) and model is None:
+                    try:
+                        model = make_model("small")
+                    except Exception as exc:
+                        reason = "Speech model unavailable: " + str(exc)[:350]
+                        self.store.set_srt_status(job["id"], "failed", reason)
+                        self.store.fail_pending_srt(reason)
+                        self.note.emit(reason)
+                        self.changed.emit()
+                        return
+                result = transcribe_completed_voice(
+                    path, model, self.stop_flag.is_set, lambda _ratio: self.changed.emit())
+                self.store.set_srt_status(job["id"], result)
+                self.note.emit("SRT " + result + ": " + path.with_suffix(".srt").name)
+            except Cancelled:
+                self.store.set_srt_status(job["id"], "pending")
+                return
+            except Exception as exc:
+                self.store.set_srt_status(job["id"], "failed", str(exc))
+                self.note.emit("SRT failed (" + job["title"] + "): " + str(exc)[:170])
+            finally:
+                self.changed.emit()
+
+
 class StudioWindow(QMainWindow):
     PAGES = ["Voice Studio", "Favorites", "Queue", "Batch Studio", "Audio Library", "Settings"]
 
@@ -142,6 +192,7 @@ class StudioWindow(QMainWindow):
         self.voices: list[dict] = self.store.get_setting("voices_cache", [])
         self.selected_voice = self.store.get_setting("selected_voice", "en-US-AndrewNeural")
         self.queue_worker: QueueWorker | None = None
+        self.srt_worker: SRTQueueWorker | None = None
         self.tasks: list[NetworkTask] = []
         self._queue_snapshot = None
         self._library_snapshot = None
@@ -197,6 +248,12 @@ class StudioWindow(QMainWindow):
             btn.setMinimumHeight(46)
             nav_layout.addWidget(btn)
             self.nav_buttons.append(btn)
+        self.subtitles = QCheckBox("Auto SRT after MP3 (3–4 sec)")
+        self.subtitles.setChecked(bool(self.store.get_setting("srt_enabled", True)))
+        self.subtitles.setToolTip("One checkbox for both single and batch narration jobs.")
+        self.subtitles.toggled.connect(
+            lambda value: self.store.set_setting("srt_enabled", bool(value)))
+        nav_layout.addWidget(self.subtitles)
         nav_layout.addStretch()
         nav_layout.addWidget(QLabel("Internet required for synthesis"))
         main.addWidget(nav)
@@ -305,9 +362,6 @@ class StudioWindow(QMainWindow):
         row.addWidget(button("Save Preset", self.save_preset))
         row.addWidget(button("Reset Controls", self.reset_sliders))
         settings.addLayout(row)
-        self.subtitles = QCheckBox("Export SRT subtitles when word timings are available")
-        self.subtitles.setChecked(True)
-        settings.addWidget(self.subtitles)
         page.addWidget(settings_card)
         self.rate_slider.setValue(0)
         self.pitch_slider.setValue(0)
@@ -342,13 +396,13 @@ class StudioWindow(QMainWindow):
         _, page = self._page("Generation Queue", "Jobs are saved locally; interrupted work resumes by chunk.")
         c, lay = card()
         self.queue_table = QTableWidget(0, 5)
-        self.queue_table.setHorizontalHeaderLabels(["Title", "Voice", "Progress", "Status", "Output / Error"])
+        self.queue_table.setHorizontalHeaderLabels(["Title", "Voice", "Progress", "Status / SRT", "Output / Error"])
         self.queue_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.queue_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.queue_table.setColumnWidth(0, 220)
         self.queue_table.setColumnWidth(1, 180)
         self.queue_table.setColumnWidth(2, 95)
-        self.queue_table.setColumnWidth(3, 95)
+        self.queue_table.setColumnWidth(3, 175)
         self.queue_table.horizontalHeader().setStretchLastSection(True)
         lay.addWidget(self.queue_table, 1)
         controls = QHBoxLayout()
@@ -652,10 +706,32 @@ class StudioWindow(QMainWindow):
             QTimer.singleShot(0, self.close)
         else:
             QTimer.singleShot(100, self._start_queue)
+            QTimer.singleShot(0, self._start_srt_queue)
+
+    def _start_srt_queue(self):
+        if self._closing or (self.srt_worker and self.srt_worker.isRunning()):
+            return
+        if not any(j["status"] == "done" and j["srt_status"] == "pending"
+                   for j in self.store.all_jobs()):
+            return
+        worker = SRTQueueWorker(self.store)
+        self.srt_worker = worker
+        worker.changed.connect(self._refresh_queue)
+        worker.note.connect(self._message)
+        worker.finished.connect(self._srt_finished)
+        worker.start()
+
+    def _srt_finished(self):
+        self._refresh_queue()
+        if self._closing:
+            QTimer.singleShot(0, self.close)
+        else:
+            QTimer.singleShot(100, self._start_srt_queue)
 
     def _poll(self):
         self._refresh_queue()
         self._refresh_library()
+        self._start_srt_queue()
 
     def _selected_job(self):
         row = self.queue_table.currentRow()
@@ -667,7 +743,7 @@ class StudioWindow(QMainWindow):
     def _refresh_queue(self):
         jobs = self.store.all_jobs()
         snapshot = tuple((j["id"], j["completed"], j["total"], j["status"],
-                          j["output"], j["error"]) for j in jobs)
+                          j["output"], j["error"], j["srt_status"], j["srt_error"]) for j in jobs)
         if snapshot == self._queue_snapshot:
             return
         self._queue_snapshot = snapshot
@@ -676,8 +752,11 @@ class StudioWindow(QMainWindow):
         for row, job in enumerate(jobs):
             cells = [
                 job["title"], job["voice"].replace("Neural", ""),
-                f"{job['completed']}/{job['total']}", job["status"],
-                job["output"] or job["error"][:200]]
+                f"{job['completed']}/{job['total']}",
+                job["status"] + ((" / SRT " + job["srt_status"])
+                                  if job["subtitles"] else ""),
+                (job["output"] or job["error"][:200]) +
+                ((" | SRT: " + job["srt_error"][:130]) if job["srt_error"] else "")]
             for col, value in enumerate(cells):
                 item = QTableWidgetItem(str(value))
                 if col == 0:
@@ -692,10 +771,16 @@ class StudioWindow(QMainWindow):
             self._message("Select a queue row first")
             return
         job = self.store.get(id_)
-        if job["status"] == "done" and status != "cancelled":
-            self._message("Completed jobs cannot be resumed")
-            return
         if job["status"] == "done":
+            if status == "queued" and job["subtitles"]:
+                try:
+                    self.store.retry_srt(id_)
+                    self._refresh_queue()
+                    self._start_srt_queue()
+                    self._message("SRT retry queued; existing MP3 preserved")
+                except ValueError as exc:
+                    self._message(str(exc))
+                return
             self._message("Finished outputs are preserved. Use Remove Row if needed.")
             return
         self.store.set_status(id_, status)
@@ -708,6 +793,10 @@ class StudioWindow(QMainWindow):
         if not id_:
             return
         try:
+            job = self.store.get(id_)
+            if job["srt_status"] in {"pending", "processing"}:
+                self._message("SRT is in progress; remove this row after it finishes.")
+                return
             self.store.delete_job(id_)
             self._refresh_queue()
             self._message("Queue row removed; rendered media left intact")
@@ -775,6 +864,9 @@ class StudioWindow(QMainWindow):
         item = self.audio_table.item(row, 0)
         job_id = item.data(Qt.ItemDataRole.UserRole)
         current = self.store.get(job_id)
+        if current["srt_status"] in {"pending", "processing"}:
+            self._message("Wait for SRT to finish before renaming this voice.")
+            return
         title, accepted = QInputDialog.getText(
             self, "Rename narration", "New title:", text=current["title"])
         if not accepted or not title.strip():
@@ -820,6 +912,9 @@ class StudioWindow(QMainWindow):
             return
         row = self.audio_table.currentRow()
         job_id = self.audio_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        if self.store.get(job_id)["srt_status"] in {"pending", "processing"}:
+            self._message("Wait for SRT to finish before deleting this voice.")
+            return
         self.player.stop()
         try:
             for ext in (".mp3", ".wav", ".srt"):
@@ -879,10 +974,15 @@ class StudioWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.store.set_setting("draft_script", self.script.toPlainText())
-        if self.queue_worker and self.queue_worker.isRunning():
+        active_voice = bool(self.queue_worker and self.queue_worker.isRunning())
+        active_srt = bool(self.srt_worker and self.srt_worker.isRunning())
+        if active_voice or active_srt:
             self._closing = True
-            self.queue_worker.stop()
-            self._message("Pausing generation safely before closing...")
+            if active_voice:
+                self.queue_worker.stop()
+            if active_srt:
+                self.srt_worker.stop()
+            self._message("Pausing voice/SRT work safely before closing...")
             event.ignore()
         elif any(task.isRunning() for task in self.tasks):
             self._closing = True

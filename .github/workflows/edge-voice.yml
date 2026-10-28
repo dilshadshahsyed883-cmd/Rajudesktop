@@ -45,8 +45,13 @@ jobs:
         run: |
           python -m unittest discover -s tests -p "test_edge_voice*.py" -v
           if ($LASTEXITCODE -ne 0) { throw "Edge Voice / SRT tests failed" }
-          python -m unittest discover -s voice_to_srt_batch/tests -p "test_voice_to_srt_batch.py" -v
-          if ($LASTEXITCODE -ne 0) { throw "Standalone batch engine tests failed" }
+          Push-Location voice_to_srt_batch
+          try {
+            python -m unittest discover -s tests -p "test_voice_to_srt_batch.py" -v
+            if ($LASTEXITCODE -ne 0) { throw "Standalone batch engine tests failed" }
+          } finally {
+            Pop-Location
+          }
           python launch_edge_voice.py --self-test
           if ($LASTEXITCODE -ne 0) { throw "Speech import smoke test failed" }
       - name: Headless native Windows UI startup

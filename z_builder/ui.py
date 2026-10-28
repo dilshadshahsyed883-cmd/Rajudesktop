@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from .core import Catalog, Plan, bind_media, kind_of, load_plan, open_project, preflight, save_project, timeline
 from .capcut import export_capcut
-from .transitions_tab import CapcutTransitionsTab
+from .capcut_controls_tab import CapcutControlsTab
 
 
 class ExportWorker(QThread):
@@ -83,7 +83,7 @@ class Window(QMainWindow):
         title = QLabel('Z BUILDER')
         title.setStyleSheet('font-size:26px;font-weight:800;color:#eff6ff;')
         outer.addWidget(title)
-        subtitle = QLabel('1  Input: Scene Plan + Voice    →    2  Select Media + Build Timeline    →    3  Open in CapCut    |    4  Capcut Transitions (independent)')
+        subtitle = QLabel('1  Input: Scene Plan + Voice    →    2  Select Media + Build Timeline    →    3  Open in CapCut    |    4  CapCut Controls (Transitions / Animations)')
         outer.addWidget(subtitle)
         self.tabs = QTabWidget()
         outer.addWidget(self.tabs, 1)
@@ -239,10 +239,12 @@ class Window(QMainWindow):
         self.export_log.setText('Native CapCut draft writing follows the Z Studio 9.4 format. CapCut version compatibility must be checked on your PC.')
         ex.addWidget(self.export_log, 1)
         self.tabs.addTab(export_tab, '3  Open in CapCut')
-        # Transition work is completely separate from Scene Plan / media export.
-        # It never invokes the Z Builder timeline writer or changes its catalog.
-        self.transitions_tab = CapcutTransitionsTab(self)
-        self.tabs.addTab(self.transitions_tab, '4  Capcut Transitions')
+        # Both native draft editors are independent from Scene Plan / media export.
+        # The existing transition editor is preserved without changes.
+        self.capcut_controls_tab = CapcutControlsTab(self)
+        self.transitions_tab = self.capcut_controls_tab.transitions_tab  # compatibility alias
+        self.animations_tab = self.capcut_controls_tab.animations_tab
+        self.tabs.addTab(self.capcut_controls_tab, '4  CapCut Controls')
         self.statusBar().showMessage('Ready — catalog is local to Documents/Z Builder')
 
     def alert(self, title, message):

@@ -8,7 +8,7 @@ For each application, use the **main-branch path below** instead of searching ol
 
 | App / record | Canonical location in `main` | Start / source instructions | Notes |
 | --- | --- | --- | --- |
-| **Z Builder** | [`z_builder/`](z_builder/) | [`start_z_builder.bat`](start_z_builder.bat), [`Z_BUILDER.md`](Z_BUILDER.md) | Windows v5: retains v4 CapCut draft/export/media-use workflows and adds independent **4 Capcut Transitions** tab; [guide](Z_BUILDER.md); original AutoCapCut EXE unchanged |
+| **Z Builder** | [`z_builder/`](z_builder/) | [`start_z_builder.bat`](start_z_builder.bat), [`Z_BUILDER.md`](Z_BUILDER.md) | Windows **v6**: fourth main tab **CapCut Controls** with **Transitions** + **Animations** sub-tabs; native photos-only Combo/Trending, Random All, duration-fit, backups; original Scene Plan/media/export and transition engine preserved; [guide](Z_BUILDER.md) |
 | **Scene Builder Desktop** | [`scene_builder_desktop/`](scene_builder_desktop/) | [`start_scene_builder_desktop.bat`](start_scene_builder_desktop.bat), [guide](SCENE_BUILDER_DESKTOP.md) | Separate Python desktop app; PR #7 |
 | **Edge Voice Studio** | [`edge_voice_studio/`](edge_voice_studio/) | [`launch_edge_voice.py`](launch_edge_voice.py), [guide](EDGE_VOICE_STUDIO.md) | English TTS desktop code; check current main for the actual SRT behavior before packaging |
 | **Voice → SRT Studio (batch)** | [`voice_to_srt_batch/`](voice_to_srt_batch/) | [`start.bat`](voice_to_srt_batch/start.bat), [guide](voice_to_srt_batch/VOICE_TO_SRT_STUDIO.md) | Batch voice transcription/SRT and Windows EXE workflow; PR #15 |

@@ -64,7 +64,7 @@ transition_duration=0.5
 00:05.000 --> 00:09.000 | video | clip1.mp4 | in=0 | transition_after=none
 ```
 
-Replace placeholder IDs with the **exact ID from the generated effects summary** and filenames with approved Media Library names. To avoid an invalid explicit transition, only put `transition_after=id:...` on a scene that is followed immediately by another scene **of the same media type on the same track in the same project part**. In v9 an outgoing image → video boundary is eligible because both clips share the same visual track. This example uses `transition_after=none` only as a deliberate per-shot opt-out.
+Replace placeholder IDs with the **exact ID from the generated effects summary** and filenames with approved Media Library names. Use `transition_after=id:...` only when the next image or video shot is **adjacent on the same visual track within the same project part**. In v9 an outgoing image → video boundary is eligible because both clips share the same visual track. This example uses `transition_after=none` only as a deliberate per-shot opt-out.
 
 **Rules:**
 - `combo_default=random_saved` applies locally available native Trending Combo animations **to images only**; video clips are always excluded.

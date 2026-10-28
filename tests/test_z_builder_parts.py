@@ -1,4 +1,4 @@
-"""End-to-end long scene plans, fixed visual tracks and optional CapCut narration."""
+"""End-to-end long Scene Plans, one mixed visual track and optional narration."""
 import base64
 import json
 from pathlib import Path
@@ -58,7 +58,8 @@ class PartTests(unittest.TestCase):
             self.assertEqual(preflight(p), [])
             req, _ = build_request(p)
             self.assertIsNone(req['payload']['voice'])
-            self.assertTrue(req['payload']['separateLayers'])
+            self.assertFalse(req['payload']['separateLayers'])
+            self.assertTrue(req['payload']['singleVisualTrack'])
             with self.assertRaisesRegex(ValueError, 'no voice file'):
                 build_request(p, include_voice=True)
 
@@ -92,15 +93,23 @@ class PartTests(unittest.TestCase):
                 self.assertTrue(part['duration_seconds'] <= 420)
                 data = json.loads((Path(part['folder']) / 'draft_content.json').read_text())
                 visual = [t for t in data['tracks'] if t['type'] == 'video']
-                self.assertEqual([t['name'] for t in visual], ['Images - Lower Layer', 'Videos - Upper Layer'])
+                self.assertEqual([t['name'] for t in visual], ['Images + Videos - Single Layer'])
+                self.assertEqual(len(visual), 1)
                 self.assertFalse(any(t['type'] == 'audio' for t in data['tracks']))
                 self.assertEqual(visual[0]['segments'][0]['track_render_index'], 0)
-                self.assertEqual(visual[1]['segments'][0]['track_render_index'], 1)
+                self.assertTrue(all(s['track_render_index'] == 0 for s in visual[0]['segments']))
                 self.assertTrue((Path(part['folder']) / 'Z_Builder_Part_Info.json').is_file())
-                for track in visual:
-                    for seg in track['segments']:
-                        end = seg['target_timerange']['start'] + seg['target_timerange']['duration']
-                        self.assertLessEqual(end / 1_000_000, part['duration_seconds'] + 0.001)
+                segments = visual[0]['segments']
+                mats = {m['id']: m for m in data['materials']['videos']}
+                types = [mats[s['material_id']]['type'] for s in segments]
+                self.assertEqual(len(segments), len(types))
+                self.assertTrue(set(types) == {'photo', 'video'})
+                self.assertTrue(all(s['target_timerange']['start'] <=
+                                    segments[k+1]['target_timerange']['start']
+                                    for k, s in enumerate(segments[:-1])))
+                for seg in segments:
+                    end = seg['target_timerange']['start'] + seg['target_timerange']['duration']
+                    self.assertLessEqual(end / 1_000_000, part['duration_seconds'] + 0.001)
             self.assertEqual(previous, 862.5)
             with patch('z_builder.capcut.probe', side_effect=mock_probe):
                 voiced = export_capcut(plan, str(folder / 'voice-drafts'), launch=False, include_voice=True)

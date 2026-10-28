@@ -2,7 +2,7 @@
 
 **Added:** 2026-10-28  
 **Category:** External Windows/CapCut automation tool; **not a Rajudesktop product**  
-**Status:** Installer fingerprinted; application internals, source code, and CapCut behavior **not verified**  
+**Status:** Installer fingerprinted and Electron ASAR application source recovered for private static inspection; runtime behavior **not verified**  
 **Repository role:** Research reference for `Z_CapCut/` and `z_builder/` only. No integration or deploy is enabled.
 
 ## Source and identity
@@ -20,9 +20,9 @@ A user-provided Google Drive download named `AutoCapCut-0.1.2.exe` was available
 | Estimated data after PE sections | 73,150,270 bytes (likely packed installer payload; contents not inspected) |
 | Authenticode | No certificate table recorded by this PE parser; not a complete trust assessment |
 | Execution / extraction | **Not performed** |
-| Source-code availability | **Not established** |
+| Source-code availability | **Recovered for private static inspection** as readable Electron modules; third-party source is **not** committed to this public repository |
 
-The scan found **no readable proof** of its internal algorithm, CapCut JSON schema, motion IDs, transition IDs, export functions, telemetry, or permissions. Packed/compressed contents make string matches incomplete. Do not infer that absence of a marker means absence of a feature.
+**Update (28 Oct):** Read-only inspection found a valid embedded 7z archive, extracted `resources/app.asar`, and recovered 25 Electron application files with 17 JS/CJS modules passing syntax checks. See [verified recovery findings](RECOVERY_FINDINGS_20261028.md). The recovered source itself remains private; it was **not** committed or merged into Z Builder. This is not runtime validation.
 
 A separately published [Try AI Today demonstration](https://www.youtube.com/watch?v=Mi8zOa3vFlQ) describes a similarly named AutoCap Cut workflow using time-coded images, automatic motion/transition insertion, and CapCut project editing. **It is not proven that this exact EXE is the same build as the demonstrated application.**
 
@@ -55,3 +55,7 @@ This utility never launches, extracts, or modifies the EXE. It calculates the fi
 - Never run an untrusted third-party binary on production, or automate elevation/permissions as a shortcut.
 - If explicitly authorized local unpacking later becomes possible, first inspect extracted *file names and formats*, then isolate any source review; treat embedded artifacts as untrusted. Document whether it generates native `draft_content.json` or uses GUI actions **only after observed evidence**.
 - Never change working Z Builder/CapCut code based solely on this reference; use reproducible fixture tests and guard rollback.
+
+## Verified recovery update
+
+Read [RECOVERY_FINDINGS_20261028.md](RECOVERY_FINDINGS_20261028.md) for the additional extraction evidence, high-level transition/keyframe/draft-write behavior and clean-room integration test plan. The original binary/source remain excluded from this public repository.

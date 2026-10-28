@@ -44,7 +44,8 @@ def probe(path: str) -> dict:
     if exe:
         cmd = [exe, '-v', 'error', '-show_entries', 'format=duration:stream=width,height,codec_type', '-of', 'json', path]
         try:
-            p = subprocess.run(cmd, capture_output=True, text=True, timeout=25, check=True)
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=25, check=True,
+                               creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             data = json.loads(p.stdout)
             info['duration'] = float(data.get('format', {}).get('duration') or 0)
             for s in data.get('streams', []):
@@ -65,7 +66,8 @@ def probe(path: str) -> dict:
             pass
     if exe:
         try:
-            p = subprocess.run([exe, '-hide_banner', '-i', path], capture_output=True, text=True, timeout=25)
+            p = subprocess.run([exe, '-hide_banner', '-i', path], capture_output=True, text=True, timeout=25,
+                               creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             m = re.search(r'Duration:\s*(\d+):(\d+):([\d.]+)', p.stderr)
             if m:
                 info['duration'] = int(m[1]) * 3600 + int(m[2]) * 60 + float(m[3])
@@ -222,8 +224,15 @@ def split_into_parts(plan: Plan) -> list[Part]:
 
 
 def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
-                  include_voice: bool = False) -> dict:
-    """Write one editable CapCut draft per part, not one whole-length project."""
+                  include_voice: bool = False, mode: str = 'parts',
+                  progress_callback=None) -> dict:
+    """Create either verified 5-7 minute drafts or one complete editable draft.
+
+    Progress events report real completed/verified draft counts. The UI stays
+    responsive while the Node writer copies media in a background thread.
+    """
+    if mode not in {'parts', 'complete'}:
+        raise ValueError('CapCut export mode must be parts or complete.')
     node = find_node()
     if not node:
         raise RuntimeError('Node.js not available. Install Node or use Z Studio portable Node runtime.')
@@ -236,7 +245,15 @@ def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
         raise ValueError('Preflight blocked:\n' + '\n'.join(failures[:30]))
     if include_voice and not plan.narration_path:
         raise ValueError('Select Voice MP3/WAV or uncheck Include Voice in CapCut.')
-    parts = split_into_parts(plan)
+    if mode == 'parts':
+        parts = split_into_parts(plan)
+    else:
+        slots = list(timeline(plan))
+        if not slots:
+            raise ValueError('No scenes to export')
+        parts = [Part(1, slots[0][0], slots[-1][1], Plan.from_dict(plan.to_dict()))]
+    if progress_callback:
+        progress_callback(0, len(parts), 'Preparing CapCut timeline and source media...')
     prepared = []
     for part in parts:
         request, warnings = build_request(part.plan, drafts_root, False,
@@ -248,12 +265,16 @@ def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
     # Each part is verified before the next is created; on failure report exact
     # created drafts, leaving them visible instead of secretly deleting data.
     for part, request, warnings in prepared:
+        if progress_callback:
+            label = ('Complete project' if mode == 'complete' else f'Part {part.index}/{len(parts)}')
+            progress_callback(len(output_parts), len(parts), f'Creating {label}: copying media and writing draft...')
         request['launch'] = launch and part.index == len(parts)
         with tempfile.TemporaryDirectory(prefix='zb-capcut-') as directory:
             input_path, output_path = Path(directory) / 'request.json', Path(directory) / 'result.json'
             input_path.write_text(json.dumps(request, ensure_ascii=False), encoding='utf-8')
             done = subprocess.run([node, str(js), str(input_path), str(output_path)],
-                                  capture_output=True, text=True, timeout=1800)
+                                  capture_output=True, text=True, timeout=1800,
+                                  creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             if done.returncode and not output_path.is_file():
                 created = '\n'.join(p['folder'] for p in output_parts)
                 raise RuntimeError(f'Part {part.index} failed. Earlier drafts remain:\n{created}\n' + done.stderr[-2500:])
@@ -271,10 +292,15 @@ def export_capcut(plan: Plan, drafts_root: str = '', launch: bool = False,
                     'duration_seconds': round(part.end_seconds - part.start_seconds, 3),
                     'tracks': out['tracks'], 'segments': out['segments'],
                     'voice_included': include_voice}
-            (folder / 'Z_Builder_Part_Info.json').write_text(json.dumps(info, indent=2), encoding='utf-8')
+            info['mode'] = mode
+            info_file = 'Z_Builder_Project_Info.json' if mode == 'complete' else 'Z_Builder_Part_Info.json'
+            (folder / info_file).write_text(json.dumps(info, indent=2), encoding='utf-8')
             output_parts.append(info)
             all_warnings += combined_warnings
             compatibility = out.get('capcut', {})
-    return {'parts': output_parts, 'count': len(output_parts),
+        if progress_callback:
+            progress_callback(len(output_parts), len(parts),
+                              f'Verified {len(output_parts)}/{len(parts)} CapCut draft(s)')
+    return {'parts': output_parts, 'count': len(output_parts), 'mode': mode,
             'warnings': list(dict.fromkeys(all_warnings)),
             'capcut': compatibility, 'launched': bool(launch and output_parts)}

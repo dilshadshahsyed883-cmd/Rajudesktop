@@ -68,9 +68,9 @@ jobs:
         run: |
           Copy-Item 'Z_BUILDER.md' 'dist/README_Z_BUILDER.md'
           Copy-Item 'EXAMPLE_SCENE_PLAN.txt' 'dist/EXAMPLE_SCENE_PLAN.txt'
-          Compress-Archive -Path 'dist/Z_Builder.exe','dist/README_Z_BUILDER.md','dist/EXAMPLE_SCENE_PLAN.txt' -DestinationPath 'Z-Builder-Windows-EXE-v3.zip' -CompressionLevel Optimal
+          Compress-Archive -Path 'dist/Z_Builder.exe','dist/README_Z_BUILDER.md','dist/EXAMPLE_SCENE_PLAN.txt' -DestinationPath 'Z-Builder-Windows-EXE-v4.zip' -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
-          name: Z-Builder-Windows-EXE-v3
-          path: Z-Builder-Windows-EXE-v3.zip
+          name: Z-Builder-Windows-EXE-v4
+          path: Z-Builder-Windows-EXE-v4.zip
           retention-days: 30

@@ -1,0 +1,116 @@
+PROJECT IMAGE DOWNLOADER — V1.1.1 TEST BUILD
+=========================================
+
+INSTALL (Windows / desktop Google Chrome)
+1. ZIP ko Extract All karein. Folder ko permanent jagah rakhein.
+2. Chrome mein chrome://extensions open karein.
+3. Developer mode ON karein.
+4. Load unpacked par click karein.
+5. Extracted folder ke andar "extension" folder select karein.
+   Isi folder mein manifest.json hona chahiye.
+6. Extensions menu se Project Image Downloader ko pin karein.
+7. Extension icon click karein. Side panel khul jayega.
+   Top-right arrow se full dashboard bhi open ho sakta hai.
+
+USE
+1. Create project: misal "Tennis News — Video 01".
+2. Add row ya Paste keywords / import CSV use karein.
+   Har row: Search Keyword, Image Name, Qty.
+   Sample_Keywords.csv mein working example format hai.
+3. Save changes karein.
+4. Keyword select karein, Open search click karein.
+5. Chrome site-access permission maange to Allow karein.
+6. Search result page browse karein; Collect from active tab click karein.
+7. Agar originals na milen to Google image ka preview open karein,
+   phir Collect dobara karein. Naye results ke liye khud scroll karein.
+8. Auto-select suitable ya gallery checkboxes se images choose karein.
+9. Usage permission checkbox tick karein, Download selected click karein.
+10. Next incomplete keyword ke liye Search next incomplete use karein.
+11. Project files section se summary aur sources report download karein.
+
+OUTPUT
+Chrome Downloads / Video Image Projects / Project Name [short-id] /
+  Sabalenka 1.png
+  Sabalenka 2.jpg
+  Iga 1.webp
+  Media_Summary.txt        (export button)
+  Image_Sources.csv       (export button)
+
+Original image ka format preserve hota hai. JPG banane ke liye sirf
+extension rename nahi ki jati. PNG image PNG hi save hogi.
+Same image-name ki numbering project mein continue hoti hai.
+Failed attempts ki wajah se numbering mein gaps aa sakte hain.
+Existing files silently overwrite nahi hoti.
+
+IMPORTANT
+- Yeh desktop Chrome extension hai; normal Android Chrome extensions
+  load nahi karta. Windows app / EXE / Python ki zarurat nahi hai.
+- Core aur worker ke automated tests pass hain. Live Chrome UI aur
+  Google/Getty ke current pages ki end-to-end validation pending hai.
+- Google har original URL expose nahi karta. Available page originals
+  collect hote hain; inaccessible images par failure/shortage dikhayega.
+- Getty gallery previews discovery ke liye hain, download selectable
+  nahi. Licensed original Getty ki website se hasil karein.
+- Default quality: landscape, minimum 1280 x 720. Settings changeable.
+- Per image maximum 20 MB. Two images at a time process hoti hain.
+- Login, subscription, CAPTCHA aur paid-access bypass nahi hota.
+- Chrome mein "Ask where to save each file" enabled ho to prompts aa
+  sakte hain. Browser policy aur Safe Browsing warnings ka ehtaram hota hai.
+- Project state Chrome profile mein saved rehti hai. Browser restart
+  ke baad project open karke zarurat par Resume / Retry use karein.
+- Extension uninstall ya profile data clear karne se local record lose
+  ho sakta hai. Project record.json export apne record ke liye rakhein.
+- Update ke liye same extension folder aur Chrome Reload use karein;
+  extension uninstall na karein. Downloaded images disk par rehti hain.
+
+TROUBLESHOOT
+- "No originals": Google preview open karein, Collect dobara; ya original
+  image URL add karein. Show thumbnails / below filter se aur candidates
+  dikh sakte hain, lekin actual quality check download par phir hota hai.
+- HTTP 403 / failed: source page open karein ya doosra original select
+  karein. Source server image access deny kar sakta hai.
+- Qty change ya row delete reject ho: download history wali row ka
+  search/name preserve rehta hai. Naya keyword row add karein.
+- Unsaved blank row: query, name aur count fill karein ya row remove.
+- Permissions denied: Open search / Collect dobara click karke Allow.
+
+
+V1.1 — COMPACT TABS + AUTO DOWNLOAD
+===================================
+Keywords, Images, Queue, Settings aur Files ab alag sub-tabs hain.
+Images tab mein Download / Auto Download controls gallery se OPER hain.
+Gallery apne area mein scroll hoti hai.
+
+AUTO DOWNLOAD
+1. Keywords tab mein rows save karein.
+2. Images tab: keyword select karein, Open search click karein.
+3. Google results browse karein / image preview open karein.
+4. Gallery ke oper usage permission checkbox tick karein.
+5. Auto Download click karein. Images manually tick karna zaroori nahi.
+6. Available originals collect, quality-check aur target count tak download hongi.
+7. Fail ya duplicate ho to next untried original try hogi.
+8. Target complete par auto rukta hai. Kami ho to clear shortage status dikhayega.
+9. Aap scroll/preview open karein; nayi available originals auto collect hongi.
+10. Stop Auto current keyword ko rokta hai. Queue tab mein Pause/Resume/Cancel hain.
+
+Auto har keyword ke liye separately start karein. Automatic search-box typing, page
+scrolling, CAPTCHA bypass ya Getty paid-image bypass nahi hota. Getty previews visible
+hain lekin downloadable originals nahi.
+
+UPDATE — PURANE PROJECTS KEEP KARNE KELIYE
+1. New ZIP extract karein.
+2. New extension folder ke ANDAR ki files copy karein.
+3. Purane loaded extension folder ke ANDAR paste / replace karein.
+4. chrome://extensions par Project Image Downloader ka Reload click karein.
+5. Side panel close karke dobara open karein. Version 1.1.0 nazar aayega.
+Purani extension uninstall na karein; same folder mein update karein.
+
+28 automated tests pass. Updated Chrome UI aur live Google/Getty end-to-end
+validation abhi pending hai.
+
+V1.1.1 — GETTY EDITORIAL
+Images tab ke source dropdown mein Getty Editorial select karein aur Open search
+click karein. Getty Editorial button bhi isi filter ko use karta hai. Har keyword
+user ke diye family=editorial URL par open hoga. Existing CSV value getty same hai.
+Editorial search filter se preview-download restriction change nahi hoti.
+Update: same loaded extension folder mein files replace karke Reload karein.

@@ -5,6 +5,7 @@ on:
       - .github/workflows/capcut-exe-static-audit.yml
       - tools/capcut_audit_static.ps1
       - tools/capcut_audit_static.py
+      - tools/capcut_native_compat_probe.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,6 +21,9 @@ jobs:
       - name: Download publisher installer and audit without execution
         shell: pwsh
         run: ./tools/capcut_audit_static.ps1
+      - name: Compare CapCut package to pinned native ExportClient bridge
+        shell: pwsh
+        run: python tools/capcut_native_compat_probe.py
       - name: Publish static-audit evidence
         uses: actions/upload-artifact@v4
         if: always()
@@ -31,5 +35,7 @@ jobs:
             capcut-audit-report/static-analysis.json
             capcut-audit-report/archive-list.txt
             capcut-audit-report/extraction-log.txt
+            capcut-audit-report/native-bridge-compatibility.json
+            capcut-audit-report/native-bridge-compatibility.md
           if-no-files-found: warn
           retention-days: 7

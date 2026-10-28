@@ -1,0 +1,35 @@
+name: CapCut EXE static audit
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capcut-exe-static-audit.yml
+      - tools/capcut_audit_static.ps1
+      - tools/capcut_audit_static.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-inspection:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download publisher installer and audit without execution
+        shell: pwsh
+        run: ./tools/capcut_audit_static.ps1
+      - name: Publish static-audit evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capcut-installer-static-audit
+          path: |
+            capcut-audit-report/installer-metadata.json
+            capcut-audit-report/audit-summary.md
+            capcut-audit-report/static-analysis.json
+            capcut-audit-report/archive-list.txt
+            capcut-audit-report/extraction-log.txt
+          if-no-files-found: warn
+          retention-days: 7

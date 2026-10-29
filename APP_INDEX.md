@@ -35,6 +35,10 @@ For each application, use the **main-branch path below** instead of searching ol
 | **AutoCapCut v0.1.2 (third-party reference)** | [`third_party/autocapcut/`](third_party/autocapcut/) | [static audit](third_party/autocapcut/README.md), [read-only scanner](third_party/autocapcut/analyze_installer.py) | **Owner selected original AutoCapCut v0.1.2 EXE as a standalone app**; [operating decision](third_party/autocapcut/OPERATING_DECISION_20261028.md); Z Builder untouched, no third-party binary/source committed |
 | **Z CapCut engineering record** | [`Z_CapCut/`](Z_CapCut/) | [research index](Z_CapCut/README.md) | Native-draft/schema/effects research and lab source, **not** a standalone export application |
 
+## CapCut automation research — 29 October 2026
+
+- Documentation-only comparison of native in-process CLI export, foreground Windows GUI export, draft JSON tooling and experimental Windows Ctrl+E batch. Evidence and version caveats: [Z_CapCut research 09](Z_CapCut/09_CAPCUT_AUTOMATION_ONLINE_EVIDENCE_20261029.md). Owner 9.6 compatibility and unattended rendering **not verified**. No app code/deployment changes.
+
 ## Latest record merged into main
 
 - Z Builder changes through merged [PR #17](https://github.com/dilshadshahsyed883-cmd/Rajudesktop/pull/17) are already present in `main`. `used=N` reports count verified CapCut draft exports, not final renders.

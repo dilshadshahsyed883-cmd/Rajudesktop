@@ -1,0 +1,56 @@
+name: Publish CapCut Visual Controls V2 Windows EXE
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/capcut-visual-controls-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verified-windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run standalone draft safety tests
+        shell: pwsh
+        run: |
+          python -m compileall -q capcut_visual_controls_standalone
+          python -m unittest discover -s capcut_visual_controls_standalone/tests -p 'test_*.py' -v
+      - name: Build standalone single-file EXE
+        shell: pwsh
+        run: |
+          python -m pip install pyinstaller==6.16.0
+          pyinstaller --noconfirm --clean --onefile --windowed --name CapCutVisualControlsV2 --paths capcut_visual_controls_standalone capcut_visual_controls_standalone/app.py
+          if (-not (Test-Path 'dist/CapCutVisualControlsV2.exe')) { throw "Windows EXE was not produced" }
+      - name: Package ZIP and SHA-256 checksums
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/CapCutVisualControlsV2.exe -DestinationPath dist/CapCutVisualControlsV2-Windows.zip -Force
+          $exe = (Get-FileHash 'dist/CapCutVisualControlsV2.exe' -Algorithm SHA256).Hash.ToLower()
+          $zip = (Get-FileHash 'dist/CapCutVisualControlsV2-Windows.zip' -Algorithm SHA256).Hash.ToLower()
+          "$exe  CapCutVisualControlsV2.exe" | Set-Content -Path 'dist/SHA256SUMS.txt' -Encoding ascii
+          "$zip  CapCutVisualControlsV2-Windows.zip" | Add-Content -Path 'dist/SHA256SUMS.txt' -Encoding ascii
+      - name: Publish permanent GitHub Release with downloadable EXE and ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: capcut-visual-controls-v2-windows-20261029
+          name: CapCut Visual Controls V2 - Windows Standalone
+          target_commitish: ${{ github.sha }}
+          body: |
+            Standalone CapCut draft test application. Detects existing filters and effects and can extend eligible native tracks to narration length. Includes canvas blur, image/video scale and position controls. No Z Builder changes.
+            
+            Windows EXE built after Python 3.12 automated tests. Backups and preview guards included. Visual behavior in CapCut must be tested with a disposable project copy before production use.
+          files: |
+            dist/CapCutVisualControlsV2.exe
+            dist/CapCutVisualControlsV2-Windows.zip
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+          make_latest: true

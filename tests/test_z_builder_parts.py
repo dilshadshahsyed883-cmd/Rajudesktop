@@ -58,8 +58,8 @@ class PartTests(unittest.TestCase):
             self.assertEqual(preflight(p), [])
             req, _ = build_request(p)
             self.assertIsNone(req['payload']['voice'])
-            self.assertFalse(req['payload']['separateLayers'])
-            self.assertTrue(req['payload']['singleVisualTrack'])
+            self.assertTrue(req['payload']['separateLayers'])
+            self.assertFalse(req['payload']['singleVisualTrack'])
             with self.assertRaisesRegex(ValueError, 'no voice file'):
                 build_request(p, include_voice=True)
 
@@ -98,7 +98,18 @@ class PartTests(unittest.TestCase):
                 self.assertTrue(part['duration_seconds'] <= 420)
                 data = json.loads((Path(part['folder']) / 'draft_content.json').read_text())
                 visual = [t for t in data['tracks'] if t['type'] == 'video']
-                self.assertEqual([t['name'] for t in visual], ['Images + Videos - Single Layer'])
+                self.assertEqual([t['name'] for t in visual], ['Images - Lower Layer', 'Videos - Upper Layer'])
+                mats = {m['id']: m for m in data['materials']['videos']}
+                for index, kind in enumerate(['photo', 'video']):
+                    self.assertTrue(all(mats[s['material_id']]['type'] == kind
+                                        for s in visual[index]['segments']))
+                    self.assertTrue(all(s['track_render_index'] == index
+                                        for s in visual[index]['segments']))
+                chronological = sorted((s for t in visual for s in t['segments']),
+                                       key=lambda s: s['target_timerange']['start'])
+                self.assertEqual([s['target_timerange']['start'] for s in chronological],
+                                 [i * 2_500_000 for i in range(len(chronological))])
+                self.assertFalse(data['config']['maintrack_adsorb'])
                 self.assertFalse(any(t['type'] == 'audio' for t in data['tracks']))
                 self.assertEqual(visual[0]['segments'][0]['track_render_index'], 0)
                 self.assertTrue((Path(part['folder']) / 'Z_Builder_Part_Info.json').is_file())

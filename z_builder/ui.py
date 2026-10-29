@@ -57,7 +57,7 @@ class Window(QMainWindow):
         self.worker = None
         self.assets = []
         self._last_export_sources = ()
-        self.setWindowTitle('Z Builder V6.2')
+        self.setWindowTitle('Z Builder V6.3')
         self.resize(1440, 890)
         self.setMinimumSize(1060, 700)
         self._ui()

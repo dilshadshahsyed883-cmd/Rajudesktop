@@ -156,7 +156,7 @@ def build_request(plan: Plan, drafts_root: str = '', launch: bool = False,
         warnings.append('Scene Plan LUT cannot be exported by Z Studio draft writer; apply it in CapCut.')
     payload = {'name': plan.name, 'W': plan.width, 'H': plan.height, 'fps': plan.fps,
                'images': images, 'captions': captions, 'voice': voice, 'music': [], 'sfx': [],
-               'separateLayers': False, 'singleVisualTrack': True}
+               'separateLayers': True, 'singleVisualTrack': False}
     return {'payload': payload, 'media': media, 'drafts_root': drafts_root, 'launch': launch}, warnings
 
 

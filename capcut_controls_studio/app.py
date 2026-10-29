@@ -212,7 +212,7 @@ class Window(QMainWindow):
         if self.worker:
             self.pending_scan = True
             return False
-        root,selected,previous = self.projects_root,self.selected_project(),self.snapshot
+        root,selected,previous = self.projects_root,self.selected_project(),self.snapshot if quiet else None
         if not selected:
             saved = self.settings.value('last_project','')
             selected = Path(saved) if saved else None

@@ -128,7 +128,7 @@ class NativeTests(unittest.TestCase):
         record=json.loads((base/'EXTRACTION.json').read_text())
         for row in record['files']:
             if row['adaptation']=='unchanged engine':
-                self.assertEqual(hashlib.sha256((base/row['extracted']).read_bytes()).hexdigest(),row['source_sha256'])
+                self.assertEqual(hashlib.sha256((base/row['extracted']).read_bytes().replace(b'\r\n',b'\n')).hexdigest(),row['source_sha256'])
 
     def test_scale_transform_results_match_original_v21_engine(self):
         from capcut_visual_controls_standalone import engine as reference
@@ -223,6 +223,12 @@ class WindowTests(unittest.TestCase):
             self.w.run_job('Worker lifecycle',lambda value=i:value,completed.append)
             wait_idle(self.w)
         self.assertEqual(completed,list(range(20)))
+
+    def test_manual_refresh_rechecks_downloaded_animation_assets(self):
+        self.assertTrue(self.w.animations_tab.catalog[0]['available'])
+        (self.root/'native-animation-cache').rmdir()
+        self.w.refresh();wait_idle(self.w)
+        self.assertFalse(self.w.animations_tab.catalog[0]['available'])
 
     def test_external_changes_reload_and_clear_previews(self):
         w=self.w;w.scale_tab.preview();wait_idle(w)

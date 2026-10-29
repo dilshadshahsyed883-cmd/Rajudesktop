@@ -13,6 +13,16 @@ spec = importlib.util.spec_from_file_location('runner', ROOT / 'runner.py')
 r = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(r)
 
+def test_ffmpeg():
+    found = shutil.which('ffmpeg')
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        return None
+
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -63,7 +73,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 with r.batch_lock(self.folder): pass
     def test_actual_media_verification_and_no_overwrite(self):
-        ff = shutil.which('ffmpeg')
+        ff = test_ffmpeg()
         if not ff: self.skipTest('No ffmpeg on test host; CI smoke is not CapCut export proof')
         job = r.prepare(self.folder,self.project)
         path = Path(job['output'])
@@ -81,7 +91,7 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'mismatch'):
             r.inspect_media(path,ff,dict(duration=1,width=1920,height=1080,codec='h264',audio=True))
     def test_missing_audio_rejected(self):
-        ff=shutil.which('ffmpeg')
+        ff=test_ffmpeg()
         if not ff: self.skipTest('No ffmpeg')
         path=self.base/'silent.mp4'
         subprocess.run([ff,'-v','error','-f','lavfi','-i','color=size=160x90:rate=30:duration=1','-c:v','libx264',str(path)],check=True)
@@ -90,7 +100,7 @@ class RunnerTests(unittest.TestCase):
     def test_truncated_media_rejected(self):
         path=self.base/'bad.mp4'
         path.write_bytes(b'not a video')
-        ff=shutil.which('ffmpeg')
+        ff=test_ffmpeg()
         if not ff: self.skipTest('No ffmpeg')
         with self.assertRaises(ValueError):
             r.inspect_media(path,ff,dict(duration=1,width=160,height=90,codec='h264',audio=True))

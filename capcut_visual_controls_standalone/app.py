@@ -11,7 +11,7 @@ from engine import BLURS, Options, create_preview, default_root, list_projects, 
 class VisualApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("CapCut Visual Controls — Standalone Test v2.1.1")
+        self.title("CapCut Visual Controls — Standalone Test v2.1")
         self.geometry("1250x850")
         self.minsize(990, 700)
         self.configure(bg="#f3f5f8")
@@ -253,5 +253,16 @@ class VisualApp(tk.Tk):
 
 
 if __name__ == "__main__":
-    VisualApp().mainloop()
+    # Exercise real Tk widgets in both Python and the frozen Windows EXE on CI.
+    # This fails if any future app helper shadows a tkinter reserved method.
+    import sys
+    if "--self-test" in sys.argv:
+        app = VisualApp()
+        app.withdraw()
+        app.update_idletasks()
+        if not app.winfo_exists():
+            raise RuntimeError("CapCut Visual Controls window failed to initialize")
+        app.destroy()
+    else:
+        VisualApp().mainloop()
 

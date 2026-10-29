@@ -143,7 +143,11 @@ def project_pair(original, duplicate, timeline):
                 yield from strings(v)
     for p in duplicate.rglob('*.json'):
         for value in strings(read(p)):
-            if needle in value.replace('\\', '/').casefold():
+            normalized = value.replace('\\', '/').casefold()
+            candidate = Path(value)
+            if candidate.is_absolute():
+                normalized = str(candidate.resolve()).replace('\\', '/').casefold()
+            if needle in normalized:
                 raise ValueError('Duplicate still references original folder. Relink/copy project-local media using CapCut first.')
     project = read(duplicate / 'Timelines/project.json')
     if timeline not in [t['id'] for t in project['timelines'] if not t.get('is_marked_delete')]:

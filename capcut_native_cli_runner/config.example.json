@@ -1,0 +1,10 @@
+{
+  "capcut_dir": "",
+  "pid": 0,
+  "original_project": "D:/CapCut Projects/Original",
+  "duplicate_project": "D:/CapCut Projects/Export Copy",
+  "timeline_id": "PASTE-EXISTING-DUPLICATE-TIMELINE-UUID",
+  "output": "D:/Exports/new-video.mp4",
+  "require_audio": true,
+  "timeout_seconds": 1800
+}

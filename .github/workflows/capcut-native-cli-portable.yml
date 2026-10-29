@@ -1,0 +1,52 @@
+name: CapCut Native CLI Portable Windows
+on:
+  pull_request:
+    paths: ['capcut_native_cli_runner/**', '.github/workflows/capcut-native-cli-portable.yml']
+  push:
+    branches: [main]
+    paths: ['capcut_native_cli_runner/**', '.github/workflows/capcut-native-cli-portable.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Guard and verification unit tests (no CapCut)
+        run: python -B -m unittest discover -s capcut_native_cli_runner/tests -v
+      - name: Upstream export regression tests (no CapCut)
+        env:
+          REVERSE_CLI_REGISTRY: ${{ github.workspace }}/capcut_native_cli_runner/registry.json
+          REVERSE_CLI_STATE_DIR: ${{ runner.temp }}/native-cli-state
+        working-directory: capcut_native_cli_runner/vendor/upstream
+        run: |
+          python -B -m unittest discover -s capcut-cli/tests -p test_export_guards.py -v
+          python -B -m unittest discover -s capcut-cli/tests -p test_export_lifecycle.py -v
+      - name: Build and start embedded Windows package
+        run: python -B capcut_native_cli_runner/build_portable.py
+      - name: Media-tool download and independent FFprobe integration check
+        shell: pwsh
+        run: |
+          $package = 'dist-native-cli/CapCut_Native_CLI_Export'
+          & "$package/python/python.exe" -B "$package/setup_media_tools.py"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$package/tools/ffmpeg/bin/ffmpeg.exe" -v error -f lavfi -i color=c=blue:s=1920x1080:r=30 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 1 -c:v libopenh264 -c:a aac "$package/tools/check.mp4"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$package/tools/ffmpeg/bin/ffprobe.exe" -v error -show_format -show_streams -of json "$package/tools/check.mp4" | Out-File -Encoding utf8 ffprobe-ci.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python capcut_native_cli_runner/tests/check_ffprobe_ci.py ffprobe-ci.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CapCut_Native_CLI_Export
+          path: |
+            dist-native-cli/CapCut_Native_CLI_Export.zip
+            dist-native-cli/SHA256SUMS.txt
+            dist-native-cli/CapCut_Native_CLI_Export/BUILD_MANIFEST.json
+            ffprobe-ci.json
+          if-no-files-found: error

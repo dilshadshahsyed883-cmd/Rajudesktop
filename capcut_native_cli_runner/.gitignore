@@ -1,0 +1,8 @@
+config.json
+/logs/
+/state/
+/tools/
+/python/
+*.zip
+__pycache__/
+vendor/upstream/capcut-cli/.runtime/

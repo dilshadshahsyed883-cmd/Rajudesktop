@@ -1,4 +1,4 @@
-name: Z Builder V6.1 — Windows standalone release
+name: Z Builder V6.2 — Windows standalone release
 
 on:
   push:
@@ -6,7 +6,6 @@ on:
     paths:
       - 'z_builder/**'
       - 'autocapcut_transitions_only/**'
-      - 'autocapcut_animations_only/**'
       - 'capcut_visual_controls_standalone/**'
       - 'launch_z_builder.py'
       - 'tests/test_z_builder*.py'
@@ -15,7 +14,6 @@ on:
     paths:
       - 'z_builder/**'
       - 'autocapcut_transitions_only/**'
-      - 'autocapcut_animations_only/**'
       - 'capcut_visual_controls_standalone/**'
       - 'launch_z_builder.py'
       - 'tests/test_z_builder*.py'
@@ -41,15 +39,13 @@ jobs:
           node-version: '22'
       - name: Install requirements and PyInstaller
         run: python -m pip install -r requirements-z-builder.txt pyinstaller
-      - name: Run V6 baseline regressions, V6.1 integration and reference engines
+      - name: Run V6.2 regressions, native transitions and Scale engine
         shell: pwsh
         run: |
           python -m unittest discover -s tests -p 'test_z_builder*.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'Z Builder tests failed' }
           python -m unittest discover -s autocapcut_transitions_only/tests -p 'test_*.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'Transition tests failed' }
-          python -m unittest discover -s autocapcut_animations_only/tests -p 'test_*.py' -v
-          if ($LASTEXITCODE -ne 0) { throw 'Animation tests failed' }
           python -m unittest discover -s capcut_visual_controls_standalone/tests -p 'test_*.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'Reference controls tests failed' }
       - name: Include official Node runtime
@@ -60,33 +56,32 @@ jobs:
       - name: Build one-file Windows executable
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name Z_Builder_V6.1 `
+          pyinstaller --noconfirm --clean --onefile --windowed --name Z_Builder_V6.2 `
             --collect-all imageio_ffmpeg `
             --collect-submodules autocapcut_transitions_only `
-            --collect-submodules autocapcut_animations_only `
             --collect-submodules capcut_visual_controls_standalone `
             --add-data 'z_builder/capcut-draft.js;z_builder' `
             --add-data 'z_builder/capcut_bridge.js;z_builder' `
             --add-binary '.runtime/node/node.exe;.runtime/node' `
             launch_z_builder.py
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
-          if ((Get-Item 'dist/Z_Builder_V6.1.exe').Length -lt 5MB) { throw 'Invalid EXE' }
+          if ((Get-Item 'dist/Z_Builder_V6.2.exe').Length -lt 5MB) { throw 'Invalid EXE' }
       - name: Launch frozen EXE and verify native project workflows
         shell: pwsh
         run: |
           $report = Join-Path $PWD 'dist/Windows-Smoke.json'
-          $p = Start-Process -FilePath 'dist/Z_Builder_V6.1.exe' -ArgumentList @('--self-test-report',"`"$report`"") -PassThru
+          $p = Start-Process -FilePath 'dist/Z_Builder_V6.2.exe' -ArgumentList @('--self-test-report',"`"$report`"") -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'Frozen EXE timed out' }
           if ($p.ExitCode -ne 0) { throw "Frozen EXE failed: $($p.ExitCode)" }
           $result = Get-Content $report -Raw | ConvertFrom-Json
           if (-not $result.passed) { throw 'Frozen workflow checks failed' }
           Get-Content $report
-          Get-FileHash -Algorithm SHA256 'dist/Z_Builder_V6.1.exe' | Format-List
+          Get-FileHash -Algorithm SHA256 'dist/Z_Builder_V6.2.exe' | Format-List
       - uses: actions/upload-artifact@v4
         with:
-          name: Z-Builder-V6.1-Windows-Verified
+          name: Z-Builder-V6.2-Windows-Verified
           path: |
-            dist/Z_Builder_V6.1.exe
+            dist/Z_Builder_V6.2.exe
             dist/Windows-Smoke.json
             dist/Windows-Smoke.png
           retention-days: 30
@@ -100,7 +95,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: Z-Builder-V6.1-Windows-Verified
+          name: Z-Builder-V6.2-Windows-Verified
           path: release
       - name: Publish verified EXE
         env:
@@ -109,9 +104,9 @@ jobs:
         run: |
           set -euo pipefail
           cd release
-          test -s Z_Builder_V6.1.exe
-          sha256sum Z_Builder_V6.1.exe > SHA256SUMS-v6.1.txt
-          gh release create z-builder-v6.1.1-combo-100ms-20261029 Z_Builder_V6.1.exe SHA256SUMS-v6.1.txt Windows-Smoke.json Windows-Smoke.png \
+          test -s Z_Builder_V6.2.exe
+          sha256sum Z_Builder_V6.2.exe > SHA256SUMS-v6.2.txt
+          gh release create z-builder-v6.2-transitions-scale-20261029 Z_Builder_V6.2.exe SHA256SUMS-v6.2.txt Windows-Smoke.json Windows-Smoke.png \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Z Builder V6.1.1 — Combo Animation 100ms End Gap" \
-            --notes "Based on verified V6 commit eaba2a0. Shared project selector, project-local native resources, original V2.1 Scale/Position/Blur engine, one mixed visual track, Combo timing set to each image duration minus 100ms, compact UI and Media Summary on Input. CapCut Summary button excluded. Windows regression tests and frozen EXE native export/Scale/backup smoke passed. Native CapCut playback requires acceptance on the installed CapCut version; In/Out animation retiming is unsupported and is not offered." --latest
+             --title "Z Builder V6.2 — Transitions and Scale" \
+             --notes "V6.2 retains CapCut Transitions and V2.1 Scale/Position/Blur with universal project selector; removes native Animation editor from UI and EXE. Existing animation records are preserved. Scene Plan, Media Summary, single-track exports, native backups, rollback and isolated frozen Windows EXE smoke remain. CapCut playback to be confirmed on installed version." --latest

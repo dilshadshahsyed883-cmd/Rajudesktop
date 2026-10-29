@@ -1,0 +1,103 @@
+name: CapCut Controls Studio — standalone Windows EXE
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'capcut_controls_studio/**'
+      - '.github/workflows/capcut-controls-studio.yml'
+  pull_request:
+    paths:
+      - 'capcut_controls_studio/**'
+      - '.github/workflows/capcut-controls-studio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-app:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify Z Builder is untouched by this change
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if ($env:BASE_SHA -and $env:BASE_SHA -notmatch '^0+$') {
+            git diff --exit-code $env:BASE_SHA $env:GITHUB_SHA -- z_builder autocapcut_transitions_only autocapcut_animations_only capcut_visual_controls_standalone launch_z_builder.py requirements-z-builder.txt Z_BUILDER.md
+            if ($LASTEXITCODE -ne 0) { throw 'Protected Z Builder source was modified' }
+          }
+      - name: Install standalone runtime and builder
+        run: python -m pip install -r capcut_controls_studio/requirements.txt pyinstaller
+      - name: Test native controls, safety, responsive workers and UI synchronization
+        shell: pwsh
+        run: |
+          python -X faulthandler -m unittest discover -s capcut_controls_studio/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Studio regression tests failed' }
+          python -m compileall -q capcut_controls_studio
+      - name: Build standalone one-file executable
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name CapCut_Controls_Studio --paths . capcut_controls_studio/launch.py
+          if ($LASTEXITCODE -ne 0) { throw 'One-file build failed' }
+          if ((Get-Item 'dist/CapCut_Controls_Studio.exe').Length -lt 5MB) { throw 'Invalid EXE' }
+      - name: Launch frozen EXE and test all three native controls
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD 'dist/Windows-Smoke.json'
+          $process = Start-Process -FilePath 'dist/CapCut_Controls_Studio.exe' -ArgumentList @('--self-test-report',"`"$report`"") -PassThru
+          if (-not $process.WaitForExit(180000)) { $process.Kill(); throw 'Frozen EXE timed out' }
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path $report) { Get-Content $report }
+            throw "Frozen EXE failed with exit $($process.ExitCode)"
+          }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if (-not $result.passed -or -not $result.frozen) { throw 'Frozen controls smoke failed' }
+          Get-Content $report
+          Get-FileHash -Algorithm SHA256 'dist/CapCut_Controls_Studio.exe'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CapCut-Controls-Studio-Windows-Verified
+          path: |
+            dist/CapCut_Controls_Studio.exe
+            dist/Windows-Smoke.json
+            dist/Studio-*.png
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: windows-app
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CapCut-Controls-Studio-Windows-Verified
+          path: release
+      - name: Publish verified Windows executable
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd release
+          test -s CapCut_Controls_Studio.exe
+          sha256sum CapCut_Controls_Studio.exe > SHA256SUMS.txt
+          gh release create capcut-controls-studio-v1.0.0-20261029 \
+            CapCut_Controls_Studio.exe SHA256SUMS.txt Windows-Smoke.json Studio-*.png \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "CapCut Controls Studio v1.0 — Standalone Windows" \
+            --notes "Independent extraction of Z Builder V6.1 CapCut Controls. AutoCapCut-inspired wider dark UI; shared project detection and Refresh; background previews/saves; native Transitions, Combo Animations and Scale/Position/Canvas Blur. Effects/filters excluded. Z Builder unchanged. Windows regression tests and real frozen EXE controls/backup smoke passed. Native CapCut playback on the installed version remains visual acceptance; In/Out animation retiming is unsupported." \
+            --latest

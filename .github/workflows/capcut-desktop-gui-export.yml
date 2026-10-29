@@ -52,4 +52,4 @@ jobs:
         run: |
           set -euo pipefail
           tag="capcut-desktop-gui-export-${GITHUB_SHA:0:8}"
-          gh release create "$tag" package/CapCut_Desktop_GUI_Export.zip package/WINDOWS_SMOKE.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'CapCut GUI Export — portable agent-assisted toolkit' --notes 'Portable CPython + unchanged upstream Windows controls. External visual agent/operator required. Real CapCut export and unattended overnight batch NOT TESTED. Owner 9.6 input blocked pending fresh acceptance. Read README and AGENT_EXPORT before use.'
+          gh release create "$tag" package/CapCut_Desktop_GUI_Export.zip package/CapCut_Desktop_GUI_Export/WINDOWS_SMOKE.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'CapCut GUI Export — portable agent-assisted toolkit' --notes 'Portable CPython + unchanged upstream Windows controls. External visual agent/operator required. Real CapCut export and unattended overnight batch NOT TESTED. Owner 9.6 input blocked pending fresh acceptance. Read README and AGENT_EXPORT before use.'

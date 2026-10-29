@@ -1,25 +1,24 @@
-# Z Builder V6.1 — canonical Windows release
+# Z Builder V6.2 — canonical Windows release
 
-V6.1 uses the exact V6 release source (`eaba2a0d8dc08d7d1d940913c458369b710d7d83`) as the functional baseline. Main remains the source of truth. V7–V9 Scene Plan effect extensions are archived under `archive/z_builder_v9`; their versions remain in Git history and prior releases. They are not substituted for V6 in this release.
+V6.2 advances the verified V6.1 main source. Main remains the source of truth; V6.1 is preserved as the rollback release.
 
-## Current behavior
+## Active V6.2 scope
 
-- Four main tabs, with one universal CapCut project folder, selector and Refresh Projects control above Transitions / Animations / Scale.
-- Switching projects clears resource selections and previews. Only selected-project referenced native transitions and supported Combo animations are shown. Draft content hashes invalidate detection after external edits; a timer and sub-tab changes reload automatically. Apply checks the current snapshot again.
-- Scale uses the original V2.1 engine, with Strong Level 3 blur, video 150–170%, video Y -250 to -190 px, X 0; images 105–110%, Y -50 to 0 px, existing X preserved; seed 28; invert Y off. Keyframed transforms are skipped according to the reference engine, preserving their keyframes. Filter/effect extension is disabled, with no filter/effect section.
-- New drafts use one chronological visual track for images and videos. Voice remains optional; full projects and 5–7 minute parts retain existing timing and trims.
-- Native Combo duration is fitted to each image's actual duration in microseconds. In/Out and compound animation retiming is unsupported and not offered. Native preset playback at extended durations still depends on the installed CapCut version; JSON validity does not establish visual playback quality.
-- Input has Download Media Summary. CapCut Summary download is explicitly out of scope.
-- Verified-export counts persist. Previously exported videos are rejected, unused keyword matches take priority, used images remain a fallback. Consecutive videos and repeated video paths in a plan block preflight across part boundaries.
-- Native controls preserve unrelated media, tracks, timing and audio. Original reference engines create recoverable backups, use guarded atomic saves, verify output and roll back failed writes. CapCut must be closed before Apply.
+- Four main tabs. **CapCut Controls has exactly two sub-tabs: Transitions and Scale.** The independent native Animation editor, detection, selection, randomization and apply UI are removed from this release.
+- A universal CapCut project folder, project dropdown and Refresh Projects sit above both controls. Switching project or external draft changes invalidate previews and selections.
+- **Transitions:** reuse the unchanged `autocapcut_transitions_only.transition_engine` and `z_builder/transitions_tab.py`. Preserve project-local native effect discovery, favorites, JSON Edit File, preview and guarded backup/rollback apply.
+- **Scale:** reuse the unchanged original V2.1 engine. Strong Level 3 blur; video 150–170% scale, Y -250 to -190 px and X=0; images 105–110%, Y -50 to 0 px, existing X preserved. Seed 28; filters/effects extension off; keyframes preserved.
+- Pre-existing CapCut animation materials and references are not deleted/modified by either control. Standalone native animation editor code remains available in earlier Git revisions but is not packaged or imported in V6.2. The pre-existing Scene Plan motion writer is unchanged, not part of this removed UI.
+- Preserve Scene Plan + Voice, Media Summary, Media Library usage rules, single mixed visual track, complete CapCut project export, optional voice, and 5–7 minute split exports. CapCut must be closed before applying native controls.
+- Production and existing user CapCut projects are untouched by CI. Stale-project checks, atomic writes, backup and rollback protections stay enforced.
 
-## Build and validation
+## Build and verification
 
-`.github/workflows/z-builder-windows-exe.yml` runs regressions, builds `Z_Builder_V6.1.exe` with Python and Node bundled, then actually launches the frozen executable in an isolated smoke workflow. The frozen test verifies UI creation, native draft generation, shared selection, Scale preview, guarded save, backup and timing preservation. No real user projects are touched. Publication occurs only after the main-branch Windows build and smoke test succeed.
+`.github/workflows/z-builder-windows-exe.yml` runs Windows regression and native reference-engine tests, packages one-file **Z_Builder_V6.2.exe** with Python dependencies and Node, launches the frozen EXE against isolated temp drafts, and publishes a GitHub Release **only after main-branch tests and smoke pass**. The current source ZIP also excludes standalone Animation code. Installed CapCut visual playback still needs owner verification.
 
-Final asset: **Z_Builder_V6.1.exe**. No Python installation, BAT launcher, ZIP extraction or accompanying internal folder is required. Runtime extraction by the one-file packager is automatic. App data remains in Documents/Z Builder.
+## Archived version history (not active V6.2 behavior)
 
-## Historical V9 documentation (not the V6.1 contract)
+## Historical V9 documentation (not the V6.2 contract)
 
 # Z Builder — Scene Plan → Local Media Timeline → CapCut Projects
 

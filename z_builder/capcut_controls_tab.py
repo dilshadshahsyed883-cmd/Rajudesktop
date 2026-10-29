@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel,
 from capcut_visual_controls_standalone.engine import (
     capcut_running, default_root, list_projects, load_project, project_fingerprint)
 from .transitions_tab import CapcutTransitionsTab
-from .animations_tab import CapcutAnimationsTab
 from .scale_tab import CapcutScaleTab
 
 
@@ -56,10 +55,9 @@ class CapcutControlsTab(QWidget):
         self.sections = QTabWidget(self)
         layout.addWidget(self.sections, 1)
         self.transitions_tab = CapcutTransitionsTab(self, controller=self)
-        self.animations_tab = CapcutAnimationsTab(self, controller=self)
         self.scale_tab = CapcutScaleTab(self)
-        self.panels = [self.transitions_tab, self.animations_tab, self.scale_tab]
-        for panel, title in zip(self.panels, ['Transitions', 'Animations', 'Scale']):
+        self.panels = [self.transitions_tab, self.scale_tab]
+        for panel, title in zip(self.panels, ['Transitions', 'Scale']):
             self.sections.addTab(panel, title)
         self.project_combo.currentIndexChanged.connect(self.load_selected)
         self.sections.currentChanged.connect(self.check_external)
@@ -119,7 +117,7 @@ class CapcutControlsTab(QWidget):
                 raw, _, warnings = load_project(project)
                 visuals = sum(len(t.get('segments', [])) for t in raw['tracks'] if t.get('type') == 'video')
                 self.summary.setText(f'{project.name} · {visuals} clips · '
-                    f'{len(self.transitions_tab.catalog)} transitions · {len(self.animations_tab.catalog)} supported Combo animations · '
+                    f'{len(self.transitions_tab.catalog)} project transitions · '
                     f'{len(warnings)} warnings')
                 for panel in self.panels:
                     panel.setEnabled(True)

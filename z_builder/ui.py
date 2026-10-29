@@ -57,7 +57,7 @@ class Window(QMainWindow):
         self.worker = None
         self.assets = []
         self._last_export_sources = ()
-        self.setWindowTitle('Z Builder V6.1')
+        self.setWindowTitle('Z Builder V6.2')
         self.resize(1440, 890)
         self.setMinimumSize(1060, 700)
         self._ui()
@@ -83,7 +83,7 @@ class Window(QMainWindow):
         title = QLabel('Z BUILDER')
         title.setStyleSheet('font-size:20px;font-weight:800;color:#eff6ff;')
         outer.addWidget(title)
-        subtitle = QLabel('1  Input: Scene Plan + Voice    →    2  Select Media + Build Timeline    →    3  Open in CapCut    |    4  CapCut Controls (Transitions / Animations)')
+        subtitle = QLabel('1  Input: Scene Plan + Voice    →    2  Select Media + Build Timeline    →    3  Open in CapCut    |    4  CapCut Controls (Transitions / Scale)')
         subtitle.hide()
         self.tabs = QTabWidget()
         outer.addWidget(self.tabs, 1)
@@ -240,11 +240,9 @@ class Window(QMainWindow):
         self.export_log.setText('Native CapCut draft writing follows the Z Studio 9.4 format. CapCut version compatibility must be checked on your PC.')
         ex.addWidget(self.export_log, 1)
         self.tabs.addTab(export_tab, '3  Open in CapCut')
-        # Both native draft editors are independent from Scene Plan / media export.
-        # The existing transition editor is preserved without changes.
+        # Native Transitions and Scale controls stay independent from Scene Plan export.
         self.capcut_controls_tab = CapcutControlsTab(self)
         self.transitions_tab = self.capcut_controls_tab.transitions_tab  # compatibility alias
-        self.animations_tab = self.capcut_controls_tab.animations_tab
         self.tabs.addTab(self.capcut_controls_tab, '4  CapCut Controls')
         self.statusBar().showMessage('Ready — catalog is local to Documents/Z Builder')
 

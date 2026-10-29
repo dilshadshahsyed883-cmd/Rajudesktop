@@ -45,10 +45,7 @@ class CapcutTransitionsQtTests(unittest.TestCase):
         from z_builder.ui import Window
         with (mock.patch("z_builder.transitions_tab.list_projects", return_value=[]),
               mock.patch("z_builder.transitions_tab.harvest_transitions", return_value=[]),
-              mock.patch("z_builder.transitions_tab.capcut_running", return_value=False),
-              mock.patch("z_builder.animations_tab.list_projects", return_value=[]),
-              mock.patch("z_builder.animations_tab.harvest_animations", return_value=[]),
-              mock.patch("z_builder.animations_tab.capcut_running", return_value=False)):
+              mock.patch("z_builder.transitions_tab.capcut_running", return_value=False)):
             win = Window()
         try:
             self.assertEqual(win.tabs.count(), 4)
@@ -58,7 +55,7 @@ class CapcutTransitionsQtTests(unittest.TestCase):
             self.assertEqual(win.tabs.tabText(3), "4  CapCut Controls")
             self.assertIsInstance(win.tabs.widget(3), CapcutControlsTab)
             self.assertEqual([win.capcut_controls_tab.sections.tabText(i) for i in range(2)],
-                             ["Transitions", "Animations"])
+                             ["Transitions", "Scale"])
             self.assertIsInstance(win.transitions_tab, CapcutTransitionsTab)
             self.assertIs(win.transitions_tab, win.capcut_controls_tab.transitions_tab)
             self.assertIsNot(win.tabs.widget(3), win.tabs.widget(2))

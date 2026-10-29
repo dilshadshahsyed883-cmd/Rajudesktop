@@ -1,4 +1,4 @@
-"""V6.1 selected-project isolation, reference scale and full-duration Combo tests."""
+"""V6.2 selected-project isolation, native transitions and reference scale tests."""
 import copy
 import json
 import os
@@ -9,7 +9,6 @@ from unittest.mock import patch
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtWidgets import QApplication, QPushButton
 from z_builder.capcut_controls_tab import CapcutControlsTab
-from autocapcut_animations_only.animation_engine import harvest_animations, make_plan, apply_animation, save as save_animations
 from autocapcut_transitions_only.transition_engine import harvest_transitions
 from capcut_visual_controls_standalone.engine import create_preview, load_project, save_project
 from z_builder.core import Catalog, load_plan, bind_media, preflight, media_usage_issues
@@ -57,20 +56,17 @@ class V61Tests(unittest.TestCase):
     def test_shared_selector_and_project_isolation(self):
         w=self.widget
         self.assertIs(w.transitions_tab.project_combo,w.project_combo)
-        self.assertIs(w.animations_tab.project_combo,w.project_combo)
-        self.assertEqual(w.sections.count(),3)
+        self.assertEqual([w.sections.tabText(i) for i in range(w.sections.count())],['Transitions','Scale'])
+        self.assertFalse(hasattr(w,'animations_tab'))
         self.assertEqual([x['effect_id'] for x in w.transitions_tab.catalog],['A-transition'])
-        self.assertEqual([x['effect_id'] for x in w.animations_tab.catalog],['A-animation'])
         w.transitions_tab.selected_ids={'A-transition'}
         self.select('B')
         self.assertEqual([x['effect_id'] for x in w.transitions_tab.catalog],['B-transition'])
-        self.assertEqual([x['effect_id'] for x in w.animations_tab.catalog],['B-animation'])
         self.assertEqual(w.transitions_tab.selected_ids,set())
-        self.assertEqual(w.animations_tab.preview_rows,[])
-        for i in [0,1,2,0]:w.sections.setCurrentIndex(i)
+        for i in [0,1,0]:w.sections.setCurrentIndex(i)
         self.assertEqual(w.project_combo.currentText(),'B')
-        for panel in [w.transitions_tab,w.animations_tab]:
-            self.assertFalse(any(b.text() in ['Refresh','Change folder'] for b in panel.findChildren(QPushButton)))
+        for p in [w.transitions_tab,w.scale_tab]:
+            self.assertFalse(any(b.text() in ['Refresh','Change folder'] for b in p.findChildren(QPushButton)))
 
     def test_external_change_invalidates_then_refreshes_all_panels(self):
         w=self.widget;w.scale_tab.preview()
@@ -80,7 +76,6 @@ class V61Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Project changed'):w.require_current()
         self.assertIsNone(w.scale_tab.expected)
         self.assertEqual(w.transitions_tab.catalog,[])
-        self.assertEqual(w.animations_tab.catalog,[])
         w.refresh()
         self.assertEqual(w.project_combo.currentText(),'A')
         w.require_current()
@@ -91,37 +86,19 @@ class V61Tests(unittest.TestCase):
         f.write_text(json.dumps(raw))
         self.assertEqual([e['effect_id'] for e in harvest_transitions(self.root,project=self.root/'A')],['A-transition'])
 
-    def test_animation_fits_short_and_long_images(self):
-        entries=harvest_animations(self.root,project=self.root/'A')
-        for seconds in [2.5,4,6,10]:
-            raw=fixture('A',self.cache);raw['tracks'][0]['segments'][0]['target_timerange']['duration']=int(seconds*1e6)
-            rows,_=make_plan(raw,entries,[(0,0)],'A-animation',fit_to_clip=True)
-            updated,_=apply_animation(raw,entries,'A-animation',rows)
-            mat=updated['materials']['material_animations'][-1]
-            self.assertEqual(mat['animations'][0]['duration'],int(seconds*1e6))
-            self.assertEqual(mat['animations'][0]['start'],0)
-            self.assertEqual(updated['tracks'][0]['segments'][0]['target_timerange'],raw['tracks'][0]['segments'][0]['target_timerange'])
-            self.assertEqual(updated['tracks'][0]['segments'][1],raw['tracks'][0]['segments'][1])
-            project=self.root/('duration_'+str(seconds));project.mkdir()
-            (project/'draft_content.json').write_text(json.dumps(raw))
-            result=save_animations(project,entries,'A-animation',rows)
-            self.assertTrue(result['saved'])
-            saved=json.loads((project/'draft_content.json').read_text())
-            self.assertEqual(saved['materials']['material_animations'][-1]['animations'][0]['duration'],int(seconds*1e6))
-
-    def test_v61_animation_ui_uses_100ms_end_gap(self):
-        panel=self.widget.animations_tab
-        panel.selected_effect_ids={'A-animation'}
-        panel.image_table.selectAll()
-        project, rows, entries, effect_id, warnings=panel._plan()
-        self.assertEqual(project,self.root/'A')
-        self.assertEqual(len(rows),1)
-        self.assertEqual(rows[0]['status'],'Will Apply')
-        self.assertEqual(rows[0]['end_gap_us'],100_000)
-        self.assertEqual(rows[0]['applied_duration_us'],2_400_000)
-        updated,stats=apply_animation(fixture('A',self.cache),entries,effect_id,rows)
-        self.assertEqual(updated['materials']['material_animations'][-1]['animations'][0]['duration'],2_400_000)
-        self.assertEqual(updated['tracks'][0]['segments'][1],fixture('A',self.cache)['tracks'][0]['segments'][1])
+    def test_scale_preserves_preexisting_animation_metadata(self):
+        project=self.root/'A'
+        old=json.loads((project/'draft_content.json').read_text())
+        self.assertFalse(hasattr(self.widget,'animations_tab'))
+        self.assertTrue(self.widget.scale_tab.preview())
+        result=save_project(project,self.widget.scale_tab.options(),self.widget.scale_tab.expected)
+        self.assertTrue(result['saved'])
+        new=json.loads((project/'draft_content.json').read_text())
+        self.assertEqual(new['materials']['material_animations'],old['materials']['material_animations'])
+        # Scale may add a canvas material reference; all original native
+        # transition and animation references must stay present and unmodified.
+        for material_ref in old['tracks'][0]['segments'][0]['extra_material_refs']:
+            self.assertIn(material_ref, new['tracks'][0]['segments'][0]['extra_material_refs'])
 
     def test_scale_reference_defaults_determinism_and_project_save(self):
         panel=self.widget.scale_tab;opts=panel.options()

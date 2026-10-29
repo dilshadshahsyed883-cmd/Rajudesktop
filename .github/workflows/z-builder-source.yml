@@ -34,9 +34,9 @@ jobs:
       - name: Make runnable Python source ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path 'z_builder','autocapcut_transitions_only','autocapcut_animations_only','capcut_visual_controls_standalone','launch_z_builder.py','start_z_builder.bat','requirements-z-builder.txt','Z_BUILDER.md','EXAMPLE_SCENE_PLAN.txt','tests/test_z_builder.py','tests/test_z_builder_timing.py','tests/test_z_builder_parts.py' -DestinationPath 'Z-Builder-Windows-Python-Source.zip' -CompressionLevel Optimal
+          Compress-Archive -Path 'z_builder','autocapcut_transitions_only','capcut_visual_controls_standalone','launch_z_builder.py','start_z_builder.bat','requirements-z-builder.txt','Z_BUILDER.md','EXAMPLE_SCENE_PLAN.txt','tests/test_z_builder.py','tests/test_z_builder_timing.py','tests/test_z_builder_parts.py' -DestinationPath 'Z-Builder-Windows-Python-Source.zip' -CompressionLevel Optimal
       - uses: actions/upload-artifact@v4
         with:
-          name: Z-Builder-Windows-Python-Source-v3
+          name: Z-Builder-Windows-Python-Source-v6.2
           path: Z-Builder-Windows-Python-Source.zip
           retention-days: 30

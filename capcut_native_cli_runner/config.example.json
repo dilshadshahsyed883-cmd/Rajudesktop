@@ -6,5 +6,5 @@
   "timeline_id": "PASTE-EXISTING-DUPLICATE-TIMELINE-UUID",
   "output": "D:/Exports/new-video.mp4",
   "require_audio": true,
-  "timeout_seconds": 1800
+  "timeout_seconds": 300
 }

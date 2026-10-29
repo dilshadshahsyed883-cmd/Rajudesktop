@@ -16,6 +16,7 @@ import uuid
 ROOT = Path(__file__).resolve().parent
 UPSTREAM = ROOT / 'vendor/upstream'
 SUPPORTED = '9.5.0.4050'
+PINNED_DIRECTORY = 'D:/Apps/CapCut2/CapCut/9.5.0.4050'
 FLAGS = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 
@@ -95,6 +96,8 @@ def check_build(directory):
     for name, expected in STORE_PINS.items():
         if not (directory / name).is_file() or digest(directory / name) != expected:
             raise ValueError('Unsupported native module fingerprint: ' + name + '. No attachment attempted.')
+    if str(directory).replace('\\', '/').casefold() != PINNED_DIRECTORY.casefold():
+        raise ValueError('Upstream export bridge requires exact install path ' + PINNED_DIRECTORY + '; no attachment attempted.')
     return {'directory': str(directory), 'version': version, 'moduleHashes': STORE_PINS}
 
 
@@ -203,16 +206,24 @@ def verify_probe(probe, doc, require_audio):
             'audioStreams': len(audios), 'audioRequired': require_audio}
 
 
+def configuration_guard():
+    raise ValueError(
+        'BLOCKED by configuration preservation: unmodified upstream capcut_export_frontend_agent.js '
+        'calls saveExportPath during native export. A configuration-preserving export method is not '
+        'provided by upstream. No attachment or export attempted.')
+
+
 def export(config):
     verify_sources()
     build = select_build(config)  # Always before attaching or touching project state.
     if not isinstance(config.get('pid'), int) or config['pid'] <= 0:
         raise ValueError('Set pid to the running CapCut editor process ID shown by Task Manager Details.')
-    timeout = config.get('timeout_seconds', 1800)
-    if not isinstance(timeout, int) or not 60 <= timeout <= 86400:
-        raise ValueError('timeout_seconds must be 60..86400.')
+    timeout = config.get('timeout_seconds', 300)
+    if not isinstance(timeout, int) or not 60 <= timeout <= 300:
+        raise ValueError('timeout_seconds must be 60..300; unmodified upstream rejects larger values.')
     if not isinstance(config.get('require_audio', True), bool):
         raise ValueError('require_audio must be true or false.')
+    configuration_guard()  # Strict user contract; do not silently persist CapCut preferences.
     original, duplicate, doc = project_pair(config['original_project'], config['duplicate_project'], config['timeline_id'])
     output = Path(config['output']).resolve()
     if output.exists() or output.suffix.lower() != '.mp4' or not output.parent.is_dir():
@@ -276,7 +287,7 @@ def main():
         command = args.command
         if command == 'menu':
             print('CapCut Native CLI Export | upstream build 9.5.0.4050 only')
-            print('1. Detect CapCut / check compatibility\n2. Export configured safe duplicate\n3. Exit')
+            print('1. Detect CapCut / check compatibility\n2. Check export readiness (configuration-preservation blocker)\n3. Exit')
             choice = input('Choose: ').strip()
             if choice == '3':
                 return 0

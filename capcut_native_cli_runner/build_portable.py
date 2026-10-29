@@ -47,12 +47,15 @@ def main():
     subprocess.run([str(python), '-B', '-m', 'unittest', 'discover', '-s', str(stage / 'tests'), '-v'], check=True, env=env)
     # Actual launch path, controlled menu exit, no CapCut needed.
     subprocess.run([str(python), '-B', str(stage / 'runner.py'), 'menu'], input='3\n', text=True, check=True, env=env)
+    subprocess.run(['cmd.exe', '/d', '/c', 'START.bat'], cwd=stage, input='3\n\n',
+                   text=True, check=True, env=env, timeout=30)
     probe = subprocess.run([str(python), '-B', str(stage / 'runner.py'), 'doctor'],
                             capture_output=True, text=True, env=env)
     if probe.returncode != 2 or 'CapCut' not in probe.stderr:
         raise ValueError('Missing CapCut packaged error test failed: ' + probe.stdout + probe.stderr)
     manifest = {'pythonUrl': PYTHON_URL, 'pythonSha256': python_hash, 'pythonVersion': '3.11.9',
-                'fridaVersion': '17.23.3', 'nativeCapCutExport': 'NOT TESTED',
+                'fridaVersion': '17.23.3', 'nativeCapCutExport': 'BLOCKED - strict configuration preservation',
+                'actualCapCutRender': 'NOT TESTED',
                 'windowsPortableLaunch': 'PASS', 'upstreamCapabilities': 'PASS',
                 'missingCapCutError': 'PASS', 'mediaTools': 'External hash-checked one-time setup'}
     (stage / 'BUILD_MANIFEST.json').write_text(json.dumps(manifest, indent=2))

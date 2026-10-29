@@ -111,6 +111,17 @@ class Guards(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'integrity'):
                 runner.verify_sources()
 
+    def test_configuration_preservation_blocks_upstream_attachment(self):
+        with patch.object(runner, 'select_build', return_value={}), patch.object(runner, 'adapter') as adapter:
+            with self.assertRaisesRegex(ValueError, 'configuration preservation'):
+                runner.export({'pid': 123})
+            adapter.assert_not_called()
+
+    def test_upstream_timeout_limit(self):
+        with patch.object(runner, 'select_build', return_value={}):
+            with self.assertRaisesRegex(ValueError, '60..300'):
+                runner.export({'pid': 123, 'timeout_seconds': 301})
+
     def test_export_unsupported_does_not_call_adapter(self):
         with patch.object(runner, 'select_build', side_effect=ValueError('Unsupported')), patch.object(runner, 'adapter') as adapter:
             with self.assertRaisesRegex(ValueError, 'Unsupported'):
@@ -178,7 +189,7 @@ class Publication(unittest.TestCase):
         process = subprocess.CompletedProcess([], 0, json.dumps(p), '')
         with patch.object(runner, 'ROOT', package), patch.object(runner, 'verify_sources'), \
              patch.object(runner, 'select_build', return_value={'directory': str(self.root)}), \
-             patch.object(runner, 'adapter', side_effect=adapter) as native, patch.object(runner.subprocess, 'run', return_value=process):
+             patch.object(runner, 'configuration_guard'), patch.object(runner, 'adapter', side_effect=adapter) as native, patch.object(runner.subprocess, 'run', return_value=process):
             if mode == 'valid':
                 result = runner.export(config)
                 self.assertEqual(result['status'], 'PASS'); self.assertTrue(output.exists())

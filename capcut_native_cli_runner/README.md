@@ -1,52 +1,67 @@
-# CapCut Native CLI Export — portable Windows runner
+# CapCut Native CLI Export — portable Windows package
 
-Independent application. Uses the **actual runnable** MIT-licensed `capcut-cli` adapter from [Leis / reverse-cli-anything](https://github.com/leileqiTHU/reverse-cli-anything), pinned at **4dba879b2592828d24d09c9e9805926cc67b56e8**. It is not merely a video demo. All vendored files are unchanged, with SHA-256 inventory in `UPSTREAM_FILES.json` and original MIT attribution under `vendor/upstream/LICENSE`.
+**Status: portable launcher/source delivered; native export BLOCKED under the requested strict configuration-preservation contract. This is not a working-export release.**
 
-**Supported environment: Windows x64, CapCut 9.5.0.4050, and the four exact upstream native module fingerprints. Owner's previously recorded 9.6.0.4097 is unsupported and is refused before attachment.** No downgrade, CapCut download, proprietary binary redistribution, application patch on disk, licensing bypass, replacement renderer or Z Builder modification.
+Reuses the actual runnable MIT-licensed `capcut-cli` adapter from [Leis / reverse-cli-anything](https://github.com/leileqiTHU/reverse-cli-anything), pinned at **4dba879b2592828d24d09c9e9805926cc67b56e8**. This source exists and is distributable; it is not just a demo. All 77 vendored files are unchanged, with SHA-256 inventory in `UPSTREAM_FILES.json` and original attribution under `vendor/upstream/LICENSE`.
 
-## Download and start
+## Verified source limitations
 
-Download the `CapCut_Native_CLI_Export` artifact from the dedicated **CapCut Native CLI Portable Windows** GitHub Actions run. Extract the outer artifact, then fully extract `CapCut_Native_CLI_Export.zip` to a writable folder, preferably on D:. Python 3.11.9 x64 is included; do not install Python manually. No admin access required.
+| Constraint | Source evidence / behavior |
+|---|---|
+| Windows x64, **CapCut 9.5.0.4050** plus exact module hashes | `capcut-cli/adapter.json`, `capcut_store_worker.py: STORE_PINS` |
+| Exact install directory **D:/Apps/CapCut2/CapCut/9.5.0.4050** | `capcut_store_agent.js: DIRECTORY` and loaded-module path guard; directory is hardcoded in the unchanged native export bridge |
+| CapCut's configured draft root must be on **D:** | `capcut_store_agent.js: guard()`; this is checked by the upstream bridge during native session inspection |
+| At most **300 seconds total** | `capcut_agent.py: main()` rejects larger timeouts; includes preparation/render/verification, so long exports may fail |
+| Export saves CapCut's default export folder | `capcut_export_frontend_agent.js: exportconfigure()` explicitly invokes `saveExportPath` |
+| Owner's recorded **9.6.0.4097** | Unsupported; refused before attachment. No guessed offsets, downgrade or install changes |
 
-1. Run `START.bat`, choose **1** to detect CapCut and verify version/module hashes. Custom locations can be set in `config.json` as `capcut_dir` (folder containing CapCut.exe). Discovery reads running processes, common install paths and uninstall registry locations; it does not launch or attach.
-2. Only on the supported build, run `SETUP_MEDIA_TOOLS.bat` once with Internet available. It downloads an exact **LGPL shared** FFmpeg/FFprobe archive from BtbN, validates the pinned SHA-256 and retains the complete upstream distribution/license files locally. These tools are not bundled into this ZIP. They verify/decode output; they never substitute for CapCut rendering. No API keys/accounts to this runner.
-3. In **CapCut itself**, duplicate the intended project. Keep the original closed. Open the duplicate in the editor and activate the intended timeline. This is deliberately a manual CapCut duplicate: raw file copies retaining the original project ID are refused. Relink project-local media into a safe location if the duplicate references the original project folder. Keep shared external source media unchanged.
-4. Edit `config.json`: exact `original_project`, `duplicate_project`, `timeline_id`, current editor `pid` (Task Manager → Details → CapCut.exe), and a **new** `.mp4` output path in an existing folder outside both projects. Timeline IDs are listed in the duplicate's `Timelines/project.json`; use the active one. `require_audio: true` is the default; set false only for an intentionally silent project. Default total upstream timeout is 1800 seconds, configurable up to 86400.
-5. Run `START.bat`, choose **2**. Leave CapCut running on the duplicate and do not edit it during the export. The exact upstream `editor export` command attaches using its Frida worker. Native session/project/timeline checks and module pins remain in place. The application may display its native export panel. No headless/locked-desktop reliability claim.
+The requested preservation of CapCut configuration conflicts with the unmodified upstream native export implementation. `configuration_guard()` therefore **blocks the wrapper before any Frida attachment or export**, even on a matching installation. No configuration flag disables this guard. A new configuration-preserving upstream method or a later explicit change to the user's requirements would need a separate reviewed update. Do not manually bypass this guard to treat this package as accepted.
 
-Command line without pauses:
+No CapCut executable/DLL, replacement renderer, binary patch, licensing/security bypass, project modification, batch queue or Z Builder change is included. Upstream Frida runtime instrumentation is preserved as source, but the guarded launcher does not execute it while the strict contract remains blocked.
+
+## Download and use
+
+Download the `CapCut_Native_CLI_Export` artifact from **CapCut Native CLI Portable Windows** in GitHub Actions. Extract the outer artifact, then fully extract `CapCut_Native_CLI_Export.zip` into a writable folder. Python 3.11.9 x64 and Frida 17.23.3 are included; no manual Python installation or admin access is required.
+
+- Run `START.bat` and choose **1** to detect installed CapCut, read the exact executable file version and check compatibility. Discovery reads running processes, common install folders and uninstall-registry locations. Set `capcut_dir` in `config.json` for an unlisted custom location; a detected location is not automatically a supported bridge location.
+- Choose **2** to check export readiness. Missing/unsupported installations, nonmatching fingerprints/install paths, invalid timeout and the strict configuration-preservation conflict produce explicit failure messages. **No native export is attempted.**
+- `SETUP_MEDIA_TOOLS.bat` is an optional one-time Internet download for the included verification support. It downloads a pinned LGPL shared FFmpeg/FFprobe archive directly from BtbN, checks SHA-256 and retains the complete publisher distribution and licenses. These tools are not bundled in this ZIP. Running this setup does **not** resolve CapCut compatibility or the configuration blocker.
+
+Without a batch pause:
 
 ```bat
 python\python.exe -B runner.py doctor
 python\python.exe -B runner.py export --config config.json
+python\python.exe -B runner.py integrity
 ```
 
-## Completion and logs
+## Preserved export/verification path — blocked, not live validated
 
-Upstream observes native render start/completion, validates H.264 dimensions/fps/duration with its native probe, fully decodes the file using FFmpeg and verifies timeline content is unchanged. The runner then independently checks **FFprobe MP4/video codec, duration, resolution and audio metadata**, audits the original folder's complete file hashes and atomically publishes the final path without overwrite. PASS requires every gate. No synthetic completion or fabricated progress percentage.
+For a future separately authorized resolution of the configuration blocker, the source retains a narrowly scoped call to the original `editor export` implementation. It requires a CapCut-created duplicate with a different project ID, explicit active timeline/current PID, no embedded original-folder references and a new MP4 path outside both project folders. Raw folder copies retaining the original identity, symlinks/junctions, existing outputs and unverified results are refused.
 
-`logs/<run>/result.json` is the runner's authoritative PASS/FAIL record. `adapter.stdout.json`, `adapter.stderr.log`, `ffprobe.json` and `original-before.json` explain the result. Detailed upstream native events/status/receipts remain in `vendor/upstream/capcut-cli/.runtime/`; they can be inspected while running. Treat these logs as private: they may contain local project paths and IDs. Do not upload private drafts or media to GitHub.
+Upstream native completion, full-file decode and unchanged-timeline flags are required. Additional FFprobe verification checks MP4/H.264, duration, resolution and audio metadata. The wrapper audits original-folder file hashes and uses atomic no-overwrite publication. Audio is required by default; intentional silent projects can set `require_audio: false`. `timeout_seconds` is restricted to 60..300 to preserve the upstream limit.
 
-On failure/timeout, keep the stage file and logs for diagnosis. **Do not blindly retry**: an unknown native outcome may retain the upstream PID lock. Inspect CapCut and upstream receipts first. This runner does not remove locks, auto-replay, delete media, restore drafts, or overwrite exports. A failed final verification can leave `.native-cli-*.mp4` / `.capcut-export-*` staging artifacts; they are never announced as successful exports. Both the upstream worker and wrapper audit saved content, but the original must remain closed and untouched by other software during a run.
+These publication/failure checks are tested with **mocks**, not live CapCut. They do not prove successful project export. They remain behind the configuration guard. No progress percentages are fabricated. If a future supported command is enabled, detailed native events/receipts would appear under `vendor/upstream/capcut-cli/.runtime/`, and wrapper records under `logs/<run>/`; treat all such logs as private. Unknown native outcomes/retained PID locks must never be blindly retried.
 
-## What this package does and does not establish
+## Acceptance results
 
-| Check | Evidence |
+| Check | Result / evidence |
 |---|---|
-| Runnable upstream adapter/native export source | Available and vendored unchanged at the pinned SHA |
-| Native MP4 demonstration | Upstream author on 9.5.0.4050; see original examples/evidence |
-| Windows packaged launcher, embedded Python, dependency import, capabilities, negative guards | Automated dedicated Windows CI; consult run and BUILD_MANIFEST.json |
-| FFprobe integration | Real FFmpeg-generated **synthetic test fixture**, not CapCut render evidence |
-| Actual export of owner's project, effects/captions/audio playback and visual parity | **NOT TESTED** in this environment |
-| CapCut 9.6.0.4097 | **Unsupported / blocked**; no guessed commands or addresses |
-| Sequential multi-project / overnight / locked desktop | **Not enabled or certified**; source has project commands, but that is not a proven overnight queue |
+| Runnable/distributable upstream adapter source | **PASS**, inspected and pinned; author demonstrated native export on their environment |
+| Upstream source byte integrity | **PASS**, 77 files; Windows checkout preserves their original bytes |
+| Packaged Windows START.bat / embedded interpreter / Frida / upstream capabilities | Dedicated Windows CI; see BUILD_MANIFEST.json and current run |
+| Real Windows executable file-version reader | Windows unit test reads CPython's real version resource; live CapCut detection **NOT TESTED** |
+| Missing CapCut / unsupported version / hash / timeout / preservation blockers | Automated error-path tests; unsupported version and hash cases use fixtures/mocks |
+| Independent FFprobe integration | Real FFmpeg-generated synthetic audio/video fixture, **not** a CapCut render |
+| Native command invocation in a supported CapCut session | **NOT TESTED; wrapper BLOCKED** |
+| Actual CapCut MP4/audio/duration/resolution, effects/captions, playback | **NOT TESTED** |
+| Original project preservation in a real CapCut session | **NOT TESTED**; strict launcher performs no native action |
+| Sequential multi-project, overnight, headless or locked-desktop reliability | **NOT TESTED / not enabled** |
 
-Runtime instrumentation is upstream's supported method: Frida attaches to the running process and installs scoped observers/native calls, including its temporary guard against unwanted automatic post-export AI crop. The guard is not a license/security bypass. On-disk CapCut executables, DLLs and installation/configuration are not patched by this runner. A native export can update the **duplicate's** normal editor/export metadata; semantic timeline integrity is checked upstream. Originals are never passed to an upstream mutation command.
+## Build, source and attribution
 
-## Source and rebuild
+The dedicated workflow `.github/workflows/capcut-native-cli-portable.yml` builds `CapCut_Native_CLI_Export.zip` on Windows, runs 30 runner tests, 7 unchanged upstream export regressions, starts the actual embedded launcher and tests a synthetic FFprobe fixture. It never installs CapCut. The source-only wrapper tests run with `python -B -m unittest discover -s capcut_native_cli_runner/tests -v` from repo root.
 
-`build_portable.py` runs on Windows with build-time Python/pip (GitHub Actions provides them), downloads official CPython embeddable 3.11.9, installs Frida **17.23.3** and retains its distribution licenses. It starts and tests the actual embedded interpreter/package before creating the ZIP and SHA256SUMS. The Python archive digest is recorded in BUILD_MANIFEST. The original upstream requirements are preserved; `imageio-ffmpeg==0.6.0` is the upstream optional decoder fallback. This distribution selects the upstream-supported explicit `REVERSE_CLI_FFMPEG` configuration instead, so the imageio wheel and its bundled FFmpeg are not needed or redistributed.
+`build_portable.py` downloads official CPython embeddable 3.11.9 and records its received archive SHA-256, installs Frida 17.23.3 with distribution licenses, and creates the portable ZIP/checksum. The original upstream requirements are preserved. `imageio-ffmpeg==0.6.0` is its decoder fallback; this package selects the existing explicit `REVERSE_CLI_FFMPEG` configuration instead and does not redistribute that optional wheel or its media binary. No source-independent recreation of native calls has been added.
 
-Run source tests: `python -B -m unittest discover -s capcut_native_cli_runner/tests -v` from repo root. Upstream export guard/lifecycle regressions are also run in CI. No live CapCut export test is possible on a GitHub-hosted machine without the licensed supported installation and an active editable project.
-
-Third-party sources/licenses: `THIRD_PARTY_NOTICES.md`. Rollback: remove this independent folder/ZIP; existing Rajudesktop apps remain unchanged.
+Licenses/source links: `THIRD_PARTY_NOTICES.md`. Uninstall/rollback: remove this independent extracted package. Existing Rajudesktop applications remain untouched.

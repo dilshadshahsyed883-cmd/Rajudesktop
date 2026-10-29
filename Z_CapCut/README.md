@@ -25,6 +25,8 @@ This folder is a persistent engineering record named **Z CapCut**. It is **not**
 
 | Practical JSON experiments + resource catalog (27 Oct) | 9 Python checks PASS; synthetic 300-photo animation clone; actual owner draft copy-only test; 951 catalog entries, Pendulum 1 ID matched; CapCut runtime rendering pending | [08 — Practical findings](08_PRACTICAL_LAB_RESEARCH_20261027.md) and [catalog excerpt](08_CATALOG_EXCERPT_CANDIDATES_ONLY.json) |
 
+| CapCut Windows automation online evidence (29 Oct 2026) | Native internal Frida bridge at 9.5.0.4050, agent-driven GUI at 9.4.0.4015, experimental draft CLI/Windows Ctrl+E batch; evidence grades and 9.6 caveats | [09 — Automation evidence](09_CAPCUT_AUTOMATION_ONLINE_EVIDENCE_20261029.md) |
+
 ## Most useful verified facts
 
 - Timeline positions and clip lengths are in **microseconds** using segment `target_timerange`; trims are in `source_timerange`.

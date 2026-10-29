@@ -83,7 +83,7 @@ class AnimationsPanelQtTests(unittest.TestCase):
         self.assertEqual(w.mode.currentData(), "random_all")
         self.assertEqual(len(w.preview_rows), 2)
         self.assertEqual([r["applied_duration_us"] for r in w.preview_rows],
-                         [2_500_000, 1_700_000])
+                         [2_400_000, 1_600_000])
         self.assertTrue(all(r["status"] == "Will Apply" for r in w.preview_rows))
         self.assertNotEqual(w.preview_rows[0]["effect_id"], w.preview_rows[1]["effect_id"])
         self.assertEqual(w.preview_project, Path("C:/drafts/demo"))

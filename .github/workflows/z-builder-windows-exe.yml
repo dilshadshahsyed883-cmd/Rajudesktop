@@ -1,4 +1,4 @@
-name: Z Builder V6.2 — Windows standalone release
+name: Z Builder V6.3 — Windows standalone release
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
           node-version: '22'
       - name: Install requirements and PyInstaller
         run: python -m pip install -r requirements-z-builder.txt pyinstaller
-      - name: Run V6.2 regressions, native transitions and Scale engine
+      - name: Run V6.3 regressions, native transitions and Scale engine
         shell: pwsh
         run: |
           python -m unittest discover -s tests -p 'test_z_builder*.py' -v
@@ -56,7 +56,7 @@ jobs:
       - name: Build one-file Windows executable
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name Z_Builder_V6.2 `
+          pyinstaller --noconfirm --clean --onefile --windowed --name Z_Builder_V6.3 `
             --collect-all imageio_ffmpeg `
             --collect-submodules autocapcut_transitions_only `
             --collect-submodules capcut_visual_controls_standalone `
@@ -65,23 +65,23 @@ jobs:
             --add-binary '.runtime/node/node.exe;.runtime/node' `
             launch_z_builder.py
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
-          if ((Get-Item 'dist/Z_Builder_V6.2.exe').Length -lt 5MB) { throw 'Invalid EXE' }
+          if ((Get-Item 'dist/Z_Builder_V6.3.exe').Length -lt 5MB) { throw 'Invalid EXE' }
       - name: Launch frozen EXE and verify native project workflows
         shell: pwsh
         run: |
           $report = Join-Path $PWD 'dist/Windows-Smoke.json'
-          $p = Start-Process -FilePath 'dist/Z_Builder_V6.2.exe' -ArgumentList @('--self-test-report',"`"$report`"") -PassThru
+          $p = Start-Process -FilePath 'dist/Z_Builder_V6.3.exe' -ArgumentList @('--self-test-report',"`"$report`"") -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'Frozen EXE timed out' }
           if ($p.ExitCode -ne 0) { throw "Frozen EXE failed: $($p.ExitCode)" }
           $result = Get-Content $report -Raw | ConvertFrom-Json
           if (-not $result.passed) { throw 'Frozen workflow checks failed' }
           Get-Content $report
-          Get-FileHash -Algorithm SHA256 'dist/Z_Builder_V6.2.exe' | Format-List
+          Get-FileHash -Algorithm SHA256 'dist/Z_Builder_V6.3.exe' | Format-List
       - uses: actions/upload-artifact@v4
         with:
-          name: Z-Builder-V6.2-Windows-Verified
+          name: Z-Builder-V6.3-Windows-Verified
           path: |
-            dist/Z_Builder_V6.2.exe
+            dist/Z_Builder_V6.3.exe
             dist/Windows-Smoke.json
             dist/Windows-Smoke.png
           retention-days: 30
@@ -95,7 +95,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: Z-Builder-V6.2-Windows-Verified
+          name: Z-Builder-V6.3-Windows-Verified
           path: release
       - name: Publish verified EXE
         env:
@@ -104,9 +104,9 @@ jobs:
         run: |
           set -euo pipefail
           cd release
-          test -s Z_Builder_V6.2.exe
-          sha256sum Z_Builder_V6.2.exe > SHA256SUMS-v6.2.txt
-          gh release create z-builder-v6.2-transitions-scale-20261029 Z_Builder_V6.2.exe SHA256SUMS-v6.2.txt Windows-Smoke.json Windows-Smoke.png \
+          test -s Z_Builder_V6.3.exe
+          sha256sum Z_Builder_V6.3.exe > SHA256SUMS-v6.3.txt
+          gh release create z-builder-v6.3-separate-layers-20261029 Z_Builder_V6.3.exe SHA256SUMS-v6.3.txt Windows-Smoke.json Windows-Smoke.png \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-             --title "Z Builder V6.2 — Transitions and Scale" \
-             --notes "V6.2 retains CapCut Transitions and V2.1 Scale/Position/Blur with universal project selector; removes native Animation editor from UI and EXE. Existing animation records are preserved. Scene Plan, Media Summary, single-track exports, native backups, rollback and isolated frozen Windows EXE smoke remain. CapCut playback to be confirmed on installed version." --latest
+             --title "Z Builder V6.3 — Separate image and video layers" \
+             --notes "V6.3 retains CapCut Transitions and V2.1 Scale/Position/Blur with universal project selector; removes native Animation editor from UI and EXE. Existing animation records are preserved. Scene Plan, Media Summary, fixed images-lower/videos-upper exports, native backups, rollback and isolated frozen Windows EXE smoke remain. CapCut playback to be confirmed on installed version." --latest

@@ -41,7 +41,7 @@ class CompleteCapCutTests(unittest.TestCase):
             self.assertEqual('complete', json.loads((draft / 'Z_Builder_Project_Info.json').read_text())['mode'])
             content = json.loads((draft / 'draft_content.json').read_text())
             visual = [track for track in content['tracks'] if track['type'] == 'video']
-            self.assertEqual(['Images + Videos - Single Layer'], [track['name'] for track in visual])
+            self.assertEqual(['Images - Lower Layer'], [track['name'] for track in visual])
             self.assertEqual(485_000_000, visual[0]['segments'][0]['target_timerange']['duration'])
             self.assertFalse(any(t['type'] == 'audio' for t in content['tracks']))
             self.assertTrue(image.exists())

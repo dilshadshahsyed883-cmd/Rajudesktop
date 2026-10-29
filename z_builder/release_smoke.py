@@ -15,7 +15,7 @@ def run(report):
     QStandardPaths.setTestModeEnabled(True)
     app=QApplication.instance() or QApplication([])
     checks={}
-    with tempfile.TemporaryDirectory(prefix='zbuilder-v62-smoke-') as td:
+    with tempfile.TemporaryDirectory(prefix='zbuilder-v63-smoke-') as td:
         root=Path(td)
         # Block accidental enumeration of real project folders during startup.
         from unittest.mock import patch
@@ -29,13 +29,15 @@ def run(report):
         checks['bundled_node']=bool(find_node())
         media=root/'image.png'
         media.write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a+4sAAAAASUVORK5CYII='))
-        c=Catalog(root/'lib.sqlite');c.add(media)
-        p=load_plan('name=V62 Smoke\n00:00 --> 00:04 | image | image.png')
+        video=root/'clip.mp4'
+        video.write_bytes(b'writer smoke placeholder')
+        c=Catalog(root/'lib.sqlite');c.add(media);c.add(video)
+        p=load_plan('name=V63 Smoke\n00:00 --> 00:04 | image | image.png\n00:04 --> 00:06.500 | video | clip.mp4')
         assert not bind_media(p,c.assets())
         out=export_capcut(p,str(root/'drafts'),False,False,mode='complete')
         project=Path(out['parts'][0]['folder'])
         raw=json.loads((project/'draft_content.json').read_text())
-        checks['native_complete_export']=len([t for t in raw['tracks'] if t['type']=='video'])==1
+        checks['native_complete_export']=[t['name'] for t in raw['tracks'] if t['type']=='video']==['Images - Lower Layer','Videos - Upper Layer']
         ctl=win.capcut_controls_tab
         ctl.projects_root=project.parent;ctl.refresh()
         checks['shared_project']=ctl.selected_project()==project

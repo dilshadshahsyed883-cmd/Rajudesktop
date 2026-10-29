@@ -160,7 +160,7 @@ def stable_media_fingerprint(draft: dict) -> str:
 
 
 def make_plan(draft: dict, catalog: list[dict], selected: list[tuple[int, int]],
-              effect_id: str | None = None, *, mode: str = 'single', seed: int | None = None, fit_to_clip: bool = False) -> tuple[list[dict], list[str]]:
+              effect_id: str | None = None, *, mode: str = 'single', seed: int | None = None, fit_to_clip: bool = False, end_gap_us: int = 0) -> tuple[list[dict], list[str]]:
     """Build a read-only per-image plan. Random choices are frozen in returned rows.
 
     mode='single' uses effect_id; mode='random' uses all catalog entries passed
@@ -169,6 +169,8 @@ def make_plan(draft: dict, catalog: list[dict], selected: list[tuple[int, int]],
     """
     if mode not in ('single', 'random'):
         raise ValueError('Unknown animation selection mode')
+    if not isinstance(end_gap_us, int) or end_gap_us < 0 or (end_gap_us and not fit_to_clip):
+        raise ValueError('End gap must be a non-negative integer in fit-to-clip mode')
     options={x['effect_id']:x for x in catalog}
     if mode == 'single' and effect_id not in options:
         raise ValueError('Selected animation is not in saved-project catalog')
@@ -192,15 +194,16 @@ def make_plan(draft: dict, catalog: list[dict], selected: list[tuple[int, int]],
         else:
             pool=[e for e in available if e['effect_id'] != previous_id] if len(available)>1 else available
             entry=rng.choice(pool)
-        duration_us=int(clip['duration_us']) if fit_to_clip else min(int(clip['duration_us']), int(entry.get('duration_us') or 0))
-        row={**clip, 'fit_to_clip': fit_to_clip, 'effect_id':entry['effect_id'], 'animation':entry['name'],
+        duration_us=max(0, int(clip['duration_us']) - end_gap_us) if fit_to_clip else min(int(clip['duration_us']), int(entry.get('duration_us') or 0))
+        row={**clip, 'fit_to_clip': fit_to_clip, 'end_gap_us': end_gap_us if fit_to_clip else 0, 'effect_id':entry['effect_id'], 'animation':entry['name'],
              'native_duration_us':int(entry.get('duration_us') or 0), 'applied_duration_us':duration_us, '_preview_source_sha':source_sha}
         if duration_us <= 0 or int(entry.get('duration_us') or 0) <= 0:
-            row.update(status='Skipped',reason='Invalid/zero image or animation duration')
+            row.update(status='Skipped',reason='Image is too short for requested animation end gap' if fit_to_clip and int(clip['duration_us']) <= end_gap_us else 'Invalid/zero image or animation duration')
         elif not resource_is_available(entry):
             row.update(status='Missing',reason='Original CapCut effect cache resource is unavailable on this PC')
         else:
-            adjustment=' (shortened to fit image)' if duration_us < row['native_duration_us'] else ''
+            adjustment=(f' (ends {end_gap_us/1_000_000:g}s before image end)' if fit_to_clip and end_gap_us else
+                        ' (shortened to fit image)' if duration_us < row['native_duration_us'] else '')
             row.update(status='Will Apply',reason=f"{entry['name']} — {duration_us/1e6:g}s{adjustment}")
             previous_id=entry['effect_id']
         rows.append(row)
@@ -232,7 +235,10 @@ def apply_animation(draft: dict, catalog: list[dict], effect_id: str | None, row
         entry=options.get(chosen_id)
         if entry is None:
             raise ValueError('Animation disappeared from the available catalog')
-        duration_us=int(current_image['duration_us']) if row.get('fit_to_clip') else min(int(current_image['duration_us']),int(entry.get('duration_us') or 0))
+        end_gap_us=row.get('end_gap_us', 0)
+        if not isinstance(end_gap_us, int) or end_gap_us < 0 or (end_gap_us and not row.get('fit_to_clip')):
+            raise ValueError('Invalid animation end gap in preview')
+        duration_us=max(0, int(current_image['duration_us']) - end_gap_us) if row.get('fit_to_clip') else min(int(current_image['duration_us']),int(entry.get('duration_us') or 0))
         if duration_us<=0 or int(entry.get('duration_us') or 0)<=0 or duration_us != int(row.get('applied_duration_us',duration_us)):
             raise ValueError('Animation duration changed since preview')
         segment=output['tracks'][ti]['segments'][si]
@@ -314,7 +320,10 @@ def save(project: Path, catalog: list[dict], effect_id: str, preview: list[dict]
             if not current or any(current.get(k)!=row.get(k) for k in ('segment_id','material_id','duration_us')):
                 raise RuntimeError('Image clip changed since preview. Refresh first.')
             entry=catalog_by_id[row.get('effect_id',effect_id)]
-            expected_duration=current['duration_us'] if row.get('fit_to_clip') else min(current['duration_us'],int(entry.get('duration_us') or 0))
+            end_gap_us=row.get('end_gap_us', 0)
+            if not isinstance(end_gap_us, int) or end_gap_us < 0 or (end_gap_us and not row.get('fit_to_clip')):
+                raise RuntimeError('Invalid animation end gap in preview')
+            expected_duration=max(0, current['duration_us'] - end_gap_us) if row.get('fit_to_clip') else min(current['duration_us'],int(entry.get('duration_us') or 0))
             if expected_duration<=0 or int(entry.get('duration_us') or 0)<=0 or expected_duration!=row.get('applied_duration_us',expected_duration):
                 raise RuntimeError('Animation duration changed since preview; refresh first.')
         output,stats=apply_animation(source,catalog,effect_id,preview)

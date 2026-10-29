@@ -109,6 +109,20 @@ class V61Tests(unittest.TestCase):
             saved=json.loads((project/'draft_content.json').read_text())
             self.assertEqual(saved['materials']['material_animations'][-1]['animations'][0]['duration'],int(seconds*1e6))
 
+    def test_v61_animation_ui_uses_100ms_end_gap(self):
+        panel=self.widget.animations_tab
+        panel.selected_effect_ids={'A-animation'}
+        panel.image_table.selectAll()
+        project, rows, entries, effect_id, warnings=panel._plan()
+        self.assertEqual(project,self.root/'A')
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]['status'],'Will Apply')
+        self.assertEqual(rows[0]['end_gap_us'],100_000)
+        self.assertEqual(rows[0]['applied_duration_us'],2_400_000)
+        updated,stats=apply_animation(fixture('A',self.cache),entries,effect_id,rows)
+        self.assertEqual(updated['materials']['material_animations'][-1]['animations'][0]['duration'],2_400_000)
+        self.assertEqual(updated['tracks'][0]['segments'][1],fixture('A',self.cache)['tracks'][0]['segments'][1])
+
     def test_scale_reference_defaults_determinism_and_project_save(self):
         panel=self.widget.scale_tab;opts=panel.options()
         self.assertEqual((opts.video_scale_min,opts.video_scale_max,opts.video_y_min,opts.video_y_max),(150,170,-250,-190))

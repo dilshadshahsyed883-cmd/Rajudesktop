@@ -23,6 +23,9 @@ from autocapcut_animations_only.animation_engine import (
     list_projects, load_project, make_plan, resource_is_available, save,
 )
 
+# Combo runs from image start to 100ms before image end.
+COMBO_END_GAP_US = 100_000
+
 
 class CapcutAnimationsTab(QWidget):
     """Only photo clips are eligible; native video segments must remain intact."""
@@ -167,7 +170,7 @@ class CapcutAnimationsTab(QWidget):
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(85)
         layout.addWidget(self.log)
-        self.status = QLabel("Read-only until Apply. Short native animation records are fitted to the image duration.")
+        self.status = QLabel("Read-only until Apply. Combo animations fit each image minus 0.1s (100ms).")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
@@ -376,7 +379,8 @@ class CapcutAnimationsTab(QWidget):
             effect_id = None
             internal_mode = "random"
         rows, warnings_from_plan = make_plan(raw, available, selected, effect_id,
-                                            mode=internal_mode, seed=secrets.randbits(64), fit_to_clip=True)
+                                            mode=internal_mode, seed=secrets.randbits(64), fit_to_clip=True,
+                                            end_gap_us=COMBO_END_GAP_US)
         return project, rows, available, effect_id, warnings + warnings_from_plan
 
     def validate(self):
@@ -401,7 +405,7 @@ class CapcutAnimationsTab(QWidget):
         self.log.setPlainText("\n".join(warnings) if warnings else "Native animation IDs and local cache availability checked.")
         self.status.setText(
             f"Preview: {summary['Will Apply']} Will Apply · {summary['Missing']} Missing · {summary['Skipped']} Skipped. "
-            "Animation duration fits each original image duration; no clip retiming.")
+            "Animation duration = each image duration minus 0.1s (100ms); no clip retiming.")
         return True
 
     def apply(self):

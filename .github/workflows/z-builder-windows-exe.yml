@@ -111,7 +111,7 @@ jobs:
           cd release
           test -s Z_Builder_V6.1.exe
           sha256sum Z_Builder_V6.1.exe > SHA256SUMS-v6.1.txt
-          gh release create z-builder-v6.1-20261029 Z_Builder_V6.1.exe SHA256SUMS-v6.1.txt Windows-Smoke.json Windows-Smoke.png \
+          gh release create z-builder-v6.1.1-combo-100ms-20261029 Z_Builder_V6.1.exe SHA256SUMS-v6.1.txt Windows-Smoke.json Windows-Smoke.png \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Z Builder V6.1 — Universal CapCut Controls" \
-            --notes "Based on verified V6 commit eaba2a0. Shared project selector, project-local native resources, original V2.1 Scale/Position/Blur engine, one mixed visual track, full image-duration Combo timing, compact UI and Media Summary on Input. CapCut Summary button excluded. Windows regression tests and frozen EXE native export/Scale/backup smoke passed. Native CapCut playback requires acceptance on the installed CapCut version; In/Out animation retiming is unsupported and is not offered." --latest
+            --title "Z Builder V6.1.1 — Combo Animation 100ms End Gap" \
+            --notes "Based on verified V6 commit eaba2a0. Shared project selector, project-local native resources, original V2.1 Scale/Position/Blur engine, one mixed visual track, Combo timing set to each image duration minus 100ms, compact UI and Media Summary on Input. CapCut Summary button excluded. Windows regression tests and frozen EXE native export/Scale/backup smoke passed. Native CapCut playback requires acceptance on the installed CapCut version; In/Out animation retiming is unsupported and is not offered." --latest

@@ -1,0 +1,2 @@
+# Preserve byte-for-byte upstream source fingerprints on Windows checkout.
+vendor/upstream/** -text

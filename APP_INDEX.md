@@ -1,3 +1,7 @@
+## CapCut Native CLI Export — independent portable package (29 October 2026)
+
+Canonical source: [`capcut_native_cli_runner/`](capcut_native_cli_runner/). Unchanged MIT upstream `leileqiTHU/reverse-cli-anything` pinned at `4dba879b2592828d24d09c9e9805926cc67b56e8`; dedicated Windows workflow `capcut-native-cli-portable.yml` publishes `CapCut_Native_CLI_Export.zip` with embedded Python/Frida. **Native export is BLOCKED by the strict configuration-preservation requirement:** upstream invokes `saveExportPath`. The guarded launcher performs no native action. Additional upstream limits: exact CapCut **9.5.0.4050**, exact install path `D:/Apps/CapCut2/CapCut/9.5.0.4050`, D: draft root, pinned DLL hashes, maximum **300-second** total timeout. Owner **9.6.0.4097 is unsupported**. Package startup/error-path tests and synthetic FFprobe integration are distinct from **actual native export: NOT TESTED**. No batch/headless/overnight certification. Z Builder and existing apps untouched. [Source evidence and acceptance status](capcut_native_cli_runner/README.md).
+
 ## CapCut Desktop GUI Export — independent portable agent-assisted toolkit (29 October 2026)
 
 Canonical source: [`capcut_desktop_gui_runner/`](capcut_desktop_gui_runner/).

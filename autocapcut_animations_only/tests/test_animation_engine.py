@@ -147,6 +147,43 @@ class NewFeatureTests(unittest.TestCase):
         self.assertEqual(row['status'],'Skipped')
 
 
+    @patch('animation_engine.resource_is_available',return_value=True)
+    def test_fit_end_gap_100ms_stretches_or_shortens_native_combo_safely(self,unused):
+        for clip_duration in (2_500_000, 5_900_000, 10_000_000):
+            before=fixture()
+            before['tracks'][0]['segments'][2]['target_timerange']['duration']=clip_duration
+            selected=catalog()
+            rows,_=make_plan(before,selected,[(0,2)],'native1',
+                             fit_to_clip=True,end_gap_us=100_000)
+            self.assertEqual(rows[0]['status'],'Will Apply')
+            self.assertEqual(rows[0]['end_gap_us'],100_000)
+            self.assertEqual(rows[0]['applied_duration_us'],clip_duration-100_000)
+            after,stats=apply_animation(before,selected,'native1',rows)
+            self.assertEqual(stats['changed'],1)
+            combo=after['materials']['material_animations'][-1]['animations'][0]
+            self.assertEqual(combo['duration'],clip_duration-100_000)
+            self.assertEqual(combo['start'],0)
+            self.assertEqual(after['tracks'][0]['segments'][1],before['tracks'][0]['segments'][1])
+            self.assertEqual(stable_media_fingerprint(after),stable_media_fingerprint(before))
+            self.assertEqual(after['tracks'][0]['segments'][2]['target_timerange']['duration'],clip_duration)
+            updated_rows,_=make_plan(after,selected,[(0,2)],'native1',
+                                     fit_to_clip=True,end_gap_us=100_000)
+            after_again,repeat=apply_animation(after,selected,'native1',updated_rows)
+            self.assertEqual(repeat['changed'],0)
+            self.assertEqual(repeat['already_matching'],1)
+            self.assertEqual(after,after_again)
+
+    @patch('animation_engine.resource_is_available',return_value=True)
+    def test_100ms_gap_skips_short_images_and_rejects_negative_gap(self,unused):
+        for clip_duration in (0,90_000,100_000):
+            before=fixture()
+            before['tracks'][0]['segments'][2]['target_timerange']['duration']=clip_duration
+            rows,_=make_plan(before,catalog(),[(0,2)],'native1',fit_to_clip=True,end_gap_us=100_000)
+            self.assertEqual(rows[0]['status'],'Skipped')
+            self.assertEqual(apply_animation(before,catalog(),'native1',rows)[1]['changed'],0)
+        with self.assertRaisesRegex(ValueError,'End gap'):
+            make_plan(fixture(),catalog(),[(0,2)],'native1',fit_to_clip=True,end_gap_us=-100_000)
+
 class IntegrationTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.project=self.root/'Demo';self.project.mkdir()

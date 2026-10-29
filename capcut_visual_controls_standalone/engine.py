@@ -19,7 +19,10 @@ import sys
 import tempfile
 import uuid
 from typing import Any
-from fx_duration import inspect as inspect_fx
+try:
+    from .fx_duration import inspect as inspect_fx
+except ImportError:  # Standalone launch
+    from fx_duration import inspect as inspect_fx
 
 DRAFT_NAMES = ("draft_content.json", "draft_info.json")
 BLURS = {"Off": 0.0, "Level 1 — Light": 0.0625, "Level 2 — Medium": 0.375,

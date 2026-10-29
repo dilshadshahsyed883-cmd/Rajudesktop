@@ -20,10 +20,9 @@ from PySide6.QtWidgets import (
     QProgressBar, QTextEdit, QVBoxLayout, QWidget
 )
 
-from .core import Catalog, Plan, bind_media, kind_of, load_plan, open_project, preflight, save_project, timeline
+from .core import Catalog, Plan, bind_media, kind_of, load_plan, open_project, preflight, save_project, timeline, media_usage_issues
 from .capcut import export_capcut
 from .capcut_controls_tab import CapcutControlsTab
-from .effects_summary import scan_effects_summary
 
 
 class ExportWorker(QThread):
@@ -31,19 +30,17 @@ class ExportWorker(QThread):
     failed = Signal(str)
     progress = Signal(int, int, str)
 
-    def __init__(self, plan, drafts_root, launch, include_voice, mode, effect_roots=None):
+    def __init__(self, plan, drafts_root, launch, include_voice, mode):
         super().__init__()
         self.plan, self.drafts_root, self.launch = Plan.from_dict(plan.to_dict()), drafts_root, launch
         self.include_voice = include_voice
         self.mode = mode
-        self.effect_roots = effect_roots
 
     def run(self):
         try:
             self.succeeded.emit(export_capcut(
                 self.plan, self.drafts_root, self.launch, self.include_voice,
-                mode=self.mode, progress_callback=self.progress.emit,
-                effect_roots=self.effect_roots))
+                mode=self.mode, progress_callback=self.progress.emit))
         except Exception as e:
             self.failed.emit(str(e))
 
@@ -60,7 +57,7 @@ class Window(QMainWindow):
         self.worker = None
         self.assets = []
         self._last_export_sources = ()
-        self.setWindowTitle('Z Builder — Scene Plan · Media Library · CapCut')
+        self.setWindowTitle('Z Builder V6.1')
         self.resize(1440, 890)
         self.setMinimumSize(1060, 700)
         self._ui()
@@ -84,23 +81,23 @@ class Window(QMainWindow):
         base = QWidget()
         outer = QVBoxLayout(base)
         title = QLabel('Z BUILDER')
-        title.setStyleSheet('font-size:26px;font-weight:800;color:#eff6ff;')
+        title.setStyleSheet('font-size:20px;font-weight:800;color:#eff6ff;')
         outer.addWidget(title)
         subtitle = QLabel('1  Input: Scene Plan + Voice    →    2  Select Media + Build Timeline    →    3  Open in CapCut    |    4  CapCut Controls (Transitions / Animations)')
-        outer.addWidget(subtitle)
+        subtitle.hide()
         self.tabs = QTabWidget()
         outer.addWidget(self.tabs, 1)
         self.setCentralWidget(base)
         self.setStyleSheet('''
             QMainWindow,QWidget {background:#101a2b;color:#eaf2ff;font-size:13px;}
-            QTabBar::tab {background:#1c2a40;padding:12px 19px;border:1px solid #324761;}
+            QTabBar::tab {background:#1c2a40;padding:5px 12px;border:1px solid #324761;}
             QTabBar::tab:selected {background:#2669ad;color:white;}
-            QPushButton {background:#2467a4;border:1px solid #4b83ba;border-radius:5px;padding:8px 12px;color:white;font-weight:600;}
+            QPushButton {background:#2467a4;border:1px solid #4b83ba;border-radius:5px;padding:6px 10px;color:white;font-weight:600;}
             QPushButton:hover {background:#3386d0;}
             QProgressBar {background:#14243a;border:1px solid #405473;border-radius:5px;min-height:12px;}
             QProgressBar::chunk {background:#3394e7;border-radius:4px;}
             QTableWidget,QTextEdit,QLineEdit,QDoubleSpinBox {background:#14243a;color:#f6f9ff;border:1px solid #405473;}
-            QHeaderView::section {background:#253b57;color:#eef6ff;padding:7px;}
+            QHeaderView::section {background:#253b57;color:#eef6ff;padding:5px;}
             QTableWidget::item:selected {background:#235d9a;}
             QLabel {background:transparent;}
         ''')
@@ -164,18 +161,11 @@ class Window(QMainWindow):
         plan_tab = QWidget()
         pl = QVBoxLayout(plan_tab)
         b = QHBoxLayout()
-        b.addWidget(self._button('Import Simple Scene Plan TXT', self.import_plan))
+        b.addWidget(self._button('Import Scene Plan TXT', self.import_plan))
+        b.addWidget(self._button('Download Media Summary', self.save_summary))
         b.addWidget(self._button('Open Z Builder Project', self.open_project))
         b.addWidget(self._button('Save Z Builder Project', self.save_project))
         pl.addLayout(b)
-        effect_summary_row = QHBoxLayout()
-        self.effects_summary_button = self._button(
-            'Download CapCut Effects Summary .txt', self.save_effects_summary)
-        effect_summary_row.addWidget(self.effects_summary_button)
-        effects_hint = QLabel('Saved native Combo animations + transitions for ChatGPT Scene Plan creation.')
-        effects_hint.setWordWrap(True)
-        effect_summary_row.addWidget(effects_hint, 1)
-        pl.addLayout(effect_summary_row)
         self.plan_info = QLabel('Simple plan: 00:00 --> 00:02.500 | video | clip1.mp4 | in=0.500  (or  | image | photo.jpg)')
         voice_row = QHBoxLayout()
         voice_row.addWidget(self._button('Choose Voice MP3/WAV', self.choose_voice))
@@ -221,7 +211,7 @@ class Window(QMainWindow):
         path_row.addWidget(self._button('Browse', self.choose_drafts))
         form.addRow('CapCut drafts folder', path_row)
         ex.addLayout(form)
-        ex.addWidget(QLabel('Single visual track: images + videos in Scene Plan order. Export as 5–7 minute parts or one complete project.'))
+        ex.addWidget(QLabel('Fixed layers: IMAGES lower track / VIDEOS upper track. Export as 5–7 minute parts or one complete project.'))
         self.include_voice = QCheckBox('Include Voice in CapCut export (optional; OFF by default)')
         self.include_voice.setChecked(False)
         ex.addWidget(self.include_voice)
@@ -480,33 +470,6 @@ class Window(QMainWindow):
             Path(path).write_text(self.catalog.summary(), encoding='utf-8')
             self.statusBar().showMessage(f'Summary saved: {path}')
 
-    def save_effects_summary(self):
-        """Export the two CapCut Controls native catalogs for ChatGPT; never edit a draft."""
-        try:
-            report = scan_effects_summary(
-                self.transitions_tab.projects_root,
-                self.animations_tab.projects_root,
-            )
-        except (OSError, ValueError) as exc:
-            self.alert('Cannot scan CapCut effects', str(exc))
-            return
-        filename, _ = QFileDialog.getSaveFileName(
-            self, 'Download available animations and transitions',
-            str(self.home / 'CapCut_Effects_Summary.txt'), 'Text files (*.txt)')
-        if not filename:
-            return
-        try:
-            Path(filename).write_text(report, encoding='utf-8')
-        except OSError as exc:
-            self.alert('Could not save effects summary', str(exc))
-            return
-        self.statusBar().showMessage(f'CapCut effects summary saved: {filename}')
-        QMessageBox.information(
-            self, 'CapCut Effects Summary saved',
-            'Upload this TXT to ChatGPT along with Media Summary, SRT and the '
-            'Scene Plan Master Prompt. The report contains local native effect IDs, '
-            'not your PC paths.')
-
     def import_plan(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Import timed Scene Plan TXT', '', 'Scene Plan (*.txt *.ini)')
         if path:
@@ -618,7 +581,7 @@ class Window(QMainWindow):
         if not self.plan:
             self.alert('No plan', 'Import Scene Plan first')
             return
-        issues = preflight(self.plan)
+        issues = preflight(self.plan) + media_usage_issues(self.plan, self.catalog.assets())
         self.export_log.setPlainText('\n'.join(issues) if issues else 'PREFLIGHT PASS: all timeline slots have media and 4-second video trims fit. Voice is optional in CapCut.')
         self.tabs.setCurrentIndex(2)
 
@@ -628,7 +591,7 @@ class Window(QMainWindow):
         if not self.plan:
             self.alert('No plan', 'Import Scene Plan first')
             return
-        problems = preflight(self.plan)
+        problems = preflight(self.plan) + media_usage_issues(self.plan, self.catalog.assets())
         if problems:
             self.export_log.setPlainText('EXPORT BLOCKED\n' + '\n'.join(problems[:60]))
             return
@@ -642,12 +605,8 @@ class Window(QMainWindow):
         self.export_log.setPlainText(
             'Creating and verifying one complete CapCut draft...' if mode == 'complete'
             else 'Creating split CapCut drafts and verifying each part...')
-        # Catalogs come from the independently configured CapCut Controls roots.
-        effect_roots = (str(self.animations_tab.projects_root),
-                        str(self.transitions_tab.projects_root))
         self.worker = ExportWorker(self.plan, self.drafts.text().strip(),
-                                   self.launch.isChecked(), self.include_voice.isChecked(),
-                                   mode, effect_roots=effect_roots)
+                                   self.launch.isChecked(), self.include_voice.isChecked(), mode)
         self.worker.progress.connect(self.export_progress_update)
         self.worker.succeeded.connect(self.export_complete)
         self.worker.failed.connect(self.export_failed)
@@ -673,16 +632,12 @@ class Window(QMainWindow):
         parts = result.get('parts', [])
         lines = ['CREATED COMPLETE EDITABLE CAPCUT PROJECT' if is_complete
                  else f'CREATED {len(parts)} EDITABLE CAPCUT PARTS',
-                 'ONE VISUAL TRACK: images + videos in Scene Plan order (fixed)',
+                 'Images = lower track | Videos = upper track (fixed)',
                  'Voice included: ' + ('YES' if parts and parts[0]['voice_included'] else 'NO'), '']
         for part in parts:
             label = 'Complete project' if is_complete else f"Part {part['index']:02d}"
             lines.append(f"{label}: {part['original_start_seconds']:.3f}–{part['original_end_seconds']:.3f}s  "
                          f"({part['duration_seconds']:.3f}s)\n{part['folder']}")
-        native = result.get('native_effects', {})
-        if native.get('active'):
-            lines += [f"SCENE PLAN EFFECTS APPLIED: {native.get('animations', 0)} images animated, "
-                      f"{native.get('transitions', 0)} same-track transitions attached."]
         lines += ['\nOpen each draft in CapCut Home > Projects.',
                   'Compatibility: ' + str(compat.get('level', 'unknown')),
                   *compat.get('notes', []), '\nSCENE PLAN EXPORT NOTES',

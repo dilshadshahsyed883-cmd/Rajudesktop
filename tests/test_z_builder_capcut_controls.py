@@ -104,7 +104,7 @@ class AnimationsPanelQtTests(unittest.TestCase):
         self.assertIs(saved.call_args.args[3], frozen)
         self.assertEqual(w.preview_rows, [])
 
-    def test_controls_parent_has_exact_two_subtabs(self):
+    def test_controls_parent_has_exact_three_subtabs(self):
         with (mock.patch("z_builder.transitions_tab.list_projects", return_value=[]),
               mock.patch("z_builder.transitions_tab.harvest_transitions", return_value=[]),
               mock.patch("z_builder.transitions_tab.capcut_running", return_value=False),
@@ -113,8 +113,8 @@ class AnimationsPanelQtTests(unittest.TestCase):
               mock.patch("z_builder.animations_tab.capcut_running", return_value=False)):
             p = CapcutControlsTab()
         self.addCleanup(p.close)
-        self.assertEqual(p.sections.count(), 2)
-        self.assertEqual([p.sections.tabText(i) for i in range(2)], ["Transitions", "Animations"])
+        self.assertEqual(p.sections.count(), 3)
+        self.assertEqual([p.sections.tabText(i) for i in range(3)], ["Transitions", "Animations", "Scale"])
 
 
 if __name__ == "__main__":

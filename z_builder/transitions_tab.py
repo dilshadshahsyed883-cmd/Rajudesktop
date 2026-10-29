@@ -37,8 +37,9 @@ EXAMPLE_EDIT_FILE = json.dumps({
 class CapcutTransitionsTab(QWidget):
     """Standalone transition workflow inside the main window, not a new window."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, controller=None):
         super().__init__(parent)
+        self.controller = controller
         self.settings = QSettings("Rajudesktop", "Z Builder Capcut Transitions")
         saved_root = str(self.settings.value("projects_folder", "") or "").strip()
         self.projects_root = Path(saved_root) if saved_root else default_projects_dir()
@@ -84,34 +85,41 @@ class CapcutTransitionsTab(QWidget):
 
     def _build_ui(self):
         box = QVBoxLayout(self)
-        heading = QLabel("Capcut Transitions — independent native transition editor")
-        heading.setStyleSheet("font-size:17px;font-weight:700;color:#eef6ff;")
-        box.addWidget(heading)
-        description = QLabel(
-            "Apply transitions to an existing CapCut project. Videos, images, timing, "
-            "layers, motions and audio are never rebuilt. Close CapCut before applying.")
-        description.setWordWrap(True)
-        box.addWidget(description)
+        if self.controller is not None:
+            self.project_combo = self.controller.project_combo
+            self.capcut_state = self.controller.capcut_state
+            self.folder_edit = self.controller.folder_edit
+            self.summary = QLabel()
+            box.addWidget(self.summary)
+        else:
+            heading = QLabel("Capcut Transitions — independent native transition editor")
+            heading.setStyleSheet("font-size:17px;font-weight:700;color:#eef6ff;")
+            box.addWidget(heading)
+            description = QLabel(
+                "Apply transitions to an existing CapCut project. Videos, images, timing, "
+                "layers, motions and audio are never rebuilt. Close CapCut before applying.")
+            description.setWordWrap(True)
+            box.addWidget(description)
 
-        row = QHBoxLayout()
-        row.addWidget(QLabel("CapCut projects folder"))
-        self.folder_edit = QLineEdit(str(self.projects_root))
-        self.folder_edit.setReadOnly(True)
-        row.addWidget(self.folder_edit, 1)
-        row.addWidget(self._button("Change folder", self.choose_folder))
-        row.addWidget(self._button("Refresh", self.refresh))
-        box.addLayout(row)
+            row = QHBoxLayout()
+            row.addWidget(QLabel("CapCut projects folder"))
+            self.folder_edit = QLineEdit(str(self.projects_root))
+            self.folder_edit.setReadOnly(True)
+            row.addWidget(self.folder_edit, 1)
+            row.addWidget(self._button("Change folder", self.choose_folder))
+            row.addWidget(self._button("Refresh", self.refresh))
+            box.addLayout(row)
 
-        project_row = QHBoxLayout()
-        project_row.addWidget(QLabel("Project"))
-        self.project_combo = QComboBox()
-        self.project_combo.currentIndexChanged.connect(self._project_changed)
-        project_row.addWidget(self.project_combo, 1)
-        self.capcut_state = QLabel()
-        project_row.addWidget(self.capcut_state)
-        box.addLayout(project_row)
-        self.summary = QLabel("Choose a CapCut project to inspect eligible cuts.")
-        box.addWidget(self.summary)
+            project_row = QHBoxLayout()
+            project_row.addWidget(QLabel("Project"))
+            self.project_combo = QComboBox()
+            self.project_combo.currentIndexChanged.connect(self._project_changed)
+            project_row.addWidget(self.project_combo, 1)
+            self.capcut_state = QLabel()
+            project_row.addWidget(self.capcut_state)
+            box.addLayout(project_row)
+            self.summary = QLabel("Choose a CapCut project to inspect eligible cuts.")
+            box.addWidget(self.summary)
 
         self.sections = QTabWidget()
         box.addWidget(self.sections, 1)
@@ -223,10 +231,12 @@ class CapcutTransitionsTab(QWidget):
             self.refresh()
 
     def refresh(self):
+        if self.controller is not None:
+            return self.reload_project()
         current = self.project_combo.currentData()
         try:
             self.projects = list_projects(self.projects_root)
-            self.catalog = harvest_transitions(self.projects_root)
+            self.catalog = []
         except Exception as exc:
             QMessageBox.warning(self, "Cannot scan CapCut projects", str(exc))
             return
@@ -240,9 +250,7 @@ class CapcutTransitionsTab(QWidget):
                 self.project_combo.setCurrentIndex(index)
         self.project_combo.blockSignals(False)
         self._update_capcut_state()
-        self.invalidate()
-        self.draw_catalog()
-        self.refresh_summary()
+        self.reload_project()
         self.status.setText(f"{len(self.projects)} CapCut projects; {len(self.catalog)} native transition effects detected.")
 
     def _update_capcut_state(self):
@@ -251,8 +259,18 @@ class CapcutTransitionsTab(QWidget):
         self.capcut_state.setStyleSheet("color:#ffc2bd;" if running else "color:#a4e2ba;")
 
     def _project_changed(self, *_):
+        self.reload_project()
+
+    def reload_project(self):
         self.invalidate()
+        self.selected_ids.clear()
+        project = self.selected_project()
+        self.catalog = harvest_transitions(self.projects_root, project=project) if project else []
+        self.draw_catalog()
         self.refresh_summary()
+        if not self.catalog:
+            self.status.setText("No supported native resources in this project. In/Out animations are not supported; only native Combo records are editable.")
+
 
     def refresh_summary(self):
         project = self.selected_project()
@@ -366,6 +384,8 @@ class CapcutTransitionsTab(QWidget):
         self.status.setText("Example copied — replace transition names and effect IDs with actual catalog entries.")
 
     def _build_plan(self):
+        if self.controller is not None:
+            self.controller.require_current()
         path = self.selected_project()
         if path is None:
             raise ValueError("Select an existing CapCut project first.")
@@ -426,6 +446,8 @@ class CapcutTransitionsTab(QWidget):
         self.apply_button.setEnabled(False)
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
+            if self.controller is not None:
+                self.controller.require_current()
             result = save_transitions(self.preview_project, self.catalog, self.plan)
         except Exception as exc:
             QMessageBox.critical(self, "Transition application failed", str(exc))
@@ -442,6 +464,8 @@ class CapcutTransitionsTab(QWidget):
             message = f"Already matching on {result['already_matching']} selected cut(s). No changes written."
         self.status.setText(message.replace("\n", "  "))
         self.refresh_summary()
+        if self.controller is not None:
+            self.controller.load_selected(force=True)
         QMessageBox.information(self, "CapCut transitions", message)
 
     def open_backups(self):

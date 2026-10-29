@@ -111,10 +111,10 @@ def _combo(material: dict, trending_only: bool = True) -> dict | None:
     return item
 
 
-def harvest_animations(root: Path, trending_only: bool = True) -> list[dict]:
+def harvest_animations(root: Path, trending_only: bool = True, *, project: Path | None = None) -> list[dict]:
     """Collect ONLY group animations currently referenced by photo clips in saved drafts."""
     found = {}
-    for project in list_projects(root):
+    for project in ([project] if project is not None else list_projects(root)):
         try:
             raw,_,_=load_project(project)
             materials={m.get('id'):m for m in raw.get('materials',{}).get('material_animations',[]) if isinstance(m,dict)}
@@ -160,7 +160,7 @@ def stable_media_fingerprint(draft: dict) -> str:
 
 
 def make_plan(draft: dict, catalog: list[dict], selected: list[tuple[int, int]],
-              effect_id: str | None = None, *, mode: str = 'single', seed: int | None = None) -> tuple[list[dict], list[str]]:
+              effect_id: str | None = None, *, mode: str = 'single', seed: int | None = None, fit_to_clip: bool = False) -> tuple[list[dict], list[str]]:
     """Build a read-only per-image plan. Random choices are frozen in returned rows.
 
     mode='single' uses effect_id; mode='random' uses all catalog entries passed
@@ -192,8 +192,8 @@ def make_plan(draft: dict, catalog: list[dict], selected: list[tuple[int, int]],
         else:
             pool=[e for e in available if e['effect_id'] != previous_id] if len(available)>1 else available
             entry=rng.choice(pool)
-        duration_us=min(int(clip['duration_us']), int(entry.get('duration_us') or 0))
-        row={**clip, 'effect_id':entry['effect_id'], 'animation':entry['name'],
+        duration_us=int(clip['duration_us']) if fit_to_clip else min(int(clip['duration_us']), int(entry.get('duration_us') or 0))
+        row={**clip, 'fit_to_clip': fit_to_clip, 'effect_id':entry['effect_id'], 'animation':entry['name'],
              'native_duration_us':int(entry.get('duration_us') or 0), 'applied_duration_us':duration_us, '_preview_source_sha':source_sha}
         if duration_us <= 0:
             row.update(status='Skipped',reason='Invalid/zero image or animation duration')
@@ -232,7 +232,7 @@ def apply_animation(draft: dict, catalog: list[dict], effect_id: str | None, row
         entry=options.get(chosen_id)
         if entry is None:
             raise ValueError('Animation disappeared from the available catalog')
-        duration_us=min(int(current_image['duration_us']),int(entry.get('duration_us') or 0))
+        duration_us=int(current_image['duration_us']) if row.get('fit_to_clip') else min(int(current_image['duration_us']),int(entry.get('duration_us') or 0))
         if duration_us<=0 or duration_us != int(row.get('applied_duration_us',duration_us)):
             raise ValueError('Animation duration changed since preview')
         segment=output['tracks'][ti]['segments'][si]
@@ -312,7 +312,7 @@ def save(project: Path, catalog: list[dict], effect_id: str, preview: list[dict]
             if not current or any(current.get(k)!=row.get(k) for k in ('segment_id','material_id','duration_us')):
                 raise RuntimeError('Image clip changed since preview. Refresh first.')
             entry=catalog_by_id[row.get('effect_id',effect_id)]
-            expected_duration=min(current['duration_us'],int(entry.get('duration_us') or 0))
+            expected_duration=current['duration_us'] if row.get('fit_to_clip') else min(current['duration_us'],int(entry.get('duration_us') or 0))
             if expected_duration<=0 or expected_duration!=row.get('applied_duration_us',expected_duration):
                 raise RuntimeError('Animation duration changed since preview; refresh first.')
         output,stats=apply_animation(source,catalog,effect_id,preview)

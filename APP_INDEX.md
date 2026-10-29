@@ -2,6 +2,16 @@
 
 Canonical source: [`capcut_native_cli_runner/`](capcut_native_cli_runner/). Unchanged MIT upstream `leileqiTHU/reverse-cli-anything` pinned at `4dba879b2592828d24d09c9e9805926cc67b56e8`; dedicated Windows workflow `capcut-native-cli-portable.yml` publishes `CapCut_Native_CLI_Export.zip` with embedded Python/Frida. **Native export is BLOCKED by the strict configuration-preservation requirement:** upstream invokes `saveExportPath`. The guarded launcher performs no native action. Additional upstream limits: exact CapCut **9.5.0.4050**, exact install path `D:/Apps/CapCut2/CapCut/9.5.0.4050`, D: draft root, pinned DLL hashes, maximum **300-second** total timeout. Owner **9.6.0.4097 is unsupported**. Package startup/error-path tests and synthetic FFprobe integration are distinct from **actual native export: NOT TESTED**. No batch/headless/overnight certification. Z Builder and existing apps untouched. [Source evidence and acceptance status](capcut_native_cli_runner/README.md).
 
+## CapCut Desktop GUI Export — independent portable agent-assisted toolkit (29 October 2026)
+
+Canonical source: [`capcut_desktop_gui_runner/`](capcut_desktop_gui_runner/).
+Unmodified MIT upstream cc.py/draft_inspect.py, original export procedure, embedded Windows
+Python ZIP, version gate and MP4/audio verification. **External visual agent/operator required**;
+not a standalone unattended exporter. Baseline 9.4.0.4015; owner 9.6.0.4097 input blocked pending
+fresh acceptance. Actual CapCut GUI export/overnight batch NOT TESTED. Dedicated workflow:
+[`capcut-desktop-gui-export.yml`](.github/workflows/capcut-desktop-gui-export.yml).
+Z Builder and existing application folders unchanged.
+
 ## CapCut Controls Studio — independent Windows app (29 October 2026)
 
 Canonical source: `capcut_controls_studio/` on main. Extracted from Z Builder V6.1 (`dfb39f8`) with its native Transitions, Combo Animations and Scale/Position/Blur engines. AutoCapCut-inspired compact dark UI, one project selector/Refresh, background processing and guarded per-project saves. Effects/filters excluded. Z Builder source, engines and releases are unchanged. Windows workflow builds and launches `CapCut_Controls_Studio.exe` before publishing. Source/provenance, exact UI references, tests and limitations: `capcut_controls_studio/README.md`.

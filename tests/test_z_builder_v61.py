@@ -127,6 +127,27 @@ class V61Tests(unittest.TestCase):
         self.assertEqual((self.root/'B/draft_content.json').read_bytes(),before)
         self.assertEqual(load_project(self.root/'A')[0]['tracks'][0]['segments'][1]['target_timerange'],raw['tracks'][0]['segments'][1]['target_timerange'])
 
+    def test_failed_multifile_scale_save_restores_originals(self):
+        import capcut_visual_controls_standalone.engine as engine
+        project=self.root/'A'
+        mirror=project/'Timelines'/'active';mirror.mkdir(parents=True)
+        top=project/'draft_content.json'
+        active=mirror/'draft_content.json';active.write_bytes(top.read_bytes())
+        (project/'Timelines'/'project.json').write_text(json.dumps({'main_timeline_id':'active'}))
+        originals={p:p.read_bytes() for p in [top,active]}
+        actual_atomic=engine._atomic
+        calls=[]
+        def fail_once(path,data):
+            calls.append(path)
+            if len(calls)==2:raise OSError('simulated second-file write failure')
+            actual_atomic(path,data)
+        with patch.object(engine,'_atomic',side_effect=fail_once):
+            with self.assertRaisesRegex(OSError,'simulated'):
+                save_project(project,self.widget.scale_tab.options())
+        self.assertEqual({p:p.read_bytes() for p in originals},originals)
+        self.assertFalse((project/'.visual_controls_test.lock').exists())
+        self.assertTrue(list((project/'.visual_controls_backups').glob('*/manifest.json')))
+
     def test_input_has_media_summary_without_capcut_summary(self):
         from z_builder.ui import Window
         win=Window();self.addCleanup(win.close)

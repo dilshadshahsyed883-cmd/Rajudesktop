@@ -260,7 +260,7 @@ class CapcutAnimationsTab(QWidget):
                     ]
                     for col, value in enumerate(vals):
                         self.image_table.setItem(r, col, QTableWidgetItem(str(value)))
-                self.summary.setText(f"{len(self.images)} photos eligible · all video clips excluded · {len(warnings)} draft warnings")
+                self.summary.setText(f"{len(self.images)} photos eligible · Combo only; In/Out retiming unsupported · {len(warnings)} warnings")
             except Exception as exc:
                 self.summary.setText(f"Cannot read project: {exc}")
         else:

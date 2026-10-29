@@ -95,8 +95,10 @@ class V61Tests(unittest.TestCase):
         self.assertTrue(result['saved'])
         new=json.loads((project/'draft_content.json').read_text())
         self.assertEqual(new['materials']['material_animations'],old['materials']['material_animations'])
-        self.assertEqual(new['tracks'][0]['segments'][0]['extra_material_refs'],
-                         old['tracks'][0]['segments'][0]['extra_material_refs'])
+        # Scale may add a canvas material reference; all original native
+        # transition and animation references must stay present and unmodified.
+        for material_ref in old['tracks'][0]['segments'][0]['extra_material_refs']:
+            self.assertIn(material_ref, new['tracks'][0]['segments'][0]['extra_material_refs'])
 
     def test_scale_reference_defaults_determinism_and_project_save(self):
         panel=self.widget.scale_tab;opts=panel.options()

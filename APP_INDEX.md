@@ -1,3 +1,7 @@
+## Z Builder V6.1 — 29 October 2026
+
+Canonical source: `z_builder/` on main; exact V6 base `eaba2a0`. Windows release workflow publishes `Z_Builder_V6.1.exe` after real frozen startup/native export checks. Universal project controls, project-specific native resources and Scale tab are integrated. Same-track images/videos and full-duration native Combo records are enabled. First-page CapCut Summary button is excluded; Media Summary remains. Details and limitations: `Z_BUILDER.md`. Superseded V7–V9 Scene Plan extensions are retained under `archive/z_builder_v9` and historical releases.
+
 # Rajudesktop — App Directory (main)
 
 **Canonical branch:** [main](https://github.com/dilshadshahsyed883-cmd/Rajudesktop/tree/main)  

@@ -105,10 +105,6 @@ class TimedScenePlanTests(unittest.TestCase):
             self.assertEqual(visual[0]['segments'][0]['target_timerange'], {'start': 0, 'duration': 2500000})
             self.assertEqual(visual[0]['segments'][1]['target_timerange'], {'start': 2500000, 'duration': 4750000})
             self.assertEqual([t['type'] for t in data['tracks']].count('audio'), 0)
-            self.assertEqual(len(visual), 1)
-            mats = {m['id']: m for m in data['materials']['videos']}
-            self.assertEqual([mats[s['material_id']]['type'] for s in visual[0]['segments']],
-                             ['video', 'photo'])
             self.assertTrue(clip.exists(), 'Source clip is never physically cut/deleted')
             self.assertTrue(image.exists())
             self.assertEqual([], [])

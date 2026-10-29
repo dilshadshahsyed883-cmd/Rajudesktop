@@ -256,8 +256,6 @@ class Shot:
     warning: str = ''
     start_seconds: float = -1.0  # -1 means legacy sequential V25 timeline
     source_in_seconds: float = 0.0  # non-destructive trim of original 4-second video
-    native_combo: str = ''  # native Combo preset: none, random_saved, id:<resource_id>, or exact name
-    native_transition_after: str = ''  # native same-track cut transition after shot
 
 
 @dataclass
@@ -372,9 +370,7 @@ def load_plan(text: str) -> Plan:
         shots.append(Shot(section, name, kind, kv.get('library_keyword', ''),
                           kv.get('pexels_primary_keyword', ''), duration,
                           kv.get('narration', ''), kv.get('animation', 'none'),
-                          kv.get('motion', 'none'), kv.get('transition_out', 'hard_cut'),
-                           native_combo=kv.get('native_combo', ''),
-                           native_transition_after=kv.get('native_transition_after', '')))
+                          kv.get('motion', 'none'), kv.get('transition_out', 'hard_cut')))
     if not shots:
         raise ValueError('Director V25 plan contains no [INTRO.SHOT_XX] or [SCENE_NNN.SHOT_XX]')
     return Plan(p.get('name', 'Z Builder Project'), mode, w, h, fps, shots, blocks, warnings)
@@ -418,15 +414,9 @@ def load_simple_plan(text: str) -> Plan:
     names/tags. Rows must be gapless and begin at zero to protect voice sync.
     """
     options = {'name': 'Z Builder Project', 'aspect_ratio': '16:9',
-               'resolution': '1080p', 'fps': '30',
-               'combo_default': 'none', 'transition_default': 'none',
-               'combo_seed': '42', 'transition_seed': '43',
-               'transition_duration': '0.5'}
+               'resolution': '1080p', 'fps': '30'}
     names = {'project': 'name', 'name': 'name', 'aspect': 'aspect_ratio',
-             'aspect_ratio': 'aspect_ratio', 'resolution': 'resolution', 'fps': 'fps',
-             'combo_default': 'combo_default', 'transition_default': 'transition_default',
-             'combo_seed': 'combo_seed', 'transition_seed': 'transition_seed',
-             'transition_duration': 'transition_duration'}
+             'aspect_ratio': 'aspect_ratio', 'resolution': 'resolution', 'fps': 'fps'}
     row_pattern = re.compile(r'^(.*?)\s*-->\s*(.*?)\s*\|\s*(image|video)\s*\|\s*([^|]+)(.*)$', re.I)
     shots = []
     prev = 0.0
@@ -458,7 +448,7 @@ def load_simple_plan(text: str) -> Plan:
             if '=' not in part:
                 raise ValueError(f'Line {line_no}: expected option key=value, found {part}')
             k, v = (p.strip() for p in part.split('=', 1))
-            if k.casefold() not in {'in', 'text', 'combo', 'transition_after'}:
+            if k.casefold() not in {'in', 'text'}:
                 raise ValueError(f'Line {line_no}: unknown media option {k}')
             extras[k.casefold()] = v
         target = target.strip()
@@ -477,9 +467,7 @@ def load_simple_plan(text: str) -> Plan:
             raise ValueError(f'Line {line_no}: in= applies only to videos')
         shots.append(Shot(f'SCENE_{len(shots)+1:03d}.SHOT_01', name, kind.casefold(),
                           keyword, '', round(stop-start, 3), extras.get('text', ''),
-                          start_seconds=start, source_in_seconds=in_sec,
-                           native_combo=extras.get('combo', ''),
-                           native_transition_after=extras.get('transition_after', '')))
+                          start_seconds=start, source_in_seconds=in_sec))
         prev = stop
     if not shots:
         raise ValueError('Scene Plan has no timed shots')
@@ -496,15 +484,14 @@ def load_simple_plan(text: str) -> Plan:
     if aspect == '9:16':
         width, height = height, width
     return Plan(options['name'], 'library_only', width, height, fps, shots,
-                sections={'_FORMAT': {'type': 'simple_timed_v1'},
-                           'CAPCUT_EFFECTS': {key: options[key] for key in
-                               ('combo_default', 'transition_default', 'combo_seed', 'transition_seed', 'transition_duration')}})
+                sections={'_FORMAT': {'type': 'simple_timed_v1'}})
 
 
 def bind_media(plan: Plan, assets: list[dict]) -> list[str]:
     """Exact filename has priority, no fabricated IDs, no Pexels silent substitution."""
     issues = []
-    available = [a for a in assets if a['approved'] and a['exists']]
+    available = [a for a in assets if a['approved'] and a['exists']
+                 and not (a['kind'] == 'video' and int(a.get('export_count', 0)) > 0)]
     lookup = {}
     for a in available:
         lookup.setdefault(a['filename'].casefold(), []).append(a)
@@ -527,9 +514,11 @@ def bind_media(plan: Plan, assets: list[dict]) -> list[str]:
                 if common and common == len(tokens):
                     scored.append((common, asset))
             if scored:
-                scored.sort(key=lambda x: (-x[0], x[1]['filename'].casefold(), x[1]['id']))
+                scored.sort(key=lambda x: (int(x[1].get('export_count', 0)) > 0, -x[0], x[1]['filename'].casefold(), x[1]['id']))
                 best = scored[0][0]
-                ties = [asset for score, asset in scored if score == best]
+                first_used = int(scored[0][1].get('export_count', 0)) > 0
+                ties = [asset for score, asset in scored if score == best
+                        and (int(asset.get('export_count', 0)) > 0) == first_used]
                 if len(ties) == 1:
                     selected = ties[0]
                 else:
@@ -562,7 +551,17 @@ def preflight(plan: Plan) -> list[str]:
     cursor = 0.0
     if not plan.shots:
         issues.append('No scene shots')
+    previous_kind = None
+    videos_seen = set()
     for start, end, shot in timeline(plan):
+        if shot.media_type == 'video':
+            if previous_kind == 'video':
+                issues.append(f'{shot.section}: consecutive videos are forbidden; insert an image')
+            path_key = str(Path(shot.assigned_path).resolve()) if shot.assigned_path else ''
+            if path_key and path_key in videos_seen:
+                issues.append(f'{shot.section}: a video cannot be reused in the same plan')
+            videos_seen.add(path_key)
+        previous_kind = shot.media_type
         if abs(start - cursor) > TIMING_EPSILON:
             issues.append(f'{shot.section}: timeline gap/overlap at {start}s (expected {cursor}s)')
         cursor = end
@@ -605,3 +604,12 @@ def write_timeline_csv(plan: Plan, filename: str | Path):
                              shot.source_in_seconds if shot.media_type == 'video' else 0,
                              round(shot.source_in_seconds + shot.duration, 3) if shot.media_type == 'video' else '',
                              shot.assigned_path, shot.source, shot.narration])
+
+
+def media_usage_issues(plan: Plan, assets: list[dict]) -> list[str]:
+    """Check persisted verified-export usage even after manual assignments/reopening."""
+    used = {str(Path(a['path']).resolve()) for a in assets
+            if a['kind'] == 'video' and int(a.get('export_count', 0)) > 0}
+    return [f'{shot.section}: previously exported video cannot be reused'
+            for shot in plan.shots if shot.media_type == 'video' and shot.assigned_path
+            and str(Path(shot.assigned_path).resolve()) in used]

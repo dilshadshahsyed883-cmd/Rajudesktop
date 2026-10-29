@@ -98,14 +98,19 @@ def load_project(project: Path) -> tuple[dict, Path, list[Path], list[str]]:
     return source, (mirror or main), [main] + ([mirror] if mirror else []), warnings
 
 
-def harvest_transitions(root: Path) -> list[dict]:
+def harvest_transitions(root: Path, *, project: Path | None = None) -> list[dict]:
     by_id: dict[str, dict] = {}
-    for project in list_projects(root):
+    scoped = project is not None
+    for project in ([project] if scoped else list_projects(root)):
         try:
             obj, _, _, _ = load_project(project)
             transitions = obj.get("materials", {}).get("transitions", [])
+            linked = {ref for t in obj.get("tracks", []) if t.get("type") == "video"
+                      for s in t.get("segments", []) for ref in s.get("extra_material_refs", [])}
             for t in transitions:
                 if not isinstance(t, dict):
+                    continue
+                if scoped and t.get("id") not in linked:
                     continue
                 effect = t.get("effect_id")
                 if not isinstance(effect, str) or not effect:

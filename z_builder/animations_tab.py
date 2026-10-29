@@ -27,8 +27,9 @@ from autocapcut_animations_only.animation_engine import (
 class CapcutAnimationsTab(QWidget):
     """Only photo clips are eligible; native video segments must remain intact."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, controller=None):
         super().__init__(parent)
+        self.controller = controller
         self.settings = QSettings("Rajudesktop", "Z Builder Capcut Animations")
         saved = str(self.settings.value("projects_folder", "") or "").strip()
         self.projects_root = Path(saved) if saved else default_projects_dir()
@@ -75,32 +76,39 @@ class CapcutAnimationsTab(QWidget):
 
     def _draw_ui(self):
         layout = QVBoxLayout(self)
-        title = QLabel("CapCut Animations — existing native Combo → Trending presets")
-        title.setStyleSheet("font-size:17px;font-weight:700;color:#eef6ff;")
-        layout.addWidget(title)
-        hint = QLabel("Only PHOTO clips. Animations already used in saved CapCut projects; videos, audio, transitions, timings and layers are preserved.")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        if self.controller is not None:
+            self.project_combo = self.controller.project_combo
+            self.capcut_state = self.controller.capcut_state
+            self.folder = self.controller.folder_edit
+            self.summary = QLabel()
+            layout.addWidget(self.summary)
+        else:
+            title = QLabel("CapCut Animations — existing native Combo → Trending presets")
+            title.setStyleSheet("font-size:17px;font-weight:700;color:#eef6ff;")
+            layout.addWidget(title)
+            hint = QLabel("Only PHOTO clips. Animations already used in saved CapCut projects; videos, audio, transitions, timings and layers are preserved.")
+            hint.setWordWrap(True)
+            layout.addWidget(hint)
 
-        folder = QHBoxLayout()
-        folder.addWidget(QLabel("CapCut projects folder"))
-        self.folder = QLineEdit(str(self.projects_root))
-        self.folder.setReadOnly(True)
-        folder.addWidget(self.folder, 1)
-        folder.addWidget(self._button("Change folder", self.choose_folder))
-        folder.addWidget(self._button("Refresh", self.refresh))
-        layout.addLayout(folder)
+            folder = QHBoxLayout()
+            folder.addWidget(QLabel("CapCut projects folder"))
+            self.folder = QLineEdit(str(self.projects_root))
+            self.folder.setReadOnly(True)
+            folder.addWidget(self.folder, 1)
+            folder.addWidget(self._button("Change folder", self.choose_folder))
+            folder.addWidget(self._button("Refresh", self.refresh))
+            layout.addLayout(folder)
 
-        project = QHBoxLayout()
-        project.addWidget(QLabel("Project"))
-        self.project_combo = QComboBox()
-        self.project_combo.currentIndexChanged.connect(self._project_changed)
-        project.addWidget(self.project_combo, 1)
-        self.capcut_state = QLabel()
-        project.addWidget(self.capcut_state)
-        layout.addLayout(project)
-        self.summary = QLabel("Choose a CapCut project.")
-        layout.addWidget(self.summary)
+            project = QHBoxLayout()
+            project.addWidget(QLabel("Project"))
+            self.project_combo = QComboBox()
+            self.project_combo.currentIndexChanged.connect(self._project_changed)
+            project.addWidget(self.project_combo, 1)
+            self.capcut_state = QLabel()
+            project.addWidget(self.capcut_state)
+            layout.addLayout(project)
+            self.summary = QLabel("Choose a CapCut project.")
+            layout.addWidget(self.summary)
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Apply mode"))
@@ -184,10 +192,12 @@ class CapcutAnimationsTab(QWidget):
             self.refresh()
 
     def refresh(self):
+        if self.controller is not None:
+            return self.reload_project()
         previous = self.project_combo.currentData()
         try:
             self.projects = list_projects(self.projects_root)
-            self.catalog = harvest_animations(self.projects_root, trending_only=True)
+            self.catalog = []
         except Exception as exc:
             QMessageBox.warning(self, "Cannot scan CapCut projects", str(exc))
             return
@@ -199,10 +209,8 @@ class CapcutAnimationsTab(QWidget):
         if index >= 0:
             self.project_combo.setCurrentIndex(index)
         self.project_combo.blockSignals(False)
-        self.invalidate()
         self._update_capcut_status()
-        self.draw_catalog()
-        self.refresh_images()
+        self.reload_project()
         self.status.setText(f"{len(self.projects)} projects · {len(self.catalog)} previously used Trending Combo animations detected.")
 
     def _update_capcut_status(self):
@@ -211,8 +219,18 @@ class CapcutAnimationsTab(QWidget):
         self.capcut_state.setStyleSheet("color:#ffc2bd;" if running else "color:#a4e2ba;")
 
     def _project_changed(self, *_):
+        self.reload_project()
+
+    def reload_project(self):
         self.invalidate()
+        self.selected_effect_ids.clear()
+        project = self.selected_project()
+        self.catalog = harvest_animations(self.projects_root, trending_only=False, project=project) if project else []
+        self.draw_catalog()
         self.refresh_images()
+        if not self.catalog:
+            self.status.setText("No supported native resources in this project. In/Out animations are not supported; only native Combo records are editable.")
+
 
     def refresh_images(self):
         self.images = []
@@ -242,7 +260,7 @@ class CapcutAnimationsTab(QWidget):
                     ]
                     for col, value in enumerate(vals):
                         self.image_table.setItem(r, col, QTableWidgetItem(str(value)))
-                self.summary.setText(f"{len(self.images)} photos eligible · all video clips excluded · {len(warnings)} draft warnings")
+                self.summary.setText(f"{len(self.images)} photos eligible · Combo only; In/Out retiming unsupported · {len(warnings)} warnings")
             except Exception as exc:
                 self.summary.setText(f"Cannot read project: {exc}")
         else:
@@ -332,6 +350,8 @@ class CapcutAnimationsTab(QWidget):
         return [(self.images[i]["track_index"], self.images[i]["segment_index"]) for i in indexes]
 
     def _plan(self):
+        if self.controller is not None:
+            self.controller.require_current()
         project = self.selected_project()
         if not project:
             raise ValueError("Choose a CapCut project.")
@@ -356,7 +376,7 @@ class CapcutAnimationsTab(QWidget):
             effect_id = None
             internal_mode = "random"
         rows, warnings_from_plan = make_plan(raw, available, selected, effect_id,
-                                            mode=internal_mode, seed=secrets.randbits(64))
+                                            mode=internal_mode, seed=secrets.randbits(64), fit_to_clip=True)
         return project, rows, available, effect_id, warnings + warnings_from_plan
 
     def validate(self):
@@ -405,6 +425,8 @@ class CapcutAnimationsTab(QWidget):
                                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
         try:
+            if self.controller is not None:
+                self.controller.require_current()
             result = save(self.preview_project, self.preview_catalog, self.preview_effect_id, self.preview_rows)
         except Exception as exc:
             QMessageBox.critical(self, "Animation apply failed", str(exc))
@@ -419,6 +441,8 @@ class CapcutAnimationsTab(QWidget):
         self.invalidate()
         self.refresh_images()
         self._update_capcut_status()
+        if self.controller is not None:
+            self.controller.load_selected(force=True)
 
     def open_backups(self):
         project = self.selected_project()

@@ -11,7 +11,7 @@ from engine import BLURS, Options, create_preview, default_root, list_projects, 
 class VisualApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("CapCut Visual Controls — Standalone Test v2")
+        self.title("CapCut Visual Controls — Standalone Test v2.1")
         self.geometry("1250x850")
         self.minsize(990, 700)
         self.configure(bg="#f3f5f8")
@@ -181,7 +181,7 @@ class VisualApp(tk.Tk):
         except Exception as e:
             messagebox.showerror("Projects folder", str(e))
 
-    def _options(self):
+    def _build_edit_options(self):
         v = {k: float(s.get()) for k, s in self.values.items() if k != "seed"}
         return Options(canvas_blur=self.blur_enabled.get(), blur_strength=BLURS[self.blur_level.get()],
                        video_scale=self.v_scale_enabled.get(), video_scale_min=v["v_scale_min"],
@@ -197,7 +197,7 @@ class VisualApp(tk.Tk):
         try:
             self._invalidate()
             project = Path(self.project.get())
-            opts = self._options()
+            opts = self._build_edit_options()
             source, files, warnings = load_project(project)
             updated, rows, counts = create_preview(source, opts)
             for child in self.tree.get_children(): self.tree.delete(child)
@@ -253,5 +253,16 @@ class VisualApp(tk.Tk):
 
 
 if __name__ == "__main__":
-    VisualApp().mainloop()
+    # Exercise real Tk widgets in both Python and the frozen Windows EXE on CI.
+    # This fails if any future app helper shadows a tkinter reserved method.
+    import sys
+    if "--self-test" in sys.argv:
+        app = VisualApp()
+        app.withdraw()
+        app.update_idletasks()
+        if not app.winfo_exists():
+            raise RuntimeError("CapCut Visual Controls window failed to initialize")
+        app.destroy()
+    else:
+        VisualApp().mainloop()
 

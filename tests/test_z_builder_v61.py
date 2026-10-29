@@ -22,7 +22,7 @@ def fixture(tag, cache):
         'canvases':[], 'transitions':[{'id':'t','effect_id':tag+'-transition','name':tag+' Fade'}],
         'material_animations':[{'id':'a','type':'sticker_animation','animations':[
           {'id':tag+'-animation','resource_id':tag+'-animation','type':'group',
-           'category_name':'Trending','name':tag+' Combo','duration':3000000,'path':str(cache)}]}]},
+           'category_name':'Trending','name':tag+' Combo','start':500000,'duration':3000000,'path':str(cache)}]}]},
       'tracks':[{'type':'video','segments':[
         {'id':'s1','material_id':'p','extra_material_refs':['t','a'],
          'target_timerange':{'start':0,'duration':2500000},'source_timerange':{'start':0,'duration':2500000},
@@ -99,6 +99,7 @@ class V61Tests(unittest.TestCase):
             updated,_=apply_animation(raw,entries,'A-animation',rows)
             mat=updated['materials']['material_animations'][-1]
             self.assertEqual(mat['animations'][0]['duration'],int(seconds*1e6))
+            self.assertEqual(mat['animations'][0]['start'],0)
             self.assertEqual(updated['tracks'][0]['segments'][0]['target_timerange'],raw['tracks'][0]['segments'][0]['target_timerange'])
             self.assertEqual(updated['tracks'][0]['segments'][1],raw['tracks'][0]['segments'][1])
             project=self.root/('duration_'+str(seconds));project.mkdir()

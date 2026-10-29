@@ -195,7 +195,7 @@ def make_plan(draft: dict, catalog: list[dict], selected: list[tuple[int, int]],
         duration_us=int(clip['duration_us']) if fit_to_clip else min(int(clip['duration_us']), int(entry.get('duration_us') or 0))
         row={**clip, 'fit_to_clip': fit_to_clip, 'effect_id':entry['effect_id'], 'animation':entry['name'],
              'native_duration_us':int(entry.get('duration_us') or 0), 'applied_duration_us':duration_us, '_preview_source_sha':source_sha}
-        if duration_us <= 0:
+        if duration_us <= 0 or int(entry.get('duration_us') or 0) <= 0:
             row.update(status='Skipped',reason='Invalid/zero image or animation duration')
         elif not resource_is_available(entry):
             row.update(status='Missing',reason='Original CapCut effect cache resource is unavailable on this PC')
@@ -233,7 +233,7 @@ def apply_animation(draft: dict, catalog: list[dict], effect_id: str | None, row
         if entry is None:
             raise ValueError('Animation disappeared from the available catalog')
         duration_us=int(current_image['duration_us']) if row.get('fit_to_clip') else min(int(current_image['duration_us']),int(entry.get('duration_us') or 0))
-        if duration_us<=0 or duration_us != int(row.get('applied_duration_us',duration_us)):
+        if duration_us<=0 or int(entry.get('duration_us') or 0)<=0 or duration_us != int(row.get('applied_duration_us',duration_us)):
             raise ValueError('Animation duration changed since preview')
         segment=output['tracks'][ti]['segments'][si]
         refs=segment.get('extra_material_refs') or []
@@ -242,7 +242,7 @@ def apply_animation(draft: dict, catalog: list[dict], effect_id: str | None, row
         linked=[r for r in refs if _combo(old_by_id.get(r),trending_only=False)]
         if len(linked)==1:
             current=_combo(old_by_id[linked[0]],trending_only=False)
-            if str(current.get('resource_id') or current.get('id'))==chosen_id and int(current.get('duration') or 0)==duration_us:
+            if str(current.get('resource_id') or current.get('id'))==chosen_id and int(current.get('duration') or 0)==duration_us and (not row.get('fit_to_clip') or int(current.get('start') or 0)==0):
                 already+=1;continue
         clone=copy.deepcopy(entry['template'])
         clone['id']=str(uuid.uuid4()).upper()
@@ -253,6 +253,8 @@ def apply_animation(draft: dict, catalog: list[dict], effect_id: str | None, row
         if native is None:
             raise ValueError('Invalid native Combo material template')
         native['duration']=duration_us
+        if row.get('fit_to_clip') and 'start' in native:
+            native['start']=0
         mats.append(clone)
         segment['extra_material_refs']=[r for r in refs if r not in linked]+[clone['id']]
         count+=1
@@ -313,7 +315,7 @@ def save(project: Path, catalog: list[dict], effect_id: str, preview: list[dict]
                 raise RuntimeError('Image clip changed since preview. Refresh first.')
             entry=catalog_by_id[row.get('effect_id',effect_id)]
             expected_duration=current['duration_us'] if row.get('fit_to_clip') else min(current['duration_us'],int(entry.get('duration_us') or 0))
-            if expected_duration<=0 or expected_duration!=row.get('applied_duration_us',expected_duration):
+            if expected_duration<=0 or int(entry.get('duration_us') or 0)<=0 or expected_duration!=row.get('applied_duration_us',expected_duration):
                 raise RuntimeError('Animation duration changed since preview; refresh first.')
         output,stats=apply_animation(source,catalog,effect_id,preview)
         if not stats['changed']:

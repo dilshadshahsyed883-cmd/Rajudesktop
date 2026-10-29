@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from capcut_native_export.core import (
     WindowInfo,GuardError,FileObserver,click_location,ensure_export,
-    ensure_single_editor,export_project,is_editor,is_export,
+    ensure_single_editor,ensure_matching_dialog,export_project,is_editor,is_export,
     mp4_has_metadata,parse_audit_window_dict,target_file,
 )
 
@@ -57,6 +57,19 @@ class NativeControlTests(unittest.TestCase):
             path.write_bytes(box(b"ftyp",b"isom0000")+box(b"mdat",b"frame"))
             self.assertFalse(mp4_has_metadata(path))
             self.assertFalse(obs.poll()[0])
+
+    def test_manual_export_dialog_without_visible_editor(self):
+        dialog=self.dialog()
+        self.assertEqual(ensure_matching_dialog([dialog],"1028"),dialog)
+        with self.assertRaisesRegex(GuardError,"mismatch"):
+            ensure_matching_dialog([dialog],"Other")
+        with self.assertRaisesRegex(GuardError,"different processes"):
+            ensure_matching_dialog([dialog],"1028",WindowInfo(123,2,"CapCut","MainWindow_QMLTYPE_2",0,0,1900,1000))
+        with self.assertRaises(GuardError):
+            ensure_matching_dialog([],"1028")
+
+    def test_smaller_editor_window(self):
+        self.assertTrue(is_editor(WindowInfo(11,10996,"CapCut - 1028","MainWindow_QMLTYPE_998",0,0,800,500)))
 
 if __name__=="__main__":
     unittest.main()

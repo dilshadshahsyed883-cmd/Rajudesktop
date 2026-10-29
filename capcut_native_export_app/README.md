@@ -1,6 +1,23 @@
-# CapCut Native Export Controller (Windows) — v0.1.0
+# CapCut Native Export Controller (Windows) — v0.2.0
 
 **Separate from Z Builder.** This app drives CapCut's real Windows export UI and then verifies that the generated MP4 container is complete. It never edits CapCut drafts, effects, captions, or timelines. Developed from the Windows CapCut 9.6.0.4097 audit of 2026-10-28; no claim of live Windows success until a real test is returned.
+
+## v0.2 recovery from "Expected exactly one visible CapCut editor window; found 0"
+
+The uploaded CapCutNativeExport.log confirms discovery failure. The native
+CapCut editor may be present even when Qt window detection fails. v0.2
+accepts the process name CapCut.exe if executable path inspection is blocked,
+and recognizes smaller/dynamically titled native Qt editor windows.
+
+If Detect still fails, manually click Export in CapCut. Keep the native
+Export-1028 dialog open. Return to this app, use Detect CapCut,
+then Preview export click. Check the red click marker, verify CapCut output
+name and folder, then start guarded native Export. It requires one real
+CapCut.exe native export dialog for the exact project. A second dialog,
+wrong name or cross-PID mismatch still blocks the export.
+
+If detection fails, the app saves diagnostic_windows.json next to native_export.log
+under the user's LOCALAPPDATA/CapCutNativeExport folder.
 
 ## Run
 

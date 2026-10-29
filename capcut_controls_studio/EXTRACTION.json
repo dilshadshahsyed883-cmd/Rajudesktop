@@ -1,0 +1,41 @@
+{
+  "source_commit": "dfb39f8ab3e0457d54317de31cc2a6e80e16023e",
+  "files": [
+    {
+      "source": "autocapcut_transitions_only/transition_engine.py",
+      "source_sha256": "d16a02c23efb7eeaba3388c159384e742dd18764679bb6e7e25d1fb97ab98fa4",
+      "extracted": "engines/transitions.py",
+      "adaptation": "unchanged engine"
+    },
+    {
+      "source": "autocapcut_animations_only/animation_engine.py",
+      "source_sha256": "4d23d2cdf33143ff60db38d35b08977752d0650b85d8e65a6f3a5605b83e2eec",
+      "extracted": "engines/animations.py",
+      "adaptation": "unchanged engine"
+    },
+    {
+      "source": "capcut_visual_controls_standalone/engine.py",
+      "source_sha256": "6a484bd49637058cc94037cd6328fa6bec72aa5804f0efc284ad78195d9d21b7",
+      "extracted": "engines/visual.py",
+      "adaptation": "exclude filter/effect wiring only"
+    },
+    {
+      "source": "z_builder/transitions_tab.py",
+      "source_sha256": "6cde850671a1d5f9133e71692bf0242f871b53c8dd80fd29f8745b69689d856b",
+      "extracted": "transitions_tab.py",
+      "adaptation": "independent imports/settings; async previews/saves and shared snapshot loading; existing controls retained"
+    },
+    {
+      "source": "z_builder/animations_tab.py",
+      "source_sha256": "886363c71475d4f5e1ea352d6264ff2b2865b16440ee6800f97c984d2edb4d4c",
+      "extracted": "animations_tab.py",
+      "adaptation": "independent imports/settings; async previews/saves and shared snapshot loading; existing controls retained"
+    },
+    {
+      "source": "z_builder/scale_tab.py",
+      "source_sha256": "48be22d37a4ead802d058ff17bd75219c432158e1ca91b01c7bcc7166a8fca47",
+      "extracted": "scale_tab.py",
+      "adaptation": "independent imports/settings; async previews/saves and shared snapshot loading; existing controls retained"
+    }
+  ]
+}

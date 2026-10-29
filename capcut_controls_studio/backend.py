@@ -44,7 +44,8 @@ def load_snapshot(project):
 
 
 def scan(root, selected=None, previous=None):
-    projects = visual.list_projects(root)
+    root = Path(root).resolve()
+    projects = [path.resolve(strict=True) for path in visual.list_projects(root)]
     selected = Path(selected).resolve() if selected else None
     if selected not in projects:
         selected = projects[0] if projects else None

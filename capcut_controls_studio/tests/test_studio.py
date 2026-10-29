@@ -144,7 +144,7 @@ class NativeTests(unittest.TestCase):
         base=Path(__file__).parents[1]
         for p in base.rglob('*.py'):
             if 'tests' in p.parts:continue
-            tree=ast.parse(p.read_text())
+            tree=ast.parse(p.read_text(encoding='utf8'))
             imports=[n.module or '' for n in ast.walk(tree) if isinstance(n,ast.ImportFrom)]
             self.assertFalse(any(x.startswith(('z_builder','autocapcut_','capcut_visual_controls_standalone')) or 'fx_duration' in x for x in imports),p)
 
@@ -167,7 +167,7 @@ class WindowTests(unittest.TestCase):
         QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
 
     def select(self,project):
-        self.w.project_combo.setCurrentIndex(self.w.project_combo.findData(str(project)))
+        self.w.project_combo.setCurrentIndex(self.w.project_combo.findData(str(project.resolve())))
         wait_idle(self.w)
 
     def test_shared_controls_sync_no_extra_refresh_or_filters(self):

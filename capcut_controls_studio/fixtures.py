@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def create_project(root, name='Demo Project'):
-    root=Path(root)
+    root=Path(root).resolve()
     project=root/name
     timeline=project/'Timelines'/'active'
     timeline.mkdir(parents=True)

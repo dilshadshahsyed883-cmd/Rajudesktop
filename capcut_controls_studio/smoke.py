@@ -37,7 +37,7 @@ def run(report):
             window=Window(root=root,autostart=False)
             window.resize(1020,840);window.show()
             window.refresh();wait_idle(window)
-            window.project_combo.setCurrentIndex(window.project_combo.findData(str(project)))
+            window.project_combo.setCurrentIndex(window.project_combo.findData(str(project.resolve())))
             wait_idle(window)
             checks['startup_three_tabs']=window.sections.count()==3
             checks['project_detection']=window.project_combo.count()==2 and window.snapshot.project==project

@@ -1,3 +1,13 @@
+## CapCut Desktop GUI Export — independent portable agent-assisted toolkit (29 October 2026)
+
+Canonical source: [`capcut_desktop_gui_runner/`](capcut_desktop_gui_runner/).
+Unmodified MIT upstream cc.py/draft_inspect.py, original export procedure, embedded Windows
+Python ZIP, version gate and MP4/audio verification. **External visual agent/operator required**;
+not a standalone unattended exporter. Baseline 9.4.0.4015; owner 9.6.0.4097 input blocked pending
+fresh acceptance. Actual CapCut GUI export/overnight batch NOT TESTED. Dedicated workflow:
+[`capcut-desktop-gui-export.yml`](.github/workflows/capcut-desktop-gui-export.yml).
+Z Builder and existing application folders unchanged.
+
 ## CapCut Controls Studio — independent Windows app (29 October 2026)
 
 Canonical source: `capcut_controls_studio/` on main. Extracted from Z Builder V6.1 (`dfb39f8`) with its native Transitions, Combo Animations and Scale/Position/Blur engines. AutoCapCut-inspired compact dark UI, one project selector/Refresh, background processing and guarded per-project saves. Effects/filters excluded. Z Builder source, engines and releases are unchanged. Windows workflow builds and launches `CapCut_Controls_Studio.exe` before publishing. Source/provenance, exact UI references, tests and limitations: `capcut_controls_studio/README.md`.

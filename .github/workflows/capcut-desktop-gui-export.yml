@@ -1,0 +1,55 @@
+name: CapCut Desktop GUI Export portable ZIP
+on:
+  pull_request:
+    paths: ['capcut_desktop_gui_runner/**', '.github/workflows/capcut-desktop-gui-export.yml']
+  push:
+    branches: [main]
+    paths: ['capcut_desktop_gui_runner/**', '.github/workflows/capcut-desktop-gui-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Tests and provenance
+        shell: pwsh
+        run: |
+          python -m pip install imageio-ffmpeg==0.6.0
+          if ($LASTEXITCODE -ne 0) { throw 'Test media dependency failed' }
+          python -m unittest discover -s capcut_desktop_gui_runner/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+      - name: Build and launch portable Windows package
+        shell: pwsh
+        run: ./capcut_desktop_gui_runner/build_windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CapCut_Desktop_GUI_Export
+          path: |
+            capcut_desktop_gui_runner/build/CapCut_Desktop_GUI_Export.zip
+            capcut_desktop_gui_runner/build/CapCut_Desktop_GUI_Export/WINDOWS_SMOKE.json
+          if-no-files-found: error
+          retention-days: 90
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CapCut_Desktop_GUI_Export
+          path: package
+      - name: Publish ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="capcut-desktop-gui-export-${GITHUB_SHA:0:8}"
+          gh release create "$tag" package/CapCut_Desktop_GUI_Export.zip package/WINDOWS_SMOKE.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'CapCut GUI Export — portable agent-assisted toolkit' --notes 'Portable CPython + unchanged upstream Windows controls. External visual agent/operator required. Real CapCut export and unattended overnight batch NOT TESTED. Owner 9.6 input blocked pending fresh acceptance. Read README and AGENT_EXPORT before use.'

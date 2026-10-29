@@ -1,0 +1,2 @@
+# Preserve exact upstream bytes on Windows (provenance hashes must match).
+upstream/** -text

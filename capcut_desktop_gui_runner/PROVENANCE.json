@@ -1,0 +1,17 @@
+{
+  "source": "https://github.com/yousefomar724/capcut-desktop-editing",
+  "commit": "00600a8bc4a10b8ab8d146adcdb3432e15ceeb76",
+  "license": "MIT, Copyright (c) 2026 Yousef Omar",
+  "upstream_files_unmodified": true,
+  "files": {
+    "LICENSE": "55b2582d44ad18e0a5a7d27b0773bc0d3f8233954ef35e3329042af580021ae2",
+    "README.md": "fcb8324d841e34341cb781959d70f3f5330bc2b8d3a15d6a3a5f7eb23deba03a",
+    "references/accessibility-controls.md": "7fe1e30fbfad77b2bb8c3688099ff51e4e67c069301995fecea7c2485a3d8b0e",
+    "references/keyboard-shortcuts.md": "50f61be3b6cd487673a18245c51c7527307f8d125d14cd96bd4f9af77075a6ee",
+    "scripts/setup.ps1": "9381738547996a96b925e1571c22e41950d83bc6f67acb615b0315554f73d315",
+    "scripts/draft_inspect.py": "b0d596de66800f7ea884b46818b56d700272de24cee482d9c61e3c993597e1d6",
+    "scripts/cc.py": "4924b9c2c60116796ba74a0a449eda701d9acc60736c30c535cd77b7a807c128",
+    "references/capabilities/15-export.md": "a626ac9176e947bd78745e292ba3940793c71e27ab5495fb34c0a779efb43bd0"
+  },
+  "history": "Original history retained in upstream repository; pinned commit above. No claim that new wrapper is an upstream export engine."
+}

@@ -473,7 +473,7 @@ class SongStudio(tk.Tk):
         for item in self.store.channels():
             self.channels_list.insert("", "end", iid=item["id"],
                          values=(item["name"], item["group_name"], item["id"]))
-        if hasattr(self, "group_combo"):
+        if hasattr(self, "group_combo") and self.group_combo.winfo_exists():
             self.group_combo.configure(values=self.store.groups())
 
     def _connect(self):

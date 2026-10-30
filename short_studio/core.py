@@ -92,8 +92,12 @@ class Store:
                     file_path TEXT NOT NULL, profile_id TEXT NOT NULL, state TEXT NOT NULL,
                     youtube_id TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
                     attempted TEXT NOT NULL, updated TEXT NOT NULL,
+                    publish_day_pkt TEXT NOT NULL DEFAULT '',
                     UNIQUE(channel_id, sha256));
                 """)
+            columns = {r[1] for r in conn.execute('PRAGMA table_info(uploads)')}
+            if 'publish_day_pkt' not in columns:
+                conn.execute("ALTER TABLE uploads ADD COLUMN publish_day_pkt TEXT NOT NULL DEFAULT ''")
             conn.execute("INSERT OR IGNORE INTO folders(name) VALUES('Default')")
         (self.media / "Default").mkdir(exist_ok=True)
 

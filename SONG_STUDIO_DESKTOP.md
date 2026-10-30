@@ -13,10 +13,10 @@ One Windows executable: `SongStudio.exe`. Source: `song_studio/`, launcher `laun
 ## Privacy, migration and boundaries
 
 - App data: `%LOCALAPPDATA%\\SongStudio` (SQLite, settings, tokens); media: `Documents\\Song Studio` by default.
-- Google OAuth client JSON is picked **on the user's PC** and not bundled, hardcoded or uploaded to GitHub. Tokens are stored locally; do not share the token folder.
+- Google OAuth client JSON or a compatible pre-authorized Google token JSON is selected **on the user's PC** and not bundled, hardcoded or uploaded to GitHub. Tokens are stored locally; do not share the token folder.
 - Output source files and videos are retained after uploading, until manually deleted.
 - This is an **independent local application**, not the web Song Studio frontend or its VPS session. It does not read VPS users, queues, Google Drive folders, cloud profiles or existing OAuth tokens automatically.
-- Current desktop v1 has manual profile metadata and explicit upload batches. Google Sheets Sync, timed auto scheduling, import of old VPS account tokens, full VPS job/Drive integration and auto cleanup are **not** replicated; they require separate authenticated desktop integrations. Do not describe it as exact VPS parity.
+- Current desktop v1 has manual profile metadata and explicit upload batches. Google Sheets Sync, timed auto scheduling, automatic import of old VPS account tokens, full VPS job/Drive integration and auto cleanup are **not** replicated; they require separate authenticated desktop integrations. Do not describe it as exact VPS parity.
 - Download only audio and imagery you are authorized to use. Windows Defender/SmartScreen may show an unsigned EXE warning.
 
 ## Build

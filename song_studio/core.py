@@ -85,6 +85,20 @@ def ffmpeg_filter(resolution: str = "1080p", fit: str = "Fit") -> str:
             f"[blur][front]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p")
 
 
+def studio_ffmpeg_paths():
+    """Allow source-tree Windows tests and frozen EXE to locate the same bundled tools."""
+    ffmpeg, ffprobe = ffmpeg_paths()
+    if ffmpeg and ffprobe:
+        return ffmpeg, ffprobe
+    local = Path(__file__).resolve().parent / "bin"
+    executable = ".exe" if os.name == "nt" else ""
+    video = local / ("ffmpeg" + executable)
+    probe = local / ("ffprobe" + executable)
+    if video.is_file() and probe.is_file():
+        return str(video), str(probe)
+    return ffmpeg, ffprobe
+
+
 def render(image: Path, audio: Path, output: Path, resolution="1080p", fit="Fit",
            quality="Balanced", progress=None, cancelled=None) -> Path:
     image, audio, output = Path(image), Path(audio), Path(output)
@@ -96,7 +110,7 @@ def render(image: Path, audio: Path, output: Path, resolution="1080p", fit="Fit"
         raise ValueError("Audio and image filenames must match exactly")
     if output.exists():
         raise FileExistsError("MP4 already exists; will not overwrite a prior render")
-    ffmpeg, ffprobe = ffmpeg_paths()
+    ffmpeg, ffprobe = studio_ffmpeg_paths()
     if not ffmpeg or not ffprobe:
         raise RuntimeError("Bundled FFmpeg / FFprobe not found")
     crf = {"High": "18", "Balanced": "20", "Compact": "23"}.get(quality)

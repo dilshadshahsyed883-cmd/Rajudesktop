@@ -178,11 +178,10 @@ def find_publish_slot(store: Store, profile: dict, channel_id: str,
     with store.db() as conn:
         for _ in range(365):
             day = candidate.date().isoformat()
-            # Slot bookkeeping in uploads.error is intentionally avoided.
-            # Uploaded remote IDs with a stored scheduled day are tracked in attempted.
+            # Reserve future publish days before attempting the API.
+            # Uncertain uploads keep their slot until manually reconciled.
             existing = conn.execute("""SELECT COUNT(*) FROM uploads
-              WHERE channel_id=? AND state='uploaded'
-              AND substr(attempted,1,10)=?""", (channel_id, day)).fetchone()[0]
+              WHERE channel_id=? AND publish_day_pkt=?""", (channel_id, day)).fetchone()[0]
             if existing < int(profile["daily_limit"]):
                 return (candidate + timedelta(minutes=existing * 5)).astimezone(timezone.utc)
             candidate += timedelta(days=1)
@@ -243,13 +242,17 @@ def upload_pending(store: Store, progress: Callable[[str], None] = lambda _: Non
         try:
             api = load_authenticated_channel(token)
             publish_at = find_publish_slot(store, p, cid) if p["privacy"] == "public" else None
+            if publish_at is not None:
+                day = publish_at.astimezone(PKT).date().isoformat()
+                with store.db() as conn:
+                    conn.execute("UPDATE uploads SET publish_day_pkt=? WHERE id=?", (day, uid))
             video_id = _upload(api, path, p, publish_at, progress)
         except Exception as exc:
             with store.db() as conn:
                 conn.execute("UPDATE uploads SET state='uncertain',error=?,updated=? WHERE id=?",
                              (str(exc)[:600], utc_now(), uid))
             progress("Upload outcome uncertain. Inspect YouTube Studio: " + str(exc)[:150])
-            continue
+            break  # halt rather than repeatedly use a potentially invalid credential
         with store.db() as conn:
             conn.execute("UPDATE uploads SET state='uploaded',youtube_id=?,error='',updated=? WHERE id=?",
                          (video_id, utc_now(), uid))

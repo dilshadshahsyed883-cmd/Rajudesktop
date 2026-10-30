@@ -1,6 +1,8 @@
 """Offline Song Studio tests (no network, OAuth or YouTube uploads)."""
 from __future__ import annotations
 import tempfile
+import os
+from unittest.mock import patch
 import unittest
 from pathlib import Path
 
@@ -94,6 +96,25 @@ class DurableStoreTests(unittest.TestCase):
         self.assertEqual(rows["B"]["youtube_id"], "youtube_id_123")
         self.assertEqual(rows["B"]["thumbnail_done"], 0)
         self.assertEqual(rows["A"]["state"], "needs_review")
+
+
+class WindowsGuiSmoke(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows desktop UI requires a display")
+    def test_all_three_modules_open(self):
+        from song_studio.app import SongStudio
+        with tempfile.TemporaryDirectory() as root:
+            temp = Path(root)
+            store = StudioStore(temp / "state", temp / "media")
+            with patch("song_studio.app.StudioStore", return_value=store):
+                app = SongStudio()
+                try:
+                    for page in ("Dashboard", "Audio Downloader", "Song Maker",
+                                 "Song Uploader", "Settings"):
+                        with self.subTest(page=page):
+                            app.show(page)
+                            app.update_idletasks()
+                finally:
+                    app.destroy()
 
 
 if __name__ == "__main__":

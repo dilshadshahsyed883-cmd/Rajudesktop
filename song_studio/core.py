@@ -295,6 +295,35 @@ def authenticate(client_secrets: Path, tokens_dir: Path):
     return ident, channel["snippet"]["title"], dest
 
 
+def import_existing_token(saved_json: Path, tokens_dir: Path):
+    """Import an authorized-user JSON created by another Windows uploader.
+
+    This does not import pickles or bypass Google grants. The token is verified
+    against the actual selected YouTube channel before storing it locally.
+    """
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    saved_json = Path(saved_json)
+    if not saved_json.is_file() or saved_json.suffix.lower() != ".json":
+        raise ValueError("Choose a Google authorized-user token JSON")
+    creds = Credentials.from_authorized_user_file(str(saved_json))
+    if not creds.valid and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+    if not creds.valid:
+        raise ValueError("Token expired or missing grants; connect with OAuth")
+    service = build("youtube", "v3", credentials=creds, cache_discovery=False)
+    channels = service.channels().list(part="snippet", mine=True).execute().get("items", [])
+    if len(channels) != 1:
+        raise ValueError("Select a token belonging to one YouTube channel")
+    channel = channels[0]
+    dest = Path(tokens_dir) / (channel["id"] + ".json")
+    pending = dest.with_suffix(".tmp")
+    pending.write_text(creds.to_json(), encoding="utf-8")
+    os.replace(pending, dest)
+    return channel["id"], channel["snippet"]["title"], dest
+
+
 def credentials(token_file: Path):
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
@@ -331,6 +360,8 @@ def upload(studio: StudioStore, channel: dict, video: Path, thumbnail: Path | No
         raise ValueError("Invalid privacy")
     original = Path(thumbnail) if thumbnail else None
     if original is not None:
+        if original.stem.casefold() != video.stem.casefold():
+            raise ValueError("Thumbnail must match the exact source MP4 stem")
         if not original.is_file() or original.suffix.lower() != ".jpg" or not valid_jpeg(original):
             raise ValueError("Original JPEG thumbnail is missing")
         if original.stat().st_size > 2_000_000:

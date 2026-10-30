@@ -81,6 +81,17 @@ jobs:
           if (-not $ffmpeg -or -not $ffprobe) { throw 'FFmpeg tools missing' }
           Copy-Item $ffmpeg.FullName 'song_studio\bin\ffmpeg.exe'
           Copy-Item $ffprobe.FullName 'song_studio\bin\ffprobe.exe'
+      - name: Real offline MP3-image-to-MP4 integration smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force 'smoke' | Out-Null
+          & 'song_studio/bin/ffmpeg.exe' -hide_banner -loglevel error -f lavfi -i 'color=c=blue:s=640x360:d=1' -frames:v 1 -update 1 -y 'smoke/DemoSource1.jpg'
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic image generation failed' }
+          & 'song_studio/bin/ffmpeg.exe' -hide_banner -loglevel error -f lavfi -i 'sine=frequency=440:duration=1.25' -c:a pcm_s16le -y 'smoke/DemoSource1.wav'
+          if ($LASTEXITCODE -ne 0) { throw 'Synthetic audio generation failed' }
+          python -c "from pathlib import Path; from song_studio.core import render; p=Path('smoke'); render(p/'DemoSource1.jpg',p/'DemoSource1.wav',p/'DemoSource1.mp4','720p','Fit','Compact'); assert (p/'DemoSource1.mp4').stat().st_size > 1000"
+          if ($LASTEXITCODE -ne 0) { throw 'Song Maker real FFmpeg render smoke failed' }
       - name: Build portable single-file SongStudio.exe
         shell: pwsh
         run: |

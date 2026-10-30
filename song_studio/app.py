@@ -9,7 +9,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from .core import (APP_HOME, StudioStore, authenticate, credentials, download,
+from .core import (APP_HOME, StudioStore, authenticate, import_existing_token, credentials, download,
                    pairs, render, retry_thumbnail, source_identity, upload)
 
 
@@ -329,8 +329,8 @@ class SongStudio(tk.Tk):
         body = self._body(pane)
         self._line(body, lambda row: ttk.Button(row, text="+ Connect channel (OAuth)",
                      style="Primary.TButton", command=self._connect).pack(side="left"),
-                   lambda row: ttk.Label(row, text="Use your Google Cloud Desktop OAuth client JSON",
-                     style="Sub.TLabel").pack(side="left", padx=14))
+                   lambda row: ttk.Button(row, text="Import PC token JSON",
+                     command=self._import_token).pack(side="left", padx=10))
         self.channels_list = ttk.Treeview(body, columns=("name", "group", "id"),
                                           show="headings", height=4, selectmode="extended")
         for key, caption, width in [("name", "Channel", 200), ("group", "Group", 180),
@@ -489,6 +489,21 @@ class SongStudio(tk.Tk):
                 self.events.put(("refresh", "Song Uploader"))
             except Exception as exc:
                 self._log("Google OAuth failed: " + str(exc))
+        self._start(worker)
+
+    def _import_token(self):
+        path = filedialog.askopenfilename(title="Choose existing authorized-user token",
+                filetypes=[("Google token JSON", "*.json")], parent=self)
+        if not path:
+            return
+        def worker():
+            try:
+                channel_id, title, dest = import_existing_token(Path(path), self.store.tokens)
+                self.store.add_channel(channel_id, title, dest)
+                self._log("Imported local token: " + title + " [" + channel_id + "]")
+                self.events.put(("refresh", "Song Uploader"))
+            except Exception as exc:
+                self._log("Token import needs reconnection: " + str(exc))
         self._start(worker)
 
     def _assign_group(self):

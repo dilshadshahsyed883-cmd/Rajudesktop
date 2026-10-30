@@ -494,7 +494,7 @@ class SongStudio(tk.Tk):
                     desc = selected["description"].replace("{filename}", video.stem)
                     try:
                         video_id, thumb_ok = upload(
-                            self.store, channel, video, thumbnail if thumbnail.exists() else None,
+                            self.store, channel, video, thumbnail,
                             title, desc, selected["category"], selected["privacy"],
                             lambda x: self.events.put(("progress", x)))
                         self._log(channel["name"] + ": uploaded " + video.name +

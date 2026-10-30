@@ -109,7 +109,7 @@ class WindowsGuiSmoke(unittest.TestCase):
                 app = SongStudio()
                 try:
                     for page in ("Dashboard", "Audio Downloader", "Song Maker",
-                                 "Song Uploader", "Settings"):
+                                 "Song Uploader", "Settings", "Song Uploader"):
                         with self.subTest(page=page):
                             app.show(page)
                             app.update_idletasks()

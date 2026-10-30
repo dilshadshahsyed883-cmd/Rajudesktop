@@ -1,1 +1,1 @@
-"""Independent Windows Short Studio (Short Maker + Short Uploader)."""\n
+"""Independent Windows Short Studio (Short Maker + Short Uploader)."""

@@ -6,6 +6,7 @@ song_audio_downloader; Google OAuth tokens always remain on this Windows PC.
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 import json
 import os
 import re
@@ -182,12 +183,17 @@ class StudioStore:
                     PRIMARY KEY(channel_id, identity));
             """)
 
+    @contextmanager
     def connect(self):
         db = sqlite3.connect(self.db, timeout=20)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("PRAGMA busy_timeout=20000")
-        return db
+        try:
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("PRAGMA busy_timeout=20000")
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def folders(self) -> list[str]:
         return sorted([p.name for p in self.media.iterdir() if p.is_dir() and not p.is_symlink()],

@@ -316,8 +316,16 @@ class SongStudio(tk.Tk):
         self._start(worker)
 
     def _page_song_uploader(self):
-        self._intro("Song Uploader", "Connect your YouTube channels, assign groups, save metadata profiles and upload rendered MP4s.")
-        pane = self._panel()
+        self._intro("Song Uploader", "Connect your channels, manage group profiles and review upload receipts.")
+        tabs = ttk.Notebook(self.content)
+        tabs.pack(fill="both", expand=True)
+        channel_page = ttk.Frame(tabs, padding=4)
+        profile_page = ttk.Frame(tabs, padding=4)
+        history_page = ttk.Frame(tabs, padding=4)
+        tabs.add(profile_page, text="  Profiles & Upload  ")
+        tabs.add(channel_page, text="  Channels & Groups  ")
+        tabs.add(history_page, text="  Upload History  ")
+        pane = self._panel(channel_page)
         body = self._body(pane)
         self._line(body, lambda row: ttk.Button(row, text="+ Connect channel (OAuth)",
                      style="Primary.TButton", command=self._connect).pack(side="left"),
@@ -337,7 +345,7 @@ class SongStudio(tk.Tk):
                    lambda row: ttk.Button(row, text="Assign", command=self._assign_group).pack(
                        side="left", padx=8))
         self._refresh_channels()
-        pane = self._panel()
+        pane = self._panel(profile_page)
         body = self._body(pane)
         ttk.Label(body, text="Uploader profile", font=("Segoe UI", 12, "bold")).pack(
             anchor="w", pady=(0, 12))
@@ -386,6 +394,64 @@ class SongStudio(tk.Tk):
                            bg="#f7f9fd", relief="flat")
         self.log.pack(fill="both", expand=True)
         self._reload_profiles()
+        self._upload_history(history_page)
+
+    def _upload_history(self, parent):
+        pane = self._panel(parent)
+        body = self._body(pane)
+        ttk.Label(body, text="Per-channel upload receipts", font=("Segoe UI", 12, "bold")).pack(
+            anchor="w", pady=(0, 10))
+        ttk.Label(body, text="Unknown outcomes are held for manual verification to avoid duplicate uploads. "
+                  "MP4s are never automatically removed.", style="Sub.TLabel",
+                  wraplength=740).pack(anchor="w", pady=(0, 12))
+        self.receipt_list = ttk.Treeview(body, columns=("channel", "source", "state",
+                                              "youtube_id", "thumbnail"), show="headings",
+                                         height=12, selectmode="browse")
+        for key, caption, width in [("channel", "Channel", 130), ("source", "Source identity", 235),
+                                    ("state", "Upload status", 135), ("youtube_id", "YouTube ID", 145),
+                                    ("thumbnail", "Original JPEG", 130)]:
+            self.receipt_list.heading(key, text=caption)
+            self.receipt_list.column(key, width=width)
+        self.receipt_list.pack(fill="both", expand=True, pady=(0, 12))
+        self.receipt_rows = {}
+        for index, record in enumerate(self.store.ledger()):
+            key = str(index)
+            self.receipt_rows[key] = record
+            self.receipt_list.insert("", "end", iid=key,
+                values=(record["channel_id"], record["identity"], record["state"],
+                        record["youtube_id"], "Applied" if record["thumbnail_done"] else "Pending"))
+        ttk.Button(body, text="Retry JPEG on confirmed upload",
+                   command=self._retry_thumbnail).pack(anchor="w")
+
+    def _retry_thumbnail(self):
+        selection = self.receipt_list.selection()
+        if not selection:
+            messagebox.showinfo("Choose receipt", "Select an uploaded video with a pending thumbnail.")
+            return
+        row = self.receipt_rows[selection[0]]
+        if row["state"] != "uploaded" or not row["youtube_id"] or row["thumbnail_done"]:
+            messagebox.showinfo("No retry", "Only uploaded videos with a pending JPEG can be updated.")
+            return
+        image_name = filedialog.askopenfilename(
+            title="Choose original matching JPEG", filetypes=[("JPEG files", "*.jpg")], parent=self)
+        if not image_name:
+            return
+        image = Path(image_name)
+        if row["identity"].startswith("videoid:") and image.stem != row["identity"].split(":", 1)[1]:
+            messagebox.showerror("Mismatch", "Original JPG filename does not match the YouTube source Video ID.")
+            return
+        channel = next((x for x in self.store.channels() if x["id"] == row["channel_id"]), None)
+        if not channel:
+            messagebox.showerror("Missing channel", "Reconnect the channel before retrying.")
+            return
+        def worker():
+            try:
+                retry_thumbnail(self.store, channel, row["identity"], image)
+                self._log("Original thumbnail restored on " + row["youtube_id"])
+                self.events.put(("refresh", "Song Uploader"))
+            except Exception as exc:
+                self._log("Thumbnail retry failed: " + str(exc))
+        self._start(worker)
 
     def _group_widget(self, row):
         self.group_combo = ttk.Combobox(row, textvariable=self.profile_group,

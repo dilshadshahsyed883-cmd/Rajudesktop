@@ -7,6 +7,14 @@
 
 This folder is a persistent engineering record named **Z CapCut**. It is **not** a claim that CapCut automation, project generation, or all premium effects have been implemented.
 
+## Current CapCut source archive (1 Nov 2026)
+
+- **Current archive:** [capcut 9.6.0.4097.zip — private Google Drive](https://drive.google.com/file/d/1IsgH2HbuelpJsicsAuPjNMi_BBuSk-OT/view?usp=drivesdk) (955,669,438 bytes; title/version and size verified from Drive metadata).
+- **Source-of-truth and access:** Google Drive **owner-only** at verification; the contents are not committed to this public repository. Access to the link requires Google Drive permission.
+- **Inspection status:** ZIP contents not yet inspected; the Drive connector's 256 MiB transfer limit blocked retrieval. The filename does not prove the archive is a complete, authentic, or working CapCut installation.
+- **Old evidence:** The 81 MiB `9.6.0.4097.zip` described in [05 — Binary ZIP inspection](05_ROOT_BINARY_ZIP.md) was a separate **root-binaries sample of the same version**, not an older CapCut version. Keep its research record; there are **no versioned CapCut binaries in this GitHub folder to delete**.
+- Details: [CURRENT_CAPCUT_SOURCE.md](CURRENT_CAPCUT_SOURCE.md).
+
 ## Evidence and contents
 
 | Evidence | Status / observation | Document |

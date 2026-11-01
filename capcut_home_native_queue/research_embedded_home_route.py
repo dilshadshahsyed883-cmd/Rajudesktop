@@ -48,7 +48,7 @@ def original_vecreator_bytes(part5: Path, part6: Path) -> bytes:
     with part5.open("rb") as first, part6.open("rb") as second:
         first.seek(ENTRY_OFFSET - PART5_START)
         hdr = first.read(30)
-        if len(hdr) != 30 or hdr[:4] != b"PK\\x03\\x04":
+        if len(hdr) != 30 or hdr[:4] != b"PK\x03\x04":
             raise ValueError("VECreator ZIP local header does not match expected offset")
         name_len, extra_len = struct.unpack_from("<HH", hdr, 26)
         name = first.read(name_len)

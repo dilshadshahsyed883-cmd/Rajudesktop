@@ -24,6 +24,12 @@ The small `CapCut.exe` is not where the Home draft-card UI source lives. In `VEC
 - **Not yet proven:** callable QML-to-background-export bridge, acceptable function signatures, use of saved export settings, clean sequential completion across different drafts, module signature/load implications. Static strings cannot establish a runnable API.
 - Never patch installed signed DLLs in place, modify owner drafts, or distribute copyrighted CapCut binaries. Test an isolated local copy with explicit fingerprint and crash recovery only after proving the runtime interface.
 
+## v0.2: double-click EXE crash/flash fix
+
+The original diagnostic was a console application. On double-click it printed and exited, making it look as though the app crashed. The new Windows build uses a persistent Tkinter GUI: double-click `CapCut_Home_Native_Probe.exe`, choose the installed 9.7.0.4153 version folder with **Browse**, select **Scan original CapCut files**, and review the visible result. The window stays open after success, missing files, invalid hashes, or errors. The report can be saved outside the CapCut installation. No runtime export or binary modification takes place.
+
+CLI flags `--self-check`, `--root` and `--json` remain supported for automated checks. When run in windowed mode there is no stdout console, so use `--json` for output.
+
 ## Read-only Windows probe
 
 Run on installed version 9.7.0.4153:

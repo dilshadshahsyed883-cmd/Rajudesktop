@@ -34,6 +34,16 @@ Using the owner's authenticated private Drive archive (parts 005 and 006), the e
 
 The Home queue UI now requires `nativeAdapter.nativeBridgeVerified === true` **and** callable `submitExport(...)`. The first flag can only be supplied by a trusted, genuine in-process host after verification; exposing a method name alone must not enable the export UI. The synthetic Qt tests supply this field strictly as mock behavior and do not demonstrate CapCut integration.
 
+## Native MP4 completion guard (source available; host integration pending)
+
+`native_output_validation.py` supplies a **read-only** acceptance gate for a prospective original-engine render, not a renderer or a CapCut importer. A trusted in-process CapCut host must first establish the actual original export API and draft/output binding, then:
+
+1. Call `begin_export(key, draftId, projectPath, intendedMp4Path)` before admitting the exact native task. Existing files and ambiguous/relative targets are rejected. Keep the returned ticket **only if original-engine admission is independently confirmed**.
+2. On a native export-completed callback, call `verify_completed(ticket, reportedMp4Path)`. This checks exact target, file freshness, stability, a valid non-empty video stream, duration/resolution via read-only `ffprobe`, and SHA-256; it never renders anything.
+3. Emit `exportVerified(key, outputPath, sha256)` to the QML queue **only** after verification and the in-process CapCut native admission evidence both succeed. Otherwise emit `exportFailed`, leaving remaining drafts paused for review.
+
+`ffprobe` is a validation dependency only; this is **not** an FFmpeg or macro-based export engine. Eleven isolated Python tests cover success and fail-closed paths. A separate locally generated one-second MP4 passed the real `ffprobe` path, **but it was not exported with CapCut**. Windows QML CI runs the unit tests; no Windows CI job currently launches the original CapCut engine.
+
 ## Native adapter contract — **not yet implemented**
 
 The verified CapCut 9.7 `VECreator.dll` contains `HomePageLocalDraftViewModel`, `draftId`, `strProjectPath`, `inExport` and `exportProgress`. The private `BackEndExportImpl::pushTask`, `exportNextTask`, `clickDraftFromHomeView` are embedded symbol strings but **not exported PE methods**. The same DLL exposes Qt `qml_register_types_HomeScene`. None of this establishes the signature or object identity for a callable enqueue method.

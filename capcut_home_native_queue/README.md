@@ -28,6 +28,12 @@ The QML panel now exposes `snapshot()` with a versioned JSON-compatible journal 
 
 A guarded Windows Actions research job attempted to download the owner's **existing** original ZIP parts 005 and 006 from linked Drive files, reconstruct `VECreator.dll`, validate its exact SHA256, and identify real QML click handlers. **Google Drive did not permit anonymous access**, and the run reported `SOURCE_LINK_NOT_PUBLIC_OR_DOWNLOAD_FAILED`. No share permissions were changed and no original DLL/ZIP was committed or uploaded. The workflow is now manual-only to avoid repeated failed downloads. This does **not** mean the original files are invalid. The source of a callable in-process CapCut Home exporter remains unavailable outside the owner's authenticated Windows CapCut installation.
 
+## Authenticated original-DLL export path (2026-11-01)
+
+Using the owner's authenticated private Drive archive (parts 005 and 006), the exact original `VECreator.dll` was recovered, SHA-256 verified, and inspected without changing any executable. Its internal strings identify `ExportPanelEntryImpl::clickBackgroudExport` (including the explicit Home-origin log), `BackEndExportImpl::pushTask`, `exportNextTask`, and `clickDraftFromHomeView`. These identify the relevant private-native component family but **do not reveal a callable Qt/QML ABI**. See [ORIGINAL_NATIVE_EXPORT_ROUTE.md](ORIGINAL_NATIVE_EXPORT_ROUTE.md) for precise offsets, evidence and boundaries.
+
+The Home queue UI now requires `nativeAdapter.nativeBridgeVerified === true` **and** callable `submitExport(...)`. The first flag can only be supplied by a trusted, genuine in-process host after verification; exposing a method name alone must not enable the export UI. The synthetic Qt tests supply this field strictly as mock behavior and do not demonstrate CapCut integration.
+
 ## Native adapter contract — **not yet implemented**
 
 The verified CapCut 9.7 `VECreator.dll` contains `HomePageLocalDraftViewModel`, `draftId`, `strProjectPath`, `inExport` and `exportProgress`. The private `BackEndExportImpl::pushTask`, `exportNextTask`, `clickDraftFromHomeView` are embedded symbol strings but **not exported PE methods**. The same DLL exposes Qt `qml_register_types_HomeScene`. None of this establishes the signature or object identity for a callable enqueue method.
@@ -35,7 +41,7 @@ The verified CapCut 9.7 `VECreator.dll` contains `HomePageLocalDraftViewModel`, 
 The **actual** in-process Qt adapter must own:
 
 1. Verified Home draft identification and mapping into `panel.drafts` (no guessed draft ID).
-2. `bool submitExport(draftId, strProjectPath, key)`, implemented only through the verified **existing native CapCut background-export API**, with return `true` only if the host actually admits the job.
+2. A read-only Qt `nativeBridgeVerified` property, true only **after live in-process binding verification**, plus `bool submitExport(draftId, strProjectPath, key)` implemented only through the verified **existing native CapCut background-export API**. It must return `true` only after actual original-engine admission.
 3. `exportProgress(key, percent)`, `exportFailed(key, reason)`, and `exportVerified(key, outputPath, sha256)` signals. **Do not** emit verified on 100% progress alone; verify native final MP4 and source linkage first.
 4. Persist queue snapshots and reconcile an interrupted render in Review before any manual replay.
 5. Preserve current CapCut project settings, effects, audio, transitions, and export settings without overriding them.

@@ -78,8 +78,13 @@ model's exact `ExportCompileBottomViewModel` Qt meta-object, validates
 same-thread host attests that the original model belongs to the running
 CapCut process. It revalidates the selected Home draft ID and exact Windows
 project path, rejects duplicate requests, and separates a `void` dispatch
-from independently confirmed native task admission. Progress/completion
-must match the admitted task ID; output verification uses the existing
+from independently confirmed native task admission. Native task admission is linked to the **immutable pre-dispatch
+draft ID and project path** supplied independently by the original native
+scheduler: the CapCut export panel might close or switch drafts as soon as its
+zero-argument Qt method dispatches, so admission must not depend on the
+still-visible panel. Wrong task ID, wrong draft or wrong project path are
+rejected. Progress/completion must match the admitted task ID; output
+verification uses the existing
 `native_output_validation.verify_completed` guard.
 
 **This source does not provide the still-missing trusted in-process original

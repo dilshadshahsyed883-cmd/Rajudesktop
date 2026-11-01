@@ -1,0 +1,454 @@
+// HomeDraftQueuePanel.qml
+// Intended to be hosted INSIDE CapCut's verified Home QML module after its
+// original background-export adapter ABI is established. NOT injected/loaded
+// into the production CapCut application by this repository.
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Item {
+    id: root
+    width: 820
+    height: 480
+
+    // Host provides ORIGINAL Home draft objects:
+    // {draftId: string, strProjectPath: string, strTitle: string}
+    property var drafts: []
+    // Explicitly bound after the genuine Qt-to-BackEndExportImpl bridge
+    // is verified. This module NEVER guesses a DLL address or ABI.
+    //
+    // Host contract:
+    //   bool verifyCurrentDraftBinding(draftId, strProjectPath, key)
+    //     TRUE only when live export-panel model belongs to this exact draft.
+    //   bool requestExport(draftId, strProjectPath, key)
+    //     TRUE only that original-native dispatch request was sent.
+    //   signal exportAdmitted(key, taskId)
+    //     Must originate from independent original-native task admission.
+    //   signal exportVerified(key, outputPath, sha256) // verified native MP4
+    //   signal exportFailed(key, message)
+    //   signal exportProgress(key, percent)
+    property var nativeAdapter: null
+    property var selected: ({})
+    property var results: ({})
+    property var pending: []
+    property string activeKey: ""
+    property string admittedTaskId: ""
+    property bool pauseAfterCurrent: false
+    property bool recoveryReviewRequired: false
+    property string statusLine: "Native CapCut Home bridge not connected"
+    // A callable method alone is NOT proof of CapCut's private native ABI.
+    // Only a trusted in-process host may expose nativeBridgeVerified=true
+    // after proving object identity, queue admission and original renderer.
+    // The source-only/fake test adapter never establishes that proof.
+    readonly property bool adapterReady:
+        nativeAdapter !== null &&
+        nativeAdapter.nativeBridgeVerified === true &&
+        typeof nativeAdapter.verifyCurrentDraftBinding === "function" &&
+        typeof nativeAdapter.requestExport === "function"
+    readonly property bool running: activeKey.length > 0
+    readonly property int selectedCount: Object.keys(selected).filter(
+        function (k) { return selected[k] === true; }).length
+
+    signal snapshotChanged(var snapshot)
+
+    function validDraft(draft) {
+        return draft !== null && draft !== undefined &&
+               typeof draft.draftId === "string" && draft.draftId.length > 0 &&
+               typeof draft.strProjectPath === "string" &&
+               draft.strProjectPath.length > 0;
+    }
+    function keyFor(draft) {
+        return validDraft(draft) ? draft.draftId + "::" + draft.strProjectPath : "";
+    }
+    function setSelected(draft, value) {
+        var key = keyFor(draft);
+        if (!key || running || pending.length > 0 || recoveryReviewRequired ||
+            results[key] === "Completed" || results[key] === "Review")
+            return false;
+        var updated = Object.assign({}, selected);
+        updated[key] = value === true;
+        selected = updated;
+        snapshotChanged(snapshot());
+        return true;
+    }
+    function setResult(key, status) {
+        var updated = Object.assign({}, results);
+        updated[key] = status;
+        results = updated;
+        snapshotChanged(snapshot());
+    }
+    function snapshot() {
+        return {
+            version: 2,
+            recoveryReviewRequired: recoveryReviewRequired,
+            selectedKeys: Object.keys(selected).filter(function (k) { return selected[k]; }),
+            pendingKeys: pending.map(function (d) { return keyFor(d); }),
+            activeKey: activeKey,
+            admittedTaskId: admittedTaskId,
+            results: Object.assign({}, results),
+            paused: pauseAfterCurrent
+        };
+    }
+
+    // Called by the trusted host after loading its durable on-disk journal.
+    // Never restart a previously active native job from stale state. The
+    // original CapCut render may still be running after a UI/process restart.
+    function restoreSnapshot(journalJson) {
+        // Persisted state is a JSON string, avoiding ambiguous QVariant/QJSValue
+        // conversion at the Python/Qt/C++ host boundary.
+        if (typeof journalJson !== "string" || journalJson.length > 1000000)
+            return false;
+        var journal;
+        try {
+            journal = JSON.parse(journalJson);
+        } catch (error) {
+            return false;
+        }
+        if (!journal || journal.version !== 2 ||
+            !Array.isArray(journal.pendingKeys) ||
+            !Array.isArray(journal.selectedKeys) ||
+            typeof journal.results !== "object" ||
+            running || pending.length > 0)
+            return false;
+
+        var known = {};
+        var unique = {};
+        for (var i = 0; i < drafts.length; ++i) {
+            var k = keyFor(drafts[i]);
+            if (k && known[k] === undefined)
+                known[k] = drafts[i];
+        }
+
+        var restored = [];
+        var nextResults = {};
+        var needsReview = journal.recoveryReviewRequired === true;
+        for (var name in journal.results) {
+            if (!known[name])
+                continue;
+            var state = journal.results[name];
+            if (state === "Completed") {
+                // No filesystem verification happens in the QML view itself.
+                // Never assume previously completed files still exist.
+                nextResults[name] = "Review";
+                needsReview = true;
+            } else if (state === "Review") {
+                nextResults[name] = "Review";
+            }
+        }
+        for (var j = 0; j < journal.pendingKeys.length; ++j) {
+            var key = journal.pendingKeys[j];
+            if (typeof key !== "string" || !known[key] || unique[key] ||
+                nextResults[key] === "Review")
+                continue;
+            unique[key] = true;
+            restored.push(known[key]);
+            nextResults[key] = "Queued";
+        }
+        if (typeof journal.activeKey === "string" &&
+            journal.activeKey.length > 0) {
+            needsReview = true;
+            if (known[journal.activeKey])
+                nextResults[journal.activeKey] = "Review";
+        }
+
+        var checked = {};
+        for (var t = 0; t < journal.selectedKeys.length; ++t) {
+            var checkedKey = journal.selectedKeys[t];
+            if (known[checkedKey] && nextResults[checkedKey] !== "Review")
+                checked[checkedKey] = true;
+        }
+        selected = checked;
+        results = nextResults;
+        activeKey = "";
+        admittedTaskId = "";
+        admissionWatchdog.stop();
+        pending = restored;
+        pauseAfterCurrent = true;
+        recoveryReviewRequired = needsReview;
+        statusLine = needsReview
+              ? "Recovered safely. Check earlier CapCut exports before continuing."
+              : "Recovered queue paused. Press Resume when ready.";
+        snapshotChanged(snapshot());
+        return true;
+    }
+    function acknowledgeRecovery(reviewed) {
+        if (reviewed !== true || !recoveryReviewRequired || running)
+            return false;
+        recoveryReviewRequired = false;
+        statusLine = "Reviewed. Resume remaining queued drafts when ready.";
+        snapshotChanged(snapshot());
+        return true;
+    }
+    function resetReviewedDraft(draft) {
+        var key = keyFor(draft);
+        if (!key || running || pending.length > 0 || recoveryReviewRequired ||
+            results[key] !== "Review")
+            return false;
+        var nextResults = Object.assign({}, results);
+        delete nextResults[key];
+        results = nextResults;
+        statusLine = "Draft unlocked after review; select to export again.";
+        snapshotChanged(snapshot());
+        return true;
+    }
+    function startSelected() {
+        if (!adapterReady) {
+            statusLine = "Native bridge unavailable; export disabled";
+            return false;
+        }
+        if (running || pending.length > 0 || recoveryReviewRequired)
+            return false;
+        var candidates = [];
+        var seen = {};
+        for (var i = 0; i < drafts.length; i++) {
+            var draft = drafts[i];
+            var key = keyFor(draft);
+            if (!key || seen[key] || selected[key] !== true ||
+                results[key] === "Completed" || results[key] === "Review")
+                continue;
+            seen[key] = true;
+            candidates.push(draft);
+        }
+        if (candidates.length === 0) {
+            statusLine = "Select one or more eligible drafts";
+            return false;
+        }
+        pending = candidates;
+        pauseAfterCurrent = false;
+        for (var j = 0; j < pending.length; j++)
+            setResult(keyFor(pending[j]), "Queued");
+        runNext();
+        return true;
+    }
+    function runNext() {
+        if (running || pauseAfterCurrent || recoveryReviewRequired ||
+            pending.length === 0)
+            return;
+        if (!adapterReady) {
+            statusLine = "Native adapter disconnected; queue is paused";
+            pauseAfterCurrent = true;
+            return;
+        }
+        var draft = pending[0];
+        pending = pending.slice(1);
+        var key = keyFor(draft);
+        if (!key) {
+            statusLine = "Invalid draft rejected";
+            pauseAfterCurrent = true;
+            return;
+        }
+        activeKey = key;
+        admittedTaskId = "";
+        setResult(key, "Submitting");
+        statusLine = "Waiting for native task admission: " +
+                     (draft.strTitle || draft.draftId);
+        admissionWatchdog.restart();
+        try {
+            // The zero-arg original export-panel Qt invokable is bound to
+            // the CURRENT panel draft, not to an arbitrary selected Home card.
+            // Never admit an export before a trusted live host verifies the
+            // exact draftId + project path against its current Qt model.
+            if (nativeAdapter.verifyCurrentDraftBinding(
+                    draft.draftId, draft.strProjectPath, key) !== true) {
+                nativeFailed(key, "Current CapCut export panel is not bound to this draft");
+                return;
+            }
+            // The original Qt click method returns void. A TRUE here means
+            // the request was sent, NOT that the native task was admitted.
+            // Only exportAdmitted(key, taskId) advances the job to Rendering.
+            if (nativeAdapter.requestExport(draft.draftId,
+                                            draft.strProjectPath, key) !== true) {
+                nativeFailed(key, "Native export request was not dispatched");
+            }
+        } catch (error) {
+            nativeFailed(key, String(error));
+        }
+    }
+    function nativeAdmitted(key, taskId) {
+        // Only actual original-engine admission can transition to Rendering.
+        if (!activeKey || key !== activeKey || admittedTaskId.length > 0)
+            return false;
+        if (typeof taskId !== "string" || taskId.trim().length === 0) {
+            nativeFailed(key, "Native admission task identity missing");
+            return false;
+        }
+        admittedTaskId = taskId;
+        admissionWatchdog.stop();
+        setResult(key, "Rendering");
+        statusLine = "Native CapCut task admitted: " + key;
+        snapshotChanged(snapshot());
+        return true;
+    }
+    function nativeAdmissionTimedOut() {
+        if (!activeKey || admittedTaskId.length > 0)
+            return false;
+        return nativeFailed(activeKey, "Native task admission not confirmed within 30 seconds");
+    }
+    function nativeVerified(key, outputPath, sha256) {
+        // The host MUST verify the full native MP4 before emitting this event.
+        // A completion signal without confirmed task admission is NOT trusted.
+        if (!activeKey || key !== activeKey || admittedTaskId.length === 0)
+            return false;
+        if (typeof outputPath !== "string" || !outputPath ||
+            typeof sha256 !== "string" || !/^[a-fA-F0-9]{64}$/.test(sha256)) {
+            nativeFailed(key, "Native output verification evidence missing");
+            return false;
+        }
+        admissionWatchdog.stop();
+        setResult(key, "Completed");
+        activeKey = "";
+        admittedTaskId = "";
+        var updatedSelection = Object.assign({}, selected);
+        delete updatedSelection[key];
+        selected = updatedSelection;
+        statusLine = "Verified MP4: " + outputPath;
+        snapshotChanged(snapshot());
+        if (!pauseAfterCurrent)
+            runNext();
+        return true;
+    }
+    function nativeFailed(key, reason) {
+        if (!activeKey || key !== activeKey)
+            return false;
+        admissionWatchdog.stop();
+        setResult(key, "Review");
+        activeKey = "";
+        admittedTaskId = "";
+        pauseAfterCurrent = true;
+        statusLine = "Stopped for review: " + String(reason);
+        snapshotChanged(snapshot());
+        return true;
+    }
+    function pause() {
+        pauseAfterCurrent = true;
+        statusLine = running ? "Will pause after current render" : "Queue paused";
+        snapshotChanged(snapshot());
+    }
+    function resume() {
+        if (running || recoveryReviewRequired || !adapterReady)
+            return false;
+        pauseAfterCurrent = false;
+        runNext();
+        snapshotChanged(snapshot());
+        return true;
+    }
+
+    Timer {
+        id: admissionWatchdog
+        interval: 30000
+        repeat: false
+        running: false
+        onTriggered: root.nativeAdmissionTimedOut()
+    }
+
+    Connections {
+        target: root.nativeAdapter
+        ignoreUnknownSignals: true
+        function onExportAdmitted(key, taskId) {
+            root.nativeAdmitted(key, taskId);
+        }
+        function onExportVerified(key, outputPath, sha256) {
+            root.nativeVerified(key, outputPath, sha256);
+        }
+        function onExportFailed(key, reason) {
+            root.nativeFailed(key, reason);
+        }
+        function onExportProgress(key, percent) {
+            if (root.activeKey === key && root.admittedTaskId.length > 0 &&
+                    percent >= 0 && percent <= 100)
+                root.statusLine = "Native render " + Math.round(percent) + "%";
+        }
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 10
+        Label {
+            text: "Ready drafts — select and export"
+            font.bold: true
+            font.pixelSize: 21
+            Layout.fillWidth: true
+        }
+        Label {
+            text: root.adapterReady
+                  ? "Original CapCut native queue connected"
+                  : "Native CapCut bridge not verified — Start disabled"
+            color: root.adapterReady ? "#187a3a" : "#c66b27"
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+        }
+        ListView {
+            id: projects
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            model: root.drafts
+            spacing: 3
+            delegate: Rectangle {
+                width: projects.width
+                height: 46
+                color: index % 2 ? "#f6f6f6" : "#ffffff"
+                property var draft: modelData
+                property string key: root.keyFor(draft)
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    CheckBox {
+                        enabled: key.length > 0 && !root.running &&
+                                 !root.recoveryReviewRequired &&
+                                 root.pending.length === 0 &&
+                                 root.results[key] !== "Completed" &&
+                                 root.results[key] !== "Review"
+                        checked: root.selected[key] === true
+                        onClicked: root.setSelected(draft, checked)
+                    }
+                    Label {
+                        text: draft.strTitle || draft.draftId || "Unnamed draft"
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Label {
+                        text: root.results[key] || (key ? "Ready" : "Invalid draft")
+                        Layout.preferredWidth: 125
+                    }
+                }
+            }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            Button {
+                text: "Export selected in queue (" + root.selectedCount + ")"
+                enabled: root.adapterReady && !root.running &&
+                         !root.recoveryReviewRequired &&
+                         root.pending.length === 0 && root.selectedCount > 0
+                onClicked: root.startSelected()
+            }
+            Button {
+                text: "Stop after current"
+                enabled: root.running && !root.pauseAfterCurrent
+                onClicked: root.pause()
+            }
+            Button {
+                text: "Resume"
+                enabled: root.pauseAfterCurrent &&
+                         !root.recoveryReviewRequired &&
+                         !root.running && root.pending.length > 0 &&
+                         root.adapterReady
+                onClicked: root.resume()
+            }
+            Button {
+                text: "Reviewed interrupted export"
+                visible: root.recoveryReviewRequired
+                enabled: !root.running
+                onClicked: root.acknowledgeRecovery(true)
+            }
+            Item { Layout.fillWidth: true }
+        }
+        Label {
+            text: root.statusLine
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+        }
+    }
+}

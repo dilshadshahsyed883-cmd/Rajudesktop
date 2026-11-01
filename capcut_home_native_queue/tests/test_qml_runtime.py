@@ -20,6 +20,7 @@ QML = Path(__file__).resolve().parents[1] / "HomeDraftQueuePanel.qml"
 
 
 class FakeNativeAdapter(QObject):
+    exportAdmitted = Signal(str, str)
     exportVerified = Signal(str, str, str)
     exportFailed = Signal(str, str)
     exportProgress = Signal(str, float)
@@ -28,6 +29,7 @@ class FakeNativeAdapter(QObject):
         super().__init__()
         self.calls = []
         self.accept = True
+        self.auto_admit = True
         self._bridge_verified = bridge_verified
         self.bound = True
         self.binding_calls = []
@@ -43,8 +45,11 @@ class FakeNativeAdapter(QObject):
         return self._bridge_verified
 
     @Slot(str, str, str, result=bool)
-    def submitExport(self, draft_id, path, key):
+    def requestExport(self, draft_id, path, key):
         self.calls.append((draft_id, path, key))
+        if self.accept and self.auto_admit:
+            # Synthetic host callback only, never native CapCut evidence.
+            self.exportAdmitted.emit(key, "mock-task-" + draft_id)
         return self.accept
 
 
@@ -149,6 +154,63 @@ class NativeHomePanelTests(unittest.TestCase):
         self.assertEqual(len(adapter.calls), 1,
                          "Second draft must never use first panel binding")
         self.assertTrue(self.panel.property("pauseAfterCurrent"))
+
+    def test_completion_without_native_task_admission_is_ignored(self):
+        adapter = FakeNativeAdapter()
+        adapter.auto_admit = False
+        self.panel.setProperty("nativeAdapter", adapter)
+        self.panel.setSelected(self.items[0], True)
+        self.panel.setSelected(self.items[1], True)
+        self.assertTrue(self.panel.startSelected())
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertEqual(self.panel.property("results")["a::D:/CapCut/A"],
+                         "Submitting")
+        first = adapter.calls[0][2]
+        self.assertFalse(self.panel.nativeVerified(first, "out.mp4", "c" * 64))
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertFalse(self.panel.nativeAdmitted("foreign", "task-elsewhere"))
+        self.assertFalse(self.panel.nativeAdmitted(first, ""))
+        self.assertTrue(self.panel.property("pauseAfterCurrent"))
+        self.assertFalse(self.panel.property("running"))
+        self.assertEqual(len(adapter.calls), 1)
+
+    def test_native_admission_timeout_fails_closed(self):
+        adapter = FakeNativeAdapter()
+        adapter.auto_admit = False
+        self.panel.setProperty("nativeAdapter", adapter)
+        self.panel.setSelected(self.items[0], True)
+        self.panel.setSelected(self.items[1], True)
+        self.assertTrue(self.panel.startSelected())
+        self.assertTrue(self.panel.nativeAdmissionTimedOut())
+        self.assertTrue(self.panel.property("pauseAfterCurrent"))
+        self.assertFalse(self.panel.property("running"))
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertIn("admission not confirmed", self.panel.property("statusLine"))
+
+    def test_delayed_admission_gates_verified_completion(self):
+        adapter = FakeNativeAdapter()
+        adapter.auto_admit = False
+        self.panel.setProperty("nativeAdapter", adapter)
+        self.panel.setSelected(self.items[0], True)
+        self.panel.setSelected(self.items[1], True)
+        self.assertTrue(self.panel.startSelected())
+        first = adapter.calls[0][2]
+        self.assertFalse(self.panel.nativeVerified(first, "out.mp4", "a" * 64))
+        adapter.exportAdmitted.emit(first, "live-task-A")
+        self.app.processEvents()
+        self.assertEqual(self.panel.property("admittedTaskId"), "live-task-A")
+        self.assertEqual(self.panel.property("results")[first], "Rendering")
+        self.assertFalse(self.panel.nativeAdmitted(first, "duplicate-task"))
+        adapter.exportVerified.emit(first, "D:/exports/a.mp4", "a" * 64)
+        self.app.processEvents()
+        self.assertEqual(self.panel.property("results")[first], "Completed")
+        self.assertEqual(len(adapter.calls), 2)
+        second = adapter.calls[1][2]
+        self.assertFalse(self.panel.nativeVerified(second, "D:/exports/b.mp4",
+                                                   "b" * 64))
+        self.assertTrue(self.panel.nativeAdmitted(second, "live-task-B"))
+        self.assertTrue(self.panel.nativeVerified(second, "D:/exports/b.mp4",
+                                                  "b" * 64))
 
     def test_adapter_rejects_job_and_halts_without_retry(self):
         adapter = FakeNativeAdapter()

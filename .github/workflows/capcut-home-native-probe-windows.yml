@@ -44,6 +44,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Self-test failed' }
           python -c "import json; r=json.load(open('frozen_selfcheck.json')); assert r['self_check']=='PASS' and r['native_patch_available'] is False and r['real_capcut_tested'] is False"
           if ($LASTEXITCODE -ne 0) { throw 'Misleading status' }
+      - name: Frozen window creation and missing-folder error smoke
+        shell: pwsh
+        run: |
+          & '.\\dist\\CapCut_Home_Native_Probe.exe' --gui-smoke gui_smoke.json
+          if ($LASTEXITCODE -ne 0) { throw 'GUI could not open' }
+          python -c "import json; r=json.load(open('gui_smoke.json')); assert r['gui_window_created'] and r['error_does_not_close_window'] and not r['live_export_verified']; print('GUI_STAYS_OPEN=PASS')"
+          if ($LASTEXITCODE -ne 0) { throw 'GUI smoke status invalid' }
       - name: Package portable probe
         shell: pwsh
         run: |

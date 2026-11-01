@@ -60,7 +60,9 @@ def summary_lines(result):
         lines.append("NATIVE HOME BRIDGE INSPECTION")
         lines.append("Bridge classification: " + bridge["bridge_level"])
         for name, module in bridge["modules"].items():
-            lines.append(name + " public PE exports: " + str(module["pe_export_count"]))
+            lines.append(name + " public PE exports: " + str(module["pe_export_count"]) +
+                         " / " + str(module.get("declared_export_names", "?")) +
+                         " (skipped: " + str(module.get("skipped_export_names", "?")) + ")")
             lines.append("  Direct target callable PE names: " +
                          (", ".join(module["target_backend_exports"]) or "NONE"))
         for name, error in bridge["errors"].items():

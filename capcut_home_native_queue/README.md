@@ -68,6 +68,29 @@ mapping, host-side admission callback, and genuine rendered MP4. An isolated
 GitHub Qt test process cannot provide access to that original CapCut
 in-process object. See `ORIGINAL_NATIVE_EXPORT_ROUTE.md`.
 
+## One-shot Windows live process feasibility check (2026-11-01)
+
+`CapCut_Live_Bridge_Check.ps1` is a **read-only live-process check** for the
+original running Windows CapCut 9.7.0.4153. It collects process/module **names**
+(no personal installation paths or raw process command lines), whether the
+original command line advertises `-qmljsdebugger`, and any local TCP listeners
+for those processes, without connecting to ports or launching or modifying
+CapCut. It writes one sanitized JSON report under the user's Documents folder.
+A small downloadable ZIP adds a double-click launcher.
+
+Run with original CapCut already open on Home:
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\CapCut_Live_Bridge_Check.ps1`
+(requires no administrator permissions).
+
+This deliberately reports `live_qobject_verified=false` and
+`unattended_capcut_mp4_export_verified=false`: even a matching loopback
+listening port is only a *candidate*, not validated Qt QML debugger protocol.
+Qt requires the application's original build to have enabled QML debugging;
+the mere presence of the shipped `qmldbg_*.dll` files does not establish
+that. Do not launch production CapCut with publicly exposed debugging ports
+or inject custom modules as a workaround. This check is a feasibility
+triage step, **not a native export integration**.
+
 ## Qt runtime adapter implemented (real original CapCut host still unverified)
 
 `qt_runtime_adapter.py` contains an actual PySide6 `QObject` adapter,

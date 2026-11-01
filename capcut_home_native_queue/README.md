@@ -68,11 +68,36 @@ mapping, host-side admission callback, and genuine rendered MP4. An isolated
 GitHub Qt test process cannot provide access to that original CapCut
 in-process object. See `ORIGINAL_NATIVE_EXPORT_ROUTE.md`.
 
-## Native adapter contract — **not yet implemented**
+## Qt runtime adapter implemented (real original CapCut host still unverified)
+
+`qt_runtime_adapter.py` contains an actual PySide6 `QObject` adapter,
+not just a QML interface or fake queue. It checks the host-supplied live
+model's exact `ExportCompileBottomViewModel` Qt meta-object, validates
+`clickBackgroudExport()` is public/zero-argument/void, and uses the real
+`QMetaObject.invokeMethod(..., Qt.DirectConnection)` dispatch when a trusted
+same-thread host attests that the original model belongs to the running
+CapCut process. It revalidates the selected Home draft ID and exact Windows
+project path, rejects duplicate requests, and separates a `void` dispatch
+from independently confirmed native task admission. Progress/completion
+must match the admitted task ID; output verification uses the existing
+`native_output_validation.verify_completed` guard.
+
+**This source does not provide the still-missing trusted in-process original
+CapCut host.** A standalone Python Qt process **cannot** attach to, adopt or
+directly invoke a `QObject` belonging to the proprietary running CapCut
+process. `verify_native_runtime` must come from a genuinely connected and
+verified in-process host; a lambda that returns True is permitted in
+synthetic unit tests **only** and is not valid production evidence.
+`qt_runtime_adapter.py` is not injected, loaded or installed in CapCut.
+Windows CI now runs real Qt QObject-slot invocation tests and synthetic
+QML→adapter→task-signal integration tests, with fake model identities and
+fake MP4 receipts. None of those tests verify a real CapCut render.
+
+### Native adapter host contract — **original CapCut integration still pending**
 
 The verified CapCut 9.7 `VECreator.dll` contains `HomePageLocalDraftViewModel`, `draftId`, `strProjectPath`, `inExport` and `exportProgress`. The private `BackEndExportImpl::pushTask`, `exportNextTask`, `clickDraftFromHomeView` are embedded symbol strings but **not exported PE methods**. The same DLL exposes Qt `qml_register_types_HomeScene`. None of this establishes the signature or object identity for a callable enqueue method.
 
-The **actual** in-process Qt adapter must own:
+A **trusted actual CapCut in-process host** is still required to own:
 
 1. Verified Home draft identification and mapping into `panel.drafts` (no guessed draft ID).
 2. A read-only Qt `nativeBridgeVerified` property true only **after live in-process binding verification**. The host must provide `bool verifyCurrentDraftBinding(draftId, strProjectPath, key)` comparing the original currently active export-panel model to the exact queued Home draft. It must be rechecked **for every job** and fail closed on mismatch. Then `bool requestExport(draftId, strProjectPath, key)` may issue the original Qt export command; this boolean means **dispatched**, not native-task admission. Because the recovered `clickBackgroudExport()` returns `void`, the host must emit a separate confirmed `exportAdmitted(key, taskId)` after actual original-engine task admission.

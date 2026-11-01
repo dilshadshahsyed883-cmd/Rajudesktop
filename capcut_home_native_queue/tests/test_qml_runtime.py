@@ -209,7 +209,7 @@ class NativeHomePanelTests(unittest.TestCase):
         self.assertFalse(self.panel.nativeAdmitted(first, "duplicate-task"))
         adapter.exportVerified.emit(first, "D:/exports/a.mp4", "a" * 64)
         self.app.processEvents()
-        self.assertEqual(self.panel.property("results")[first], "Completed")
+        self.assertEqual(self.result_for(first), "Completed")
         self.assertEqual(len(adapter.calls), 2)
         second = adapter.calls[1][2]
         self.assertFalse(self.panel.nativeVerified(second, "D:/exports/b.mp4",

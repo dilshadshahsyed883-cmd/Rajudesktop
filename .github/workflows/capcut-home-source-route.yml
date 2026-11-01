@@ -1,9 +1,5 @@
 name: CapCut 9.7 embedded Home click-route research
 on:
-  pull_request:
-    paths:
-      - 'capcut_home_native_queue/research_embedded_home_route.py'
-      - '.github/workflows/capcut-home-source-route.yml'
   workflow_dispatch:
 permissions:
   contents: read

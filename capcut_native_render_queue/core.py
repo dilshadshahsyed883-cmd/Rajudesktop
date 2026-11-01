@@ -241,7 +241,8 @@ class NativeIPC:
 
     def command(self, arguments, timeout=60):
         self.validate()
-        command = [str(self.bun), str(self.script), "--product", "capcut", "--", *arguments]
+        command = [str(self.bun), str(self.script), "--product", "capcut",
+                   "--socket-timeout-seconds", str(timeout), "--", *arguments]
         try:
             result = subprocess.run(command, cwd=str(self.root), shell=False, capture_output=True,
                         text=True, encoding="utf-8", errors="replace", timeout=timeout,

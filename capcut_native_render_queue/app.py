@@ -8,9 +8,16 @@ import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from .core import (NativeIPC, NativeUnavailable, atomic_write, bind_projects,
-                   candidate_roots, locate_capcut, safe_filename, scan_drafts, sha256,
-                   verify_output)
+import sys
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from capcut_native_render_queue.core import (
+        NativeIPC, NativeUnavailable, atomic_write, bind_projects, candidate_roots,
+        locate_capcut, safe_filename, scan_drafts, sha256, verify_output)
+else:
+    from .core import (NativeIPC, NativeUnavailable, atomic_write, bind_projects,
+                       candidate_roots, locate_capcut, safe_filename, scan_drafts,
+                       sha256, verify_output)
 
 STATE_DIR = Path(os.getenv("LOCALAPPDATA") or Path.home()) / "CapCutNativeRenderQueue"
 STATE = STATE_DIR / "queue.json"
@@ -172,6 +179,11 @@ class App(tk.Tk):
                     p = Path(item["folder"]) / name if item["folder"] else None
                     if p and p.is_file(): src = (p, sha256(p)); break
                 # Persist *before* invoking CapCut export: crash recovery never blind-repeats.
+                # Write the crash-recovery record synchronously BEFORE starting CapCut.
+                journal = read_json(STATE, {})
+                journal.setdefault("items", {})[item["key"]] = {
+                    "status": "Rendering", "ref": item["ref"], "output": str(target)}
+                atomic_write(STATE, journal)
                 self.inbox.put(("rendering", (item["key"], str(target))))
                 try:
                     self.engine.render(item["ref"], target, minutes=180)

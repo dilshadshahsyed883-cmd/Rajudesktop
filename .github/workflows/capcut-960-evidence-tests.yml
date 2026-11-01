@@ -1,0 +1,42 @@
+name: CapCut 9.6 evidence verifier synthetic tests
+on:
+  pull_request:
+    paths:
+      - 'capcut_960_evidence/**'
+      - '.github/workflows/capcut-960-evidence-tests.yml'
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run read-only synthetic integrity tests
+        run: python -m unittest discover -s capcut_960_evidence/tests -v
+      - name: Validate inventory shard headers and row totals
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          root = Path("capcut_960_evidence/inventory")
+          paths = sorted(root.glob("part_*.csv"))
+          assert len(paths) == 7
+          rows = 0
+          files = 0
+          for path in paths:
+              with path.open(newline="", encoding="utf-8") as f:
+                  reader = csv.DictReader(f)
+                  assert reader.fieldnames == ["path","uncompressed_bytes","compressed_bytes","crc32_hex","sha256","is_directory"]
+                  for row in reader:
+                      rows += 1
+                      if row["is_directory"] == "False":
+                          assert len(row["sha256"]) == 64
+                          files += 1
+          assert rows == 6020, rows
+          assert files == 4757, files
+          print(f"Validated {rows} entries and {files} file fingerprints")
+          PY

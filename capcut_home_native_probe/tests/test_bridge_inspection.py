@@ -30,10 +30,58 @@ def synthetic_pe(export_name=b"exportNextTask"):
     return bytes(raw)
 
 
+def wide_pe(export_count, export_name=b"BackEndExportImpl::pushTask"):
+    """Realistic large PE export-name table with all names within one section."""
+    raw = bytearray(synthetic_pe(export_name))
+    name_table = 0x238
+    string_at = 0x300 + export_count * 4
+    total = string_at + len(export_name) + 10
+    raw.extend(bytes(max(0, total - len(raw))))
+    section = 0x98 + 0xF0
+    span = len(raw) - 0x200
+    struct.pack_into("<I", raw, section + 8, span)
+    struct.pack_into("<I", raw, section + 16, span)
+    struct.pack_into("<I", raw, 0x200 + 24, export_count)
+    struct.pack_into("<I", raw, 0x200 + 32, 0x1038)
+    raw[string_at:string_at + len(export_name)+1] = export_name + b"\\0"
+    for i in range(export_count):
+        struct.pack_into("<I", raw, name_table + 4 * i, 0x1000 + string_at - 0x200)
+    return bytes(raw)
+
+
 class TestBridge(unittest.TestCase):
     def test_pe_export_parser(self):
         raw = synthetic_pe(b"BackEndExportImpl::pushTask")
         self.assertEqual(bridge.pe_exports(raw), ["BackEndExportImpl::pushTask"])
+
+    def test_long_cpp_decorated_exports_do_not_abort(self):
+        symbol = b"?" + b"AVeryLongMangledCppName" * 160
+        raw = wide_pe(1, symbol)
+        details = bridge.pe_export_details(raw)
+        self.assertEqual(details["names"], [symbol.decode("ascii")])
+        self.assertTrue(details["export_parse_complete"])
+
+    def test_25001_exports_not_rejected_by_old_arbitrary_limit(self):
+        raw = wide_pe(25001, b"nativeExportStart")
+        details = bridge.pe_export_details(raw)
+        self.assertEqual(details["declared_export_names"], 25001)
+        self.assertEqual(len(details["names"]), 25001)
+        self.assertEqual(details["skipped_export_names"], 0)
+
+    def test_one_bad_name_preserves_good_exports_but_marks_partial(self):
+        raw = bytearray(wide_pe(2, b"nativeExportStart"))
+        # Second name is outside file-backed PE section.
+        struct.pack_into("<I", raw, 0x238 + 4, 0xF0000000)
+        details = bridge.pe_export_details(raw)
+        self.assertEqual(details["names"], ["nativeExportStart"])
+        self.assertEqual(details["skipped_export_names"], 1)
+        self.assertFalse(details["export_parse_complete"])
+
+    def test_unbounded_export_count_is_rejected(self):
+        raw = bytearray(synthetic_pe())
+        struct.pack_into("<I", raw, 0x200 + 24, bridge.MAX_EXPORT_NAMES + 1)
+        with self.assertRaisesRegex(bridge.InvalidPE, "declares"):
+            bridge.pe_export_details(raw)
 
     def test_no_guessing_on_invalid_or_truncated(self):
         with self.assertRaises(bridge.InvalidPE):

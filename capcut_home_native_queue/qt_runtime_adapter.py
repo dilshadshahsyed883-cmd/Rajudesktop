@@ -194,25 +194,25 @@ class QtRuntimeAdapter(QObject):
             return False
         return True
 
-    def _matches_pending(self, key: str) -> bool:
-        pending = self._pending
-        return bool(pending and pending.key == key and
-                    self._matches(pending.draft_id, pending.project_path, pending.key))
-
     def nativeTaskAdmitted(self, key: str, task_id: str,
                            draft_id: str, project_path: str) -> bool:
         """Trusted ORIGINAL native scheduler callback (not a file watcher).
 
-        The callback must have verified that the original task belongs to
-        this draft and output ticket. This adapter cannot discover CapCut's
-        private native scheduler from a separate process.
+        The callback must independently confirm that the original engine
+        admitted this exact draft and project path. The export panel may
+        close/change drafts immediately after a successful void Qt dispatch,
+        so do NOT compare current UI bindings again at admission time:
+        compare against the immutable pre-dispatch request snapshot instead.
+
+        This must be called from the same verified original host; its task_id
+        may never be inferred from file creation, progress or timer events.
         """
         pending = self._pending
-        if (pending is None or pending.task_id or
+        if (not self._verified or not self._qt_thread_ready() or
+                pending is None or pending.task_id or
                 not isinstance(task_id, str) or not task_id.strip() or
                 key != pending.key or draft_id != pending.draft_id or
-                not same_windows_path(project_path, pending.project_path) or
-                not self._matches_pending(key)):
+                not same_windows_path(project_path, pending.project_path)):
             return False
         pending.task_id = task_id
         self.exportAdmitted.emit(key, task_id)

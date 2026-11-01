@@ -138,7 +138,9 @@ def main(argv=None):
             parser.error("Refusing to create reports inside the CapCut installation")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(output + "\n", encoding="utf-8")
-    print(output)
+    # Windowed PyInstaller apps have sys.stdout=None; do not crash on valid CLI diagnostics.
+    if sys.stdout is not None:
+        print(output)
     return code
 
 

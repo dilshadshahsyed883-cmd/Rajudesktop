@@ -17,9 +17,9 @@ from tkinter import filedialog, messagebox, ttk
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from capcut_home_native_probe import probe, bridge_inspection
+    from capcut_home_native_probe import probe, bridge_inspection, home_callsite
 else:
-    from . import probe, bridge_inspection
+    from . import probe, bridge_inspection, home_callsite
 
 WINDOW_TITLE = "CapCut 9.7 Home Native Probe — read-only"
 
@@ -68,6 +68,20 @@ def summary_lines(result):
         for name, error in bridge["errors"].items():
             lines.append(name + " inspection error: " + error)
         lines.append("Private Qt/QML callable interface: NOT VERIFIED")
+    callsite = result.get("home_callsite")
+    if callsite:
+        lines.append("")
+        lines.append("HOME QML CALL PATH (original DLL, read-only)")
+        lines.append("Status: " + callsite["status"])
+        if callsite["status"] == "HOME_QML_METHOD_CANDIDATES":
+            lines.append("ViewModel call candidates: " +
+                         str(len(callsite["viewmodel_calls"])))
+            for method, count in sorted(
+                    callsite["viewmodel_call_counts"].items()):
+                lines.append("  " + method + " (" + str(count) + ")")
+            lines.append("UI handler types: " +
+                         ", ".join(sorted(callsite["qml_handlers_counts"].keys())))
+            lines.append("These are static QML references, not verified native calls.")
     lines.extend(["", "Home checkboxes installed: NO", "Native export working: NOT VERIFIED",
                   "Your CapCut files were not changed."])
     return "\n".join(lines)
@@ -162,6 +176,7 @@ class ProbeWindow(tk.Tk):
                 result = probe.audit(folder)
                 if result["status"] == "NATIVE_HOME_EXPORT_SYMBOLS_FOUND":
                     result["bridge_inspection"] = bridge_inspection.inspect_install(folder)
+                    result["home_callsite"] = home_callsite.scan_original(folder / "VECreator.dll")
                 self.events.put(("done", result))
             except Exception:
                 self.events.put(("error", traceback.format_exc(limit=10)))

@@ -22,6 +22,8 @@ HOME_ANCHORS = {
 }
 PUBLIC_EXPORT_WORDS = ("export", "draft", "qml", "home", "creator", "register")
 WINDOW_LIMIT = 160
+MAX_EXPORT_NAMES = 350_000  # bounded by verified PE section bytes as well
+MAX_NAME_BYTES = 32_768   # C++ decorated exports can far exceed 320 bytes
 
 
 class InvalidPE(ValueError):
@@ -40,7 +42,7 @@ def _u32(data, pos):
     return struct.unpack_from("<I", data, pos)[0]
 
 
-def _str(data, pos, limit=320):
+def _str(data, pos, limit=MAX_NAME_BYTES):
     if pos < 0 or pos >= len(data):
         raise InvalidPE("Export name points outside file")
     end = data.find(b"\0", pos, min(len(data), pos + limit))
@@ -49,12 +51,17 @@ def _str(data, pos, limit=320):
     return bytes(data[pos:end]).decode("ascii", errors="replace")
 
 
-def pe_exports(data):
-    """Parse PE32/PE32+ export names without executing a single DLL instruction."""
+def pe_export_details(data):
+    """Parse PE32/PE32+ export names with bounds and partial-read diagnostics.
+
+    A single malformed or unusually long export name must not discard all
+    remaining names. Name counts are constrained by the backed PE section,
+    not an arbitrary limit of 25,000, which was too small for real CapCut DLLs.
+    """
     if len(data) < 256 or data[:2] != b"MZ":
         raise InvalidPE("Missing DOS MZ header")
     nt = _u32(data, 0x3C)
-    if nt < 0 or nt + 24 > len(data) or data[nt:nt + 4] != b"PE\0\0":
+    if nt + 24 > len(data) or data[nt:nt + 4] != b"PE\\0\\0":
         raise InvalidPE("Missing PE signature")
     sections = _u16(data, nt + 6)
     opt_size = _u16(data, nt + 20)
@@ -73,7 +80,8 @@ def pe_exports(data):
     export_rva = _u32(data, opt + dd_offset)
     export_size = _u32(data, opt + dd_offset + 4)
     if not export_rva or not export_size:
-        return []
+        return {"names": [], "declared_export_names": 0,
+                "skipped_export_names": 0, "export_parse_complete": True}
     sec_base = opt + opt_size
     if sections > 96 or sec_base + sections * 40 > len(data):
         raise InvalidPE("Bad section table")
@@ -95,18 +103,33 @@ def pe_exports(data):
         raise InvalidPE("Export RVA outside backed section")
 
     export_at = from_rva(export_rva, 40)
-    count = _u32(data, export_at + 24)
+    declared_count = _u32(data, export_at + 24)
     name_rva = _u32(data, export_at + 32)
-    if count > 25000:
-        raise InvalidPE("Export name count exceeds safety limit")
-    if count == 0:
-        return []
-    table = from_rva(name_rva, count * 4)
+    if declared_count > MAX_EXPORT_NAMES:
+        raise InvalidPE(
+            "Export table declares " + str(declared_count) +
+            " names (safety cap " + str(MAX_EXPORT_NAMES) + ")")
+    if declared_count == 0:
+        return {"names": [], "declared_export_names": 0,
+                "skipped_export_names": 0, "export_parse_complete": True}
+    # from_rva validates that the entire table fits inside a file-backed section.
+    table = from_rva(name_rva, declared_count * 4)
     names = []
-    for i in range(count):
-        rva = _u32(data, table + 4 * i)
-        names.append(_str(data, from_rva(rva)))
-    return names
+    skipped = 0
+    for i in range(declared_count):
+        try:
+            rva = _u32(data, table + 4 * i)
+            names.append(_str(data, from_rva(rva)))
+        except InvalidPE:
+            skipped += 1
+            # Continue safely, but never claim a complete callable export map.
+    return {"names": names, "declared_export_names": declared_count,
+            "skipped_export_names": skipped, "export_parse_complete": skipped == 0}
+
+
+def pe_exports(data):
+    """Backwards compatible public-name list; skips malformed names."""
+    return pe_export_details(data)["names"]
 
 
 def qml_anchors(data, markers=HOME_ANCHORS):
@@ -138,7 +161,8 @@ def inspect_module(path, include_qml=False):
             raise InvalidPE("Empty binary")
         handle.seek(0)
         with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as data:
-            exports = pe_exports(data)
+            details = pe_export_details(data)
+            exports = details["names"]
             relevant = [s for s in exports if any(w in s.lower() for w in PUBLIC_EXPORT_WORDS)]
             refs = qml_anchors(data) if include_qml else {}
             direct = [name for name in exports if
@@ -147,6 +171,9 @@ def inspect_module(path, include_qml=False):
             return {"file": Path(path).name,
                     "size_bytes": len(data),
                     "pe_export_count": len(exports),
+                    "declared_export_names": details["declared_export_names"],
+                    "skipped_export_names": details["skipped_export_names"],
+                    "export_parse_complete": details["export_parse_complete"],
                     "relevant_public_exports": relevant[:150],
                     "target_backend_exports": direct,
                     "qml_and_native_string_evidence": refs,
@@ -168,7 +195,13 @@ def inspect_install(root):
     target = result["modules"].get("VECreator.dll", {})
     evidence = target.get("qml_and_native_string_evidence", {})
     all_anchors = all(v.get("found") for v in evidence.values()) if evidence else False
+    incomplete_export_tables = any(
+        not module.get("export_parse_complete", False)
+        for module in result["modules"].values()
+    )
     result["bridge_level"] = (
+        "INCOMPLETE_STATIC_EVIDENCE" if result["errors"] else
+        "PARTIAL_EXPORT_TABLE" if incomplete_export_tables else
         "PUBLIC_PE_EXPORT_PRESENT_UNVALIDATED" if target.get("direct_callable_export_proven")
         else "EMBEDDED_SYMBOLS_ONLY" if all_anchors else "INCOMPLETE_STATIC_EVIDENCE"
     )

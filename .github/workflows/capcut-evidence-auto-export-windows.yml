@@ -34,7 +34,7 @@ jobs:
       - name: Freeze standalone portable Windows app
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --name CapCut_Auto_Export_Evidence_Demo capcut_auto_export_evidence/app.py
+          python -m PyInstaller --noconfirm --clean --onefile --console --paths . --name CapCut_Auto_Export_Evidence_Demo capcut_auto_export_evidence/app.py
           if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
       - name: Frozen startup and evidence gate self-check
         shell: pwsh

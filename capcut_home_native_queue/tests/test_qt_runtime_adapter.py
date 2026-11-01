@@ -138,6 +138,34 @@ class QtRuntimeAdapterTests(unittest.TestCase):
         self.assertEqual(self.admitted, [(self.key, "task-1")])
         self.assertFalse(self.adapter.nativeTaskAdmitted(self.key, "task-1", "draft-A", self.source))
 
+    def test_original_panel_may_close_after_dispatch_before_task_admission(self):
+        self.activate()
+        self.assertTrue(self.adapter.requestExport("draft-A", self.source, self.key))
+        self.assertEqual(self.model.calls, 1)
+        # Original CapCut may dismiss/rebind the export panel after the
+        # void Qt method call. Native acceptance is linked to the saved
+        # pre-dispatch request, not a now-absent visible UI object.
+        self.draft = None
+        self.assertTrue(self.adapter.nativeTaskAdmitted(
+            self.key, "task-A", "draft-A", self.source))
+        self.assertEqual(self.admitted, [(self.key, "task-A")])
+        self.assertTrue(self.adapter.nativeTaskCompleted(
+            self.key, "task-A", self.output))
+        self.assertEqual(len(self.verified), 1)
+
+    def test_changed_panel_never_allows_foreign_native_job_admission(self):
+        self.activate()
+        self.assertTrue(self.adapter.requestExport("draft-A", self.source, self.key))
+        self.draft = CurrentDraft("draft-B", self.source, self.model)
+        self.assertFalse(self.adapter.nativeTaskAdmitted(
+            self.key, "task-B", "draft-B", self.source))
+        self.assertFalse(self.adapter.nativeTaskAdmitted(
+            "draft-B::" + self.source, "task-B", "draft-B", self.source))
+        self.assertEqual(self.admitted, [])
+        # A late original-engine callback for A still belongs to A.
+        self.assertTrue(self.adapter.nativeTaskAdmitted(
+            self.key, "task-A", "draft-A", self.source))
+
     def test_completion_requires_exact_admitted_task_id_and_receipt(self):
         self.activate()
         self.assertTrue(self.adapter.requestExport("draft-A", self.source, self.key))

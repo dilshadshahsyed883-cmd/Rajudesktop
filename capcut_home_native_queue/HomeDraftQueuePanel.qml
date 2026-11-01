@@ -189,7 +189,7 @@ Item {
             var draft = drafts[i];
             var key = keyFor(draft);
             if (!key || seen[key] || selected[key] !== true ||
-                results[key] === "Completed")
+                results[key] === "Completed" || results[key] === "Review")
                 continue;
             seen[key] = true;
             candidates.push(draft);

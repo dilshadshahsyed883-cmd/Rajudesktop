@@ -73,7 +73,10 @@ class QtRuntimeAdapterTests(unittest.TestCase):
         self.verified_receipts.append(ticket)
         if path != self.output:
             raise NativeOutputError("Foreign output rejected")
-        return VerifiedOutput(ticket.key, path, "a" * 64, 32000, 15.0, 1530, 1080)
+        # Production verify_completed returns the resolved ticket path,
+        # which can differ from Windows 8.3 short-name temporary paths.
+        return VerifiedOutput(ticket.key, str(ticket.output_path), "a" * 64,
+                              32000, 15.0, 1530, 1080)
 
     def activate(self):
         self.assertTrue(self.adapter.verifyRuntime())
@@ -143,7 +146,8 @@ class QtRuntimeAdapterTests(unittest.TestCase):
         self.assertFalse(self.adapter.nativeTaskCompleted(self.key, "foreign-task", self.output))
         accepted = self.adapter.nativeTaskCompleted(self.key, "task-1", self.output)
         self.assertTrue(accepted, "Native completion rejection: " + repr(self.failed))
-        self.assertEqual(self.verified, [(self.key, self.output, "a" * 64)])
+        self.assertEqual(self.verified, [(self.key, str(Path(self.output).resolve()),
+                                         "a" * 64)])
         self.assertEqual(len(self.verified_receipts), 1)
         self.assertFalse(self.adapter.nativeTaskCompleted(self.key, "task-1", self.output))
 

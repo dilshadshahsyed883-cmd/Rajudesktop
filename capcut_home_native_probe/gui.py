@@ -17,9 +17,9 @@ from tkinter import filedialog, messagebox, ttk
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from capcut_home_native_probe import probe
+    from capcut_home_native_probe import probe, bridge_inspection
 else:
-    from . import probe
+    from . import probe, bridge_inspection
 
 WINDOW_TITLE = "CapCut 9.7 Home Native Probe — read-only"
 
@@ -54,6 +54,18 @@ def summary_lines(result):
         lines.append(name + ": " + ("MATCH" if item["verified_exact_archive"] else "DIFFERENT VERSION"))
         for marker, present in item["markers"].items():
             lines.append("    " + marker + ": " + ("FOUND" if present else "MISSING"))
+    bridge = result.get("bridge_inspection")
+    if bridge:
+        lines.append("")
+        lines.append("NATIVE HOME BRIDGE INSPECTION")
+        lines.append("Bridge classification: " + bridge["bridge_level"])
+        for name, module in bridge["modules"].items():
+            lines.append(name + " public PE exports: " + str(module["pe_export_count"]))
+            lines.append("  Direct target callable PE names: " +
+                         (", ".join(module["target_backend_exports"]) or "NONE"))
+        for name, error in bridge["errors"].items():
+            lines.append(name + " inspection error: " + error)
+        lines.append("Private Qt/QML callable interface: NOT VERIFIED")
     lines.extend(["", "Home checkboxes installed: NO", "Native export working: NOT VERIFIED",
                   "Your CapCut files were not changed."])
     return "\n".join(lines)
@@ -146,6 +158,8 @@ class ProbeWindow(tk.Tk):
             try:
                 # Original probe only opens files in binary read mode.
                 result = probe.audit(folder)
+                if result["status"] == "NATIVE_HOME_EXPORT_SYMBOLS_FOUND":
+                    result["bridge_inspection"] = bridge_inspection.inspect_install(folder)
                 self.events.put(("done", result))
             except Exception:
                 self.events.put(("error", traceback.format_exc(limit=10)))

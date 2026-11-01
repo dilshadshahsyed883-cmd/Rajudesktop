@@ -254,6 +254,15 @@ class App(tk.Tk):
 
 
 def main():
+    if "--self-check" in sys.argv:
+        index = sys.argv.index("--self-check")
+        if index + 1 == len(sys.argv):
+            raise SystemExit("Supply self-check JSON output path.")
+        atomic_write(Path(sys.argv[index + 1]), {
+            "version": "9.6.0.4097", "engine": "capcut-native-ipc",
+            "ffmpeg": False, "mouse_macro": False,
+            "windows_live_export_verified": False, "native_export_runtime_probed": False})
+        return
     if os.name != "nt": raise SystemExit("CapCut native rendering requires Windows 10/11.")
     App().mainloop()
 

@@ -320,7 +320,12 @@ class App(tk.Tk):
 
 def main():
     if "--self-check" in sys.argv:
-        print(json.dumps(self_check(), indent=2))
+        result = json.dumps(self_check(), indent=2)
+        idx = sys.argv.index("--self-check")
+        if idx + 1 < len(sys.argv):
+            Path(sys.argv[idx + 1]).write_text(result + "\n", encoding="utf-8")
+        elif sys.stdout is not None:
+            print(result)
         return
     if os.name != "nt":
         raise SystemExit("Real CapCut GUI export requires Windows 10/11.")

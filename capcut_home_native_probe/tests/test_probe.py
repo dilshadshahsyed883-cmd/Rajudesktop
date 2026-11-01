@@ -4,9 +4,11 @@ from pathlib import Path
 import tempfile
 import unittest
 import sys
+import json
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from capcut_home_native_probe import probe
+from capcut_home_native_probe import probe, gui
 
 
 class ProbeTests(unittest.TestCase):
@@ -53,6 +55,32 @@ class ProbeTests(unittest.TestCase):
 
     def test_self_check(self):
         self.assertEqual(probe.self_check()["self_check"], "PASS")
+
+    def test_windowed_cli_self_check_without_stdout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "result.json"
+            with patch.object(sys, "stdout", None):
+                code = gui.main(["--self-check", "--json", str(dest)])
+            self.assertEqual(code, 0)
+            state = json.loads(dest.read_text(encoding="utf-8"))
+            self.assertEqual(state["self_check"], "PASS")
+            self.assertFalse(state["native_patch_available"])
+
+    def test_gui_reports_missing_folder_without_claiming_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = probe.audit(Path(tmp))
+            self.assertIn("missing", gui.readable_state(result).lower())
+            report = gui.summary_lines(result)
+            self.assertIn("Native export working: NOT VERIFIED", report)
+            self.assertIn("Your CapCut files were not changed.", report)
+
+    def test_report_cannot_be_saved_inside_capcut_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "9.7.0.4153"
+            root.mkdir()
+            self.assertFalse(gui.valid_report_target(root / "report.json", root))
+            self.assertFalse(gui.valid_report_target(root / "nested" / "report.json", root))
+            self.assertTrue(gui.valid_report_target(Path(tmp) / "report.json", root))
 
 
 if __name__ == "__main__":

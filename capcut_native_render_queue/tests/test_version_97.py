@@ -2,7 +2,8 @@
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch, SimpleNamespace
+from unittest.mock import patch
+from types import SimpleNamespace
 
 from capcut_native_render_queue.core import (
     VERSION, SUPPORTED_DLLS, CAPCUT_97_ARCHIVE_SHA256,

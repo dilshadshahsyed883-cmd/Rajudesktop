@@ -62,7 +62,7 @@ static scanner is required.
 **Crucial:** this method belongs to the **currently active export panel**.
 It neither accepts a `draftId` nor promises native task admission (returns
 `void`). Calling it cannot satisfy the batch queue's
-`submitExport(draftId, strProjectPath, key) -> true` contract without an
+`requestExport(draftId, strProjectPath, key)` dispatch contract and independent `exportAdmitted(key, taskId)` receipt without an
 independently verified live CapCut QObject instance, exact selected-draft
 mapping, host-side admission callback, and genuine rendered MP4. An isolated
 GitHub Qt test process cannot provide access to that original CapCut

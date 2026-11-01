@@ -107,6 +107,71 @@ class NativeHomePanelTests(unittest.TestCase):
         self.assertTrue(self.panel.property("pauseAfterCurrent"))
         self.assertEqual(self.panel.property("activeKey"), "")
 
+    def test_crash_recovery_does_not_auto_repeat_active_job(self):
+        adapter = FakeNativeAdapter()
+        self.panel.setProperty("nativeAdapter", adapter)
+        journal = {
+            "version": 2,
+            "activeKey": "a::D:/CapCut/A",
+            "pendingKeys": ["b::D:/CapCut/B"],
+            "selectedKeys": ["a::D:/CapCut/A", "b::D:/CapCut/B"],
+            "results": {"a::D:/CapCut/A": "Rendering",
+                        "b::D:/CapCut/B": "Queued"},
+            "paused": False,
+            "recoveryReviewRequired": False,
+        }
+        self.assertTrue(self.panel.restoreSnapshot(journal))
+        self.assertEqual(len(adapter.calls), 0,
+                         "Restoring journal must never start original engine")
+        self.assertEqual(self.panel.property("activeKey"), "")
+        self.assertTrue(self.panel.property("pauseAfterCurrent"))
+        self.assertTrue(self.panel.property("recoveryReviewRequired"))
+        self.assertFalse(self.panel.resume())
+        self.assertFalse(self.panel.startSelected())
+        self.assertTrue(self.panel.acknowledgeRecovery(True))
+        self.assertTrue(self.panel.resume())
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertEqual(adapter.calls[0][0], "b",
+                         "Interrupted A must NOT be repeated automatically")
+
+    def test_recovery_restores_paused_queue_without_dispatch(self):
+        adapter = FakeNativeAdapter()
+        self.panel.setProperty("nativeAdapter", adapter)
+        journal = {"version": 2, "activeKey": "", "pendingKeys": [
+            "a::D:/CapCut/A", "b::D:/CapCut/B", "a::D:/CapCut/A"],
+            "selectedKeys": ["a::D:/CapCut/A"], "results": {},
+            "paused": True, "recoveryReviewRequired": False}
+        self.assertTrue(self.panel.restoreSnapshot(journal))
+        self.assertEqual(adapter.calls, [])
+        self.assertFalse(self.panel.property("recoveryReviewRequired"))
+        pending = self.panel.property("pending")
+        if hasattr(pending, "toVariant"):
+            pending = pending.toVariant()
+        self.assertEqual(len(pending), 2)
+        self.assertTrue(self.panel.resume())
+        self.assertEqual(len(adapter.calls), 1)
+
+    def test_recovered_completed_requires_output_reverification(self):
+        adapter = FakeNativeAdapter()
+        self.panel.setProperty("nativeAdapter", adapter)
+        journal = {"version": 2, "activeKey": "",
+            "pendingKeys": ["b::D:/CapCut/B"],
+            "selectedKeys": [], "results": {"a::D:/CapCut/A": "Completed"},
+            "paused": False, "recoveryReviewRequired": False}
+        self.assertTrue(self.panel.restoreSnapshot(journal))
+        self.assertTrue(self.panel.property("recoveryReviewRequired"))
+        self.assertFalse(self.panel.resume())
+        self.assertFalse(self.panel.setSelected(self.items[0], True))
+        self.assertEqual(adapter.calls, [])
+
+    def test_corrupt_or_wrong_version_journal_rejected(self):
+        self.assertFalse(self.panel.restoreSnapshot(None))
+        self.assertFalse(self.panel.restoreSnapshot({"version": 999}))
+        self.assertFalse(self.panel.restoreSnapshot({
+            "version": 2, "pendingKeys": "not-array",
+            "selectedKeys": [], "results": {}}))
+        self.assertEqual(self.panel.property("activeKey"), "")
+
     def test_stop_after_current_then_resume(self):
         adapter = FakeNativeAdapter()
         self.panel.setProperty("nativeAdapter", adapter)

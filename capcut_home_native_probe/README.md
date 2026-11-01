@@ -30,6 +30,17 @@ The original diagnostic was a console application. On double-click it printed an
 
 CLI flags `--self-check`, `--root` and `--json` remain supported for automated checks. When run in windowed mode there is no stdout console, so use `--json` for output.
 
+
+## Native Home bridge ABI follow-up (not a render implementation)
+
+The latest build adds an **offline PE export-directory inspector** and 160-byte context checks for the embedded Home QML and native background-export symbols in `VECreator.dll`. This runs automatically when the original 9.7 binary fingerprints pass in the same GUI **Scan** workflow (no separate tool or repeated selection). The saved report includes `bridge_inspection.bridge_level`.
+
+- `EMBEDDED_SYMBOLS_ONLY` means QML/native symbol text exists, but no named public PE export for the three targeted backend methods was found. This does **not** prove the internal Qt/QML bridge is unavailable; it means direct `ctypes` calls must not be guessed.
+- `PUBLIC_PE_EXPORT_PRESENT_UNVALIDATED` means a symbol name appears in the export table, **not** that the method's calling convention, object lifetime, or safe render behavior is established.
+- `INCOMPLETE_STATIC_EVIDENCE` means extraction, binary validity, or expected symbols need closer investigation.
+
+This is the next necessary diagnostic step toward **select multiple Home drafts and enqueue in CapCut's actual `BackEndExportImpl` engine**, rather than calling the already-failing external lyra-cli adapter. Do not turn this into a CapCut binary patch until the **in-process Qt bridge method and one genuine native MP4 render have been validated in an isolated Windows installation**. No installation, drafts or settings are modified. Signed CapCut DLLs must never be overwritten by this probe.
+
 ## Read-only Windows probe
 
 Run on installed version 9.7.0.4153:

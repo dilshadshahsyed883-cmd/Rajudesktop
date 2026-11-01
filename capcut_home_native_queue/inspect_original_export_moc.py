@@ -18,6 +18,9 @@ EXPECTED_DLL_SHA256 = "967fd06e60a1c68c055278cf6bb1ecd1bb078277d58167fcf6b4cfa2a
 EXPECTED_DLL_SIZE = 281017256
 MODEL_STRINGS_OFFSET = 212657504
 MODEL_META_OFFSET = 212658112
+HOME_EXPORT_STRINGS_OFFSET = 212600152
+HOME_EXPORT_META_OFFSET = 212601744
+HOME_EXPORT_STRING_END_MARKER = b"videoEnhanceExportButtonEnable\x00"
 MOC_HEADER_COUNT = 14
 REQUIRED_METHOD = "clickBackgroudExport"
 
@@ -43,13 +46,17 @@ def _uint(data: bytes, offset: int) -> int:
     return struct.unpack_from("<I", data, offset)[0]
 
 
-def parse_original_export_meta(string_block: bytes, metadata: bytes) -> dict:
+def parse_original_export_meta(
+    string_block: bytes, metadata: bytes, *,
+    expected_model: str = "ExportCompileBottomViewModel",
+    required_method: str = REQUIRED_METHOD,
+) -> dict:
     """Validate bounded Qt6 MOC metadata; never infer a live QObject.
 
     Qt MOC flags: access 0x03 (2=public), method type 0x0c
     (0=plain Q_INVOKABLE, 4=signal, 8=slot). Qt metatype 43=void.
     """
-    if not string_block.startswith(b"ExportCompileBottomViewModel\x00"):
+    if not string_block.startswith(expected_model.encode("ascii") + b"\x00"):
         raise MOCError("Original Qt export panel model name absent")
     try:
         names = [part.decode("utf-8") for part in
@@ -88,7 +95,7 @@ def parse_original_export_meta(string_block: bytes, metadata: bytes) -> dict:
             is_signal=(method_flags & 12) == 4,
             is_slot=(method_flags & 12) == 8,
         ))
-    candidates = [method for method in methods if method.name == REQUIRED_METHOD]
+    candidates = [method for method in methods if method.name == required_method]
     if len(candidates) != 1:
         raise MOCError("Expected exactly one original Qt export method")
     method = candidates[0]
@@ -126,7 +133,20 @@ def analyze_dll(dll: Path) -> dict:
     with dll.open("rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
         strings = bytes(mm[MODEL_STRINGS_OFFSET:MODEL_META_OFFSET])
         metadata = bytes(mm[MODEL_META_OFFSET:MODEL_META_OFFSET + 1200])
+        home_window = bytes(mm[HOME_EXPORT_STRINGS_OFFSET:HOME_EXPORT_STRINGS_OFFSET + 1200])
+        home_end = home_window.find(HOME_EXPORT_STRING_END_MARKER)
+        if home_end < 0:
+            raise MOCError("Original export Home Qt string table missing")
+        home_strings = home_window[:home_end + len(HOME_EXPORT_STRING_END_MARKER)]
+        home_metadata = bytes(mm[HOME_EXPORT_META_OFFSET:HOME_EXPORT_META_OFFSET + 1800])
     result = parse_original_export_meta(strings, metadata)
+    home = parse_original_export_meta(
+        home_strings, home_metadata,
+        expected_model="ExportHomeBottomViewModel",
+        required_method="compileClick",
+    )
+    home["dll_sha256_verified"] = True
+    result["export_home_bottom_model"] = home
     result["dll_sha256_verified"] = True
     return result
 

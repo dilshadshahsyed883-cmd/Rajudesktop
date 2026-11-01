@@ -1,0 +1,64 @@
+name: CapCut 9.6 Evidence Auto Export — Windows Demo
+on:
+  pull_request:
+    paths:
+      - 'capcut_auto_export_evidence/**'
+      - '.github/workflows/capcut-evidence-auto-export-windows.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'capcut_auto_export_evidence/**'
+      - '.github/workflows/capcut-evidence-auto-export-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests without CapCut
+        shell: pwsh
+        run: |
+          python -m unittest discover -s capcut_auto_export_evidence/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
+      - name: Install Windows GUI build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r capcut_auto_export_evidence/requirements.txt pyinstaller==6.16.0
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency setup failed' }
+      - name: Freeze standalone portable Windows app
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --console --paths . --name CapCut_Auto_Export_Evidence_Demo capcut_auto_export_evidence/app.py
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
+      - name: Frozen startup and evidence gate self-check
+        shell: pwsh
+        run: |
+          & ".\dist\CapCut_Auto_Export_Evidence_Demo.exe" --self-check ".\frozen_selfcheck.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen self-check returned an error' }
+          python -c "import json,pathlib; p=pathlib.Path('frozen_selfcheck.json'); assert p.is_file(); d=json.loads(p.read_text()); assert d['capcut_version_expected']=='9.6.0.4097'; assert d['windows_export_tested'] is False; assert d['unattended_batch_certified'] is False; print(d)"
+          if ($LASTEXITCODE -ne 0) { throw 'Self-check contents invalid' }
+      - name: Create portable release ZIP and checksum
+        shell: pwsh
+        run: |
+          $out = 'build-capcut-evidence'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item 'dist/CapCut_Auto_Export_Evidence_Demo.exe' "$out/"
+          Copy-Item 'capcut_auto_export_evidence/README.md' "$out/README.md"
+          Copy-Item 'frozen_selfcheck.json' "$out/SELF_CHECK.json"
+          $hash = (Get-FileHash "$out/CapCut_Auto_Export_Evidence_Demo.exe" -Algorithm SHA256).Hash.ToLower()
+          "$hash  CapCut_Auto_Export_Evidence_Demo.exe" | Out-File -Encoding ascii "$out/SHA256SUMS.txt"
+          Compress-Archive -Path "$out/*" -DestinationPath "CapCut_Auto_Export_Evidence_Demo_Windows.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CapCut_Auto_Export_Evidence_Demo_Windows
+          path: |
+            CapCut_Auto_Export_Evidence_Demo_Windows.zip
+            frozen_selfcheck.json
+          if-no-files-found: error
+          retention-days: 60

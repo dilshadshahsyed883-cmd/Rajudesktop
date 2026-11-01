@@ -30,8 +30,13 @@ Item {
     property bool pauseAfterCurrent: false
     property bool recoveryReviewRequired: false
     property string statusLine: "Native CapCut Home bridge not connected"
+    // A callable method alone is NOT proof of CapCut's private native ABI.
+    // Only a trusted in-process host may expose nativeBridgeVerified=true
+    // after proving object identity, queue admission and original renderer.
+    // The source-only/fake test adapter never establishes that proof.
     readonly property bool adapterReady:
         nativeAdapter !== null &&
+        nativeAdapter.nativeBridgeVerified === true &&
         typeof nativeAdapter.submitExport === "function"
     readonly property bool running: activeKey.length > 0
     readonly property int selectedCount: Object.keys(selected).filter(
@@ -308,7 +313,7 @@ Item {
         Label {
             text: root.adapterReady
                   ? "Original CapCut native queue connected"
-                  : "Native Qt Home export bridge not verified — Start disabled"
+                  : "Native CapCut bridge not verified — Start disabled"
             color: root.adapterReady ? "#187a3a" : "#c66b27"
             Layout.fillWidth: true
             wrapMode: Text.WordWrap

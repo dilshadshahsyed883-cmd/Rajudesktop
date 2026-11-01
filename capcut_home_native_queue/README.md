@@ -44,6 +44,30 @@ The Home queue UI now requires `nativeAdapter.nativeBridgeVerified === true` **a
 
 `ffprobe` is a validation dependency only; this is **not** an FFmpeg or macro-based export engine. Eleven isolated Python tests cover success and fail-closed paths. A separate locally generated one-second MP4 passed the real `ffprobe` path, **but it was not exported with CapCut**. Windows QML CI runs the unit tests; no Windows CI job currently launches the original CapCut engine.
 
+## Original Qt export-panel invokable recovered (2026-11-01)
+
+The exact owner's original CapCut 9.7.0.4153 `VECreator.dll` was
+reconstructed **read-only** from connected Drive parts 005/006 and verified
+against the existing full SHA-256. Original Qt6 meta-object data prove:
+
+- `ExportCompileBottomViewModel::clickBackgroudExport()`
+- Public non-signal Qt invokable, **zero arguments**, **void** result
+- Qt MOC revision 10, model has 18 methods (10 signals)
+- Related methods `pauseExport`, `resumeExport`, `cancel`
+
+A version-pinned offline parser and synthetic fail-closed tests are included
+in `inspect_original_export_moc.py` and its Windows tests. No new owner-side
+static scanner is required.
+
+**Crucial:** this method belongs to the **currently active export panel**.
+It neither accepts a `draftId` nor promises native task admission (returns
+`void`). Calling it cannot satisfy the batch queue's
+`submitExport(draftId, strProjectPath, key) -> true` contract without an
+independently verified live CapCut QObject instance, exact selected-draft
+mapping, host-side admission callback, and genuine rendered MP4. An isolated
+GitHub Qt test process cannot provide access to that original CapCut
+in-process object. See `ORIGINAL_NATIVE_EXPORT_ROUTE.md`.
+
 ## Native adapter contract — **not yet implemented**
 
 The verified CapCut 9.7 `VECreator.dll` contains `HomePageLocalDraftViewModel`, `draftId`, `strProjectPath`, `inExport` and `exportProgress`. The private `BackEndExportImpl::pushTask`, `exportNextTask`, `clickDraftFromHomeView` are embedded symbol strings but **not exported PE methods**. The same DLL exposes Qt `qml_register_types_HomeScene`. None of this establishes the signature or object identity for a callable enqueue method.

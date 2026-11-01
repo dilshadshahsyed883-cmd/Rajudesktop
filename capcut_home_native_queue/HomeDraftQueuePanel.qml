@@ -80,7 +80,17 @@ Item {
     // Called by the trusted host after loading its durable on-disk journal.
     // Never restart a previously active native job from stale state. The
     // original CapCut render may still be running after a UI/process restart.
-    function restoreSnapshot(journal) {
+    function restoreSnapshot(journalJson) {
+        // Persisted state is a JSON string, avoiding ambiguous QVariant/QJSValue
+        // conversion at the Python/Qt/C++ host boundary.
+        if (typeof journalJson !== "string" || journalJson.length > 1000000)
+            return false;
+        var journal;
+        try {
+            journal = JSON.parse(journalJson);
+        } catch (error) {
+            return false;
+        }
         if (!journal || journal.version !== 2 ||
             !Array.isArray(journal.pendingKeys) ||
             !Array.isArray(journal.selectedKeys) ||

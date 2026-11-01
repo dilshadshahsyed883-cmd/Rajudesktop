@@ -117,7 +117,10 @@ class NativeHomePanelTests(unittest.TestCase):
         adapter.exportVerified.emit(adapter.calls[0][2], "D:/exports/a.mp4", "b"*64)
         self.app.processEvents()
         self.assertEqual(len(adapter.calls), 1)
-        self.assertEqual(len(self.panel.property("pending")), 1)
+        pending = self.panel.property("pending")
+        if hasattr(pending, "toVariant"):
+            pending = pending.toVariant()
+        self.assertEqual(len(pending), 1)
         self.assertTrue(self.panel.resume())
         self.assertEqual(len(adapter.calls), 2)
 

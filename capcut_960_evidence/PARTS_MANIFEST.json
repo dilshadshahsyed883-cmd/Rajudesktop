@@ -1,0 +1,38 @@
+{
+  "source": "capcut 9.6.0.4097.zip",
+  "source_bytes": 955669438,
+  "source_sha256": "389c0ad94cc7f6e967b8be374e78f4640496194e12671567ad19d752e5e84cbd",
+  "parts": [
+    {
+      "name": "capcut 9.6.0.4097.zip.part001",
+      "bytes": 167772160,
+      "sha256": "0647eaa449f5037357cb5f3c7b32e3064dddd1e8a498af3f79aa9b21c37d1e39"
+    },
+    {
+      "name": "capcut 9.6.0.4097.zip.part002",
+      "bytes": 167772160,
+      "sha256": "7201401cc5b96eaac03814f06b2065712e833fe0f2ce8d1bbe9fc5150e944906"
+    },
+    {
+      "name": "capcut 9.6.0.4097.zip.part003",
+      "bytes": 167772160,
+      "sha256": "1b6cf3308a56d92ca550a009274bf7e55bb3d45245dfda2a4a9eb9262b44a0dd"
+    },
+    {
+      "name": "capcut 9.6.0.4097.zip.part004",
+      "bytes": 167772160,
+      "sha256": "d3fefaf6b3ca5999efee882a9178904968eec3532c7d77f9b518322a8bea61a8"
+    },
+    {
+      "name": "capcut 9.6.0.4097.zip.part005",
+      "bytes": 167772160,
+      "sha256": "c1cef688d2c9d64d6e29d89e5111743c3d19b85e02c490d222dc87a61acda852"
+    },
+    {
+      "name": "capcut 9.6.0.4097.zip.part006",
+      "bytes": 116808638,
+      "sha256": "72a727f242ec50e578249e1dd3be319aaa6f382188f92a91675f24df4d341f3a"
+    }
+  ],
+  "reassembly": "Concatenate parts in listed order without modifying bytes."
+}

@@ -28,6 +28,7 @@ Item {
     property var pending: []
     property string activeKey: ""
     property bool pauseAfterCurrent: false
+    property bool recoveryReviewRequired: false
     property string statusLine: "Native CapCut Home bridge not connected"
     readonly property bool adapterReady:
         nativeAdapter !== null &&
@@ -49,7 +50,8 @@ Item {
     }
     function setSelected(draft, value) {
         var key = keyFor(draft);
-        if (!key || running || pending.length > 0 || results[key] === "Completed")
+        if (!key || running || pending.length > 0 || recoveryReviewRequired ||
+            results[key] === "Completed" || results[key] === "Review")
             return false;
         var updated = Object.assign({}, selected);
         updated[key] = value === true;
@@ -65,6 +67,8 @@ Item {
     }
     function snapshot() {
         return {
+            version: 2,
+            recoveryReviewRequired: recoveryReviewRequired,
             selectedKeys: Object.keys(selected).filter(function (k) { return selected[k]; }),
             pendingKeys: pending.map(function (d) { return keyFor(d); }),
             activeKey: activeKey,
@@ -72,12 +76,102 @@ Item {
             paused: pauseAfterCurrent
         };
     }
+
+    // Called by the trusted host after loading its durable on-disk journal.
+    // Never restart a previously active native job from stale state. The
+    // original CapCut render may still be running after a UI/process restart.
+    function restoreSnapshot(journal) {
+        if (!journal || journal.version !== 2 ||
+            !Array.isArray(journal.pendingKeys) ||
+            !Array.isArray(journal.selectedKeys) ||
+            typeof journal.results !== "object" ||
+            running || pending.length > 0)
+            return false;
+
+        var known = {};
+        var unique = {};
+        for (var i = 0; i < drafts.length; ++i) {
+            var k = keyFor(drafts[i]);
+            if (k && known[k] === undefined)
+                known[k] = drafts[i];
+        }
+
+        var restored = [];
+        var nextResults = {};
+        var needsReview = journal.recoveryReviewRequired === true;
+        for (var name in journal.results) {
+            if (!known[name])
+                continue;
+            var state = journal.results[name];
+            if (state === "Completed") {
+                // No filesystem verification happens in the QML view itself.
+                // Never assume previously completed files still exist.
+                nextResults[name] = "Review";
+                needsReview = true;
+            } else if (state === "Review") {
+                nextResults[name] = "Review";
+            }
+        }
+        for (var j = 0; j < journal.pendingKeys.length; ++j) {
+            var key = journal.pendingKeys[j];
+            if (typeof key !== "string" || !known[key] || unique[key] ||
+                nextResults[key] === "Review")
+                continue;
+            unique[key] = true;
+            restored.push(known[key]);
+            nextResults[key] = "Queued";
+        }
+        if (typeof journal.activeKey === "string" &&
+            journal.activeKey.length > 0) {
+            needsReview = true;
+            if (known[journal.activeKey])
+                nextResults[journal.activeKey] = "Review";
+        }
+
+        var checked = {};
+        for (var t = 0; t < journal.selectedKeys.length; ++t) {
+            var checkedKey = journal.selectedKeys[t];
+            if (known[checkedKey] && nextResults[checkedKey] !== "Review")
+                checked[checkedKey] = true;
+        }
+        selected = checked;
+        results = nextResults;
+        activeKey = "";
+        pending = restored;
+        pauseAfterCurrent = true;
+        recoveryReviewRequired = needsReview;
+        statusLine = needsReview
+              ? "Recovered safely. Check earlier CapCut exports before continuing."
+              : "Recovered queue paused. Press Resume when ready.";
+        snapshotChanged(snapshot());
+        return true;
+    }
+    function acknowledgeRecovery(reviewed) {
+        if (reviewed !== true || !recoveryReviewRequired || running)
+            return false;
+        recoveryReviewRequired = false;
+        statusLine = "Reviewed. Resume remaining queued drafts when ready.";
+        snapshotChanged(snapshot());
+        return true;
+    }
+    function resetReviewedDraft(draft) {
+        var key = keyFor(draft);
+        if (!key || running || pending.length > 0 || recoveryReviewRequired ||
+            results[key] !== "Review")
+            return false;
+        var nextResults = Object.assign({}, results);
+        delete nextResults[key];
+        results = nextResults;
+        statusLine = "Draft unlocked after review; select to export again.";
+        snapshotChanged(snapshot());
+        return true;
+    }
     function startSelected() {
         if (!adapterReady) {
             statusLine = "Native bridge unavailable; export disabled";
             return false;
         }
-        if (running || pending.length > 0)
+        if (running || pending.length > 0 || recoveryReviewRequired)
             return false;
         var candidates = [];
         var seen = {};
@@ -102,7 +196,8 @@ Item {
         return true;
     }
     function runNext() {
-        if (running || pauseAfterCurrent || pending.length === 0)
+        if (running || pauseAfterCurrent || recoveryReviewRequired ||
+            pending.length === 0)
             return;
         if (!adapterReady) {
             statusLine = "Native adapter disconnected; queue is paused";
@@ -168,7 +263,7 @@ Item {
         snapshotChanged(snapshot());
     }
     function resume() {
-        if (running || !adapterReady)
+        if (running || recoveryReviewRequired || !adapterReady)
             return false;
         pauseAfterCurrent = false;
         runNext();
@@ -227,8 +322,10 @@ Item {
                     anchors.rightMargin: 6
                     CheckBox {
                         enabled: key.length > 0 && !root.running &&
+                                 !root.recoveryReviewRequired &&
                                  root.pending.length === 0 &&
-                                 root.results[key] !== "Completed"
+                                 root.results[key] !== "Completed" &&
+                                 root.results[key] !== "Review"
                         checked: root.selected[key] === true
                         onClicked: root.setSelected(draft, checked)
                     }
@@ -249,6 +346,7 @@ Item {
             Button {
                 text: "Export selected in queue (" + root.selectedCount + ")"
                 enabled: root.adapterReady && !root.running &&
+                         !root.recoveryReviewRequired &&
                          root.pending.length === 0 && root.selectedCount > 0
                 onClicked: root.startSelected()
             }
@@ -260,9 +358,16 @@ Item {
             Button {
                 text: "Resume"
                 enabled: root.pauseAfterCurrent &&
+                         !root.recoveryReviewRequired &&
                          !root.running && root.pending.length > 0 &&
                          root.adapterReady
                 onClicked: root.resume()
+            }
+            Button {
+                text: "Reviewed interrupted export"
+                visible: root.recoveryReviewRequired
+                enabled: !root.running
+                onClicked: root.acknowledgeRecovery(true)
             }
             Item { Layout.fillWidth: true }
         }

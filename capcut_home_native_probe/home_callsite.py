@@ -33,6 +33,110 @@ SIGNAL = re.compile(rb"\bon([A-Z][a-zA-Z0-9_]*)\s*:")
 EXPORT_TERMS = re.compile(rb"(?i)\b(backgroundexport|clickbackgroundexport|clickdraftfromhomeview|exportdraft|startexport|onexport\w*)\b")
 MAX_PER_CATEGORY = 70
 
+# Target the *observed* onClicked handlers, not another global symbol scan.
+CALL_EXPR = re.compile(rb"\b([A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*){0,4})\s*\(")
+SIGNAL_DECL = re.compile(rb"\bsignal\s+([A-Za-z_][A-Za-z_0-9]*)\s*\(")
+LOCAL_ID = re.compile(rb"\bid\s*:\s*([A-Za-z_][A-Za-z_0-9]*)")
+HANDLER_LIMIT = 24
+BODY_LIMIT = 2400
+SOURCE_EXCERPT_LIMIT = 420
+
+
+def _qml_handler_expression(data, colon_end):
+    """Bound one QML handler body without assuming a particular Qt ViewModel."""
+    cursor = colon_end
+    while cursor < len(data) and data[cursor] in b" \t\r\n":
+        cursor += 1
+    if cursor >= len(data):
+        return b"", True
+
+    if data[cursor] != ord("{"):
+        end = cursor
+        while end < len(data) and end - cursor < BODY_LIMIT and data[end] not in b"\r\n;":
+            end += 1
+        return bytes(data[cursor:end]), end - cursor >= BODY_LIMIT
+
+    start = cursor
+    depth = 0
+    quote = None
+    in_line_comment = False
+    in_block_comment = False
+    while cursor < len(data) and cursor - start < BODY_LIMIT:
+        ch = data[cursor]
+        nxt = data[cursor + 1] if cursor + 1 < len(data) else -1
+        if in_line_comment:
+            if ch == 10:
+                in_line_comment = False
+        elif in_block_comment:
+            if ch == 42 and nxt == 47:
+                in_block_comment = False
+                cursor += 1
+        elif quote is not None:
+            if ch == 92:
+                cursor += 1
+            elif ch == quote:
+                quote = None
+        elif ch in (34, 39, 96):
+            quote = ch
+        elif ch == 47 and nxt == 47:
+            in_line_comment = True
+            cursor += 1
+        elif ch == 47 and nxt == 42:
+            in_block_comment = True
+            cursor += 1
+        elif ch == 123:
+            depth += 1
+        elif ch == 125:
+            depth -= 1
+            if depth == 0:
+                cursor += 1
+                return bytes(data[start:cursor]), False
+        cursor += 1
+    return bytes(data[start:cursor]), True
+
+
+def _excerpt(expression):
+    # Short local QML excerpt, never a source dump or entire proprietary component.
+    text = expression[:SOURCE_EXCERPT_LIMIT].decode("utf-8", errors="replace")
+    return "".join(c if c.isprintable() else " " for c in text).strip()
+
+
+def _clicked_handler_details(data, origin, limit=HANDLER_LIMIT):
+    details = []
+    for m in HANDLER.finditer(data):
+        if len(details) >= limit:
+            break
+        expression, truncated = _qml_handler_expression(data, m.end())
+        calls = []
+        for candidate in CALL_EXPR.finditer(expression):
+            name = candidate.group(1).decode("ascii", errors="replace")
+            if name not in calls:
+                calls.append(name)
+        prelude = data[max(0, m.start() - 450):m.start()]
+        ids = list(LOCAL_ID.finditer(prelude))
+        details.append({
+            "handler": m.group(1).decode("ascii"),
+            "file_offset": origin + m.start(),
+            "nearest_id": ids[-1].group(1).decode("ascii") if ids else None,
+            "candidate_calls": calls[:24],
+            "body_excerpt": _excerpt(expression),
+            "body_truncated": truncated,
+            "conclusion": "STATIC_QML_ONLY_NOT_VERIFIED_NATIVE_EXPORT",
+        })
+    return details
+
+
+def _signal_declarations(data, origin):
+    records = []
+    for m in SIGNAL_DECL.finditer(data):
+        if len(records) >= 32:
+            break
+        records.append({
+            "signal": m.group(1).decode("ascii"),
+            "file_offset": origin + m.start()
+        })
+    return records
+
 
 def _records(pattern, data, origin, limit=MAX_PER_CATEGORY):
     counts = Counter()
@@ -69,6 +173,9 @@ def analyze_home_slice(data, origin=0):
         "explicit_export_tokens": export_terms,
         "explicit_export_token_counts": export_counts,
         "connection_count_in_window": len(connections),
+        "click_handler_actions": _clicked_handler_details(data, origin),
+        "local_signal_declarations": _signal_declarations(data, origin),
+        "candidate_export_entrypoint_verified": False,
     }
 
 

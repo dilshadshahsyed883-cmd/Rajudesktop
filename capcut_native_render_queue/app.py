@@ -34,7 +34,7 @@ class App(tk.Tk):
         super().__init__()
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         settings = read_json(SETTINGS, {})
-        self.title("CapCut Native Render Queue — 9.6")
+        self.title("CapCut Native Render Queue — 9.6 / 9.7")
         self.geometry("1020x650")
         self.minsize(790, 510)
         self.drafts = []
@@ -132,7 +132,7 @@ class App(tk.Tk):
                 engine = NativeIPC(locate_capcut())
                 native = engine.list()  # exact native refs, read-only
                 rows = bind_projects(disk, native)
-                info = f"CapCut 9.6 native IPC connected: {len(native)} verified project references."
+                info = f"CapCut {engine.root.name} native IPC connected: {len(native)} verified project references."
             except Exception as exc:
                 engine = None
                 rows = bind_projects(scan_drafts(candidate_roots(root)), [])
@@ -203,7 +203,7 @@ class App(tk.Tk):
         if not selection: return
         item = self.drafts[int(selection[0])]
         if not item["ref"]:
-            messagebox.showwarning("Not bound", "Native IPC has not confirmed this draft reference.")
+            messagebox.showwarning("Not bound", "Native IPC has not confirmed this draft reference. If the host ProjectAdapter is unavailable, no local draft can safely be bound.")
             return
         if item["status"] == "Review":
             if not messagebox.askyesno("Reconcile prior export",
@@ -259,9 +259,9 @@ def main():
         if index + 1 == len(sys.argv):
             raise SystemExit("Supply self-check JSON output path.")
         atomic_write(Path(sys.argv[index + 1]), {
-            "version": "9.6.0.4097", "engine": "capcut-native-ipc",
+            "supported_versions": ["9.6.0.4097", "9.7.0.4153"], "engine": "capcut-native-ipc",
             "ffmpeg": False, "mouse_macro": False,
-            "windows_live_export_verified": False, "native_export_runtime_probed": False})
+            "windows_live_export_verified": False, "native_export_runtime_probed": False, "host_adapter_binding_verified": False})
         return
     if os.name != "nt": raise SystemExit("CapCut native rendering requires Windows 10/11.")
     App().mainloop()

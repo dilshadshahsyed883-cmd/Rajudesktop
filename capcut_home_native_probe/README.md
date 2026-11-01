@@ -41,6 +41,14 @@ The latest build adds an **offline PE export-directory inspector** and 160-byte 
 
 This is the next necessary diagnostic step toward **select multiple Home drafts and enqueue in CapCut's actual `BackEndExportImpl` engine**, rather than calling the already-failing external lyra-cli adapter. Do not turn this into a CapCut binary patch until the **in-process Qt bridge method and one genuine native MP4 render have been validated in an isolated Windows installation**. No installation, drafts or settings are modified. Signed CapCut DLLs must never be overwritten by this probe.
 
+## Home QML click-callsite analysis (new after 9.7 PE verification)
+
+The owner's previous original-binary report established that the native `BackEndExportImpl` names were **private**, not PE callable exports. To avoid repeating that search, the GUI's existing **Scan original CapCut files** button now performs a **targeted read-only QML callsite analysis** after all four SHA-256 checks succeed. It examines the bounded region around the original `HomePageLocalDraftViewModel` card and returns *names and byte offsets* for nearby `onClicked` handlers, ViewModel method calls, related properties and relevant export tokens. It does **not** return a copied vendor QML source file.
+
+The saved JSON contains `home_callsite` with status `HOME_QML_METHOD_CANDIDATES` and `viewmodel_call_counts`. These candidate names can reveal which original Qt/QML method handles draft export; they **do not** establish that an internal C++ method can safely be called. A genuine Windows CapCut export and isolated in-process binding are still required before packaging a modification.
+
+This analyser uses only standard-library bounded memory mapping, checks the exact pinned SHA-256, never starts CapCut, and is covered by synthetic tests. No extra background service or repeated scan process is needed; the existing GUI Save Report includes the new section.
+
 ## Read-only Windows probe
 
 Run on installed version 9.7.0.4153:

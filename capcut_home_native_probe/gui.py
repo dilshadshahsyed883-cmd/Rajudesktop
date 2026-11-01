@@ -191,6 +191,22 @@ class ProbeWindow(tk.Tk):
 
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
+    # Exercise actual Tk window creation in Windows CI, not only the CLI parser.
+    if len(args) == 2 and args[0] == "--gui-smoke":
+        app = ProbeWindow()
+        try:
+            app.update_idletasks()
+            app.update()
+            app.folder.set(str(Path(args[1]).parent / "intentionally-missing-capcut"))
+            app.scan()
+            app.update()
+            assert "Folder not found" in app.status.get()
+            Path(args[1]).write_text(json.dumps({"gui_window_created": True,
+                "error_does_not_close_window": bool(app.winfo_exists()),
+                "live_export_verified": False}), encoding="utf-8")
+        finally:
+            app.destroy()
+        return 0
     # Preserve automation compatibility: --self-check and --root/--json use CLI.
     if args:
         return probe.main(args)

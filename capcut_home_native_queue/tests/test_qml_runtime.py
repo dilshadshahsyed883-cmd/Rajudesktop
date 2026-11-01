@@ -120,7 +120,7 @@ class NativeHomePanelTests(unittest.TestCase):
             "paused": False,
             "recoveryReviewRequired": False,
         }
-        self.assertTrue(self.panel.restoreSnapshot(journal))
+        self.assertTrue(self.panel.restoreSnapshot(self.engine.toScriptValue(journal)))
         self.assertEqual(len(adapter.calls), 0,
                          "Restoring journal must never start original engine")
         self.assertEqual(self.panel.property("activeKey"), "")
@@ -141,7 +141,7 @@ class NativeHomePanelTests(unittest.TestCase):
             "a::D:/CapCut/A", "b::D:/CapCut/B", "a::D:/CapCut/A"],
             "selectedKeys": ["a::D:/CapCut/A"], "results": {},
             "paused": True, "recoveryReviewRequired": False}
-        self.assertTrue(self.panel.restoreSnapshot(journal))
+        self.assertTrue(self.panel.restoreSnapshot(self.engine.toScriptValue(journal)))
         self.assertEqual(adapter.calls, [])
         self.assertFalse(self.panel.property("recoveryReviewRequired"))
         pending = self.panel.property("pending")
@@ -158,7 +158,7 @@ class NativeHomePanelTests(unittest.TestCase):
             "pendingKeys": ["b::D:/CapCut/B"],
             "selectedKeys": [], "results": {"a::D:/CapCut/A": "Completed"},
             "paused": False, "recoveryReviewRequired": False}
-        self.assertTrue(self.panel.restoreSnapshot(journal))
+        self.assertTrue(self.panel.restoreSnapshot(self.engine.toScriptValue(journal)))
         self.assertTrue(self.panel.property("recoveryReviewRequired"))
         self.assertFalse(self.panel.resume())
         self.assertFalse(self.panel.setSelected(self.items[0], True))

@@ -26,7 +26,7 @@ from .native_output_validation import (
 )
 
 EXPECTED_CLASS = "ExportCompileBottomViewModel"
-EXPECTED_SIGNATURE = b"clickBackgroudExport()"
+EXPECTED_SIGNATURE = "clickBackgroudExport()"
 
 
 @dataclass(frozen=True)

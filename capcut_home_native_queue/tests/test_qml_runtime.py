@@ -12,7 +12,7 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
-from PySide6.QtCore import QObject, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QUrl, Signal, Slot, Property
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 
@@ -24,10 +24,16 @@ class FakeNativeAdapter(QObject):
     exportFailed = Signal(str, str)
     exportProgress = Signal(str, float)
 
-    def __init__(self):
+    def __init__(self, bridge_verified=True):
         super().__init__()
         self.calls = []
         self.accept = True
+        self._bridge_verified = bridge_verified
+
+    @Property(bool, constant=True)
+    def nativeBridgeVerified(self):
+        # Synthetic test-only attestation. It does NOT verify CapCut's ABI.
+        return self._bridge_verified
 
     @Slot(str, str, str, result=bool)
     def submitExport(self, draft_id, path, key):
@@ -63,6 +69,17 @@ class NativeHomePanelTests(unittest.TestCase):
         self.assertFalse(self.panel.property("adapterReady"))
         self.assertTrue(self.panel.setSelected(self.items[0], True))
         self.assertFalse(self.panel.startSelected())
+        self.assertEqual(self.panel.property("activeKey"), "")
+        self.assertIn("unavailable", self.panel.property("statusLine").lower())
+
+    def test_callable_adapter_without_native_proof_remains_disabled(self):
+        adapter = FakeNativeAdapter(bridge_verified=False)
+        self.panel.setProperty("nativeAdapter", adapter)
+        self.app.processEvents()
+        self.assertFalse(self.panel.property("adapterReady"))
+        self.assertTrue(self.panel.setSelected(self.items[0], True))
+        self.assertFalse(self.panel.startSelected())
+        self.assertEqual(adapter.calls, [])
         self.assertEqual(self.panel.property("activeKey"), "")
         self.assertIn("unavailable", self.panel.property("statusLine").lower())
 

@@ -34,7 +34,7 @@ jobs:
       - name: Build Windows portable EXE
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --name CapCut_Native_Render_Queue capcut_native_render_queue/app.py
+          python -m PyInstaller --noconfirm --clean --onefile --console --paths . --name CapCut_Native_Render_Queue capcut_native_render_queue/app.py
           if ($LASTEXITCODE -ne 0) { throw 'EXE build failed' }
       - name: Frozen self-check without CapCut or FFmpeg
         shell: pwsh

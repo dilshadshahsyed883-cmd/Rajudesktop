@@ -61,7 +61,7 @@ def pe_export_details(data):
     if len(data) < 256 or data[:2] != b"MZ":
         raise InvalidPE("Missing DOS MZ header")
     nt = _u32(data, 0x3C)
-    if nt + 24 > len(data) or data[nt:nt + 4] != b"PE\\0\\0":
+    if nt + 24 > len(data) or data[nt:nt + 4] != b"PE\0\0":
         raise InvalidPE("Missing PE signature")
     sections = _u16(data, nt + 6)
     opt_size = _u16(data, nt + 20)

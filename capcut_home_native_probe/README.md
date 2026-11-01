@@ -41,6 +41,19 @@ The latest build adds an **offline PE export-directory inspector** and 160-byte 
 
 This is the next necessary diagnostic step toward **select multiple Home drafts and enqueue in CapCut's actual `BackEndExportImpl` engine**, rather than calling the already-failing external lyra-cli adapter. Do not turn this into a CapCut binary patch until the **in-process Qt bridge method and one genuine native MP4 render have been validated in an isolated Windows installation**. No installation, drafts or settings are modified. Signed CapCut DLLs must never be overwritten by this probe.
 
+## Final owner click-handler report — no export calls (2026-11-01)
+
+The owner uploaded `capcut-home-native-probe3.json` with two actual parsed handler bodies from the exact 9.7.0.4153 binary:
+
+- Absolute offset `156377425`: `viewModel.openRecycleBinWindow()`. **Recycle Bin**, not an export command.
+- Absolute offset `156379561`: telemetry `trackingReportHelper.invokeReport(...)` and `viewModel.openAutoUploadWindow(Qt.rect(...))`. **Cloud Auto Upload window**, not export. Neither invokes `BackEndExportImpl`.
+
+This supersedes our earlier uncertainty about these two Home actions. Both are explicitly **excluded** as possible native draft-render triggers, and adding an export queue at either handler would be incorrect. Existing QML candidates in the bounded card-region are not proof that a separate draft export API is exposed.
+
+The source parser now includes ordinary `viewModel.method()` calls (not only `rootViewModel` and `baseViewModel`), classifies the two known actions as `RECYCLE_BIN_NOT_EXPORT` and `AUTO_UPLOAD_WINDOW_NOT_EXPORT`, and has a regression test using those actual handler expressions. The public PE exports remain unrelated to a directly callable `BackEndExportImpl` ABI.
+
+**Stop further repetition of the same static GUI scan.** Real progress requires access to the original Qt/QML native export invocation implementation in an isolated runnable CapCut environment or a documented in-process extension route. The current project does not possess a verified native CapCut adapter or a completed MP4 render. Until available, keep the native queue unconnected and disabled; do not patch signed CapCut binaries or claim a working exporter.
+
 ## Results from original Windows scan — November 1, 2026
 
 The owner supplied `capcut-home-native-probe2.json` from exact CapCut `9.7.0.4153`. All four original SHA-256 fingerprints matched. `bridge_level=EMBEDDED_SYMBOLS_ONLY` and all three DLL PE export tables parsed without errors. The QML callsite section reported two `onClicked` handlers at byte offsets **156377425** and **156379561** inside the bounded Home draft-card region, but **zero** matches for `rootViewModel.method()` / `baseViewModel.method()`, zero matching export tokens and no `Connections` object in that slice.

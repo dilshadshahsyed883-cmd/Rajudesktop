@@ -29,6 +29,13 @@ class FakeNativeAdapter(QObject):
         self.calls = []
         self.accept = True
         self._bridge_verified = bridge_verified
+        self.bound = True
+        self.binding_calls = []
+
+    @Slot(str, str, str, result=bool)
+    def verifyCurrentDraftBinding(self, draft_id, path, key):
+        self.binding_calls.append((draft_id, path, key))
+        return self.bound
 
     @Property(bool, constant=True)
     def nativeBridgeVerified(self):
@@ -113,6 +120,35 @@ class NativeHomePanelTests(unittest.TestCase):
         self.assertEqual(len(adapter.calls), 2)
         self.assertEqual(adapter.calls[1][0], "b")
         self.assertEqual(self.panel.property("activeKey"), adapter.calls[1][2])
+
+    def test_wrong_current_draft_binding_blocks_export(self):
+        adapter = FakeNativeAdapter()
+        adapter.bound = False
+        self.panel.setProperty("nativeAdapter", adapter)
+        self.panel.setSelected(self.items[0], True)
+        self.panel.setSelected(self.items[1], True)
+        self.assertTrue(self.panel.startSelected())
+        self.assertEqual([call[0] for call in adapter.binding_calls], ["a"])
+        self.assertEqual(adapter.calls, [], "Must not click Export for wrong draft")
+        self.assertFalse(self.panel.property("running"))
+        self.assertTrue(self.panel.property("pauseAfterCurrent"))
+        self.assertIn("not bound", self.panel.property("statusLine"))
+
+    def test_sequential_jobs_revalidate_draft_identity(self):
+        adapter = FakeNativeAdapter()
+        self.panel.setProperty("nativeAdapter", adapter)
+        self.panel.setSelected(self.items[0], True)
+        self.panel.setSelected(self.items[1], True)
+        self.assertTrue(self.panel.startSelected())
+        self.assertEqual(len(adapter.calls), 1)
+        adapter.bound = False  # Host must rebind after first render finishes.
+        adapter.exportVerified.emit(adapter.calls[0][2],
+                                    "D:/exports/a.mp4", "a" * 64)
+        self.app.processEvents()
+        self.assertEqual([call[0] for call in adapter.binding_calls], ["a", "b"])
+        self.assertEqual(len(adapter.calls), 1,
+                         "Second draft must never use first panel binding")
+        self.assertTrue(self.panel.property("pauseAfterCurrent"))
 
     def test_adapter_rejects_job_and_halts_without_retry(self):
         adapter = FakeNativeAdapter()

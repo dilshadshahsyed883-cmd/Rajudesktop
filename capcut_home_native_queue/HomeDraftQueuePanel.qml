@@ -143,7 +143,11 @@ Item {
         }
         setResult(key, "Completed");
         activeKey = "";
+        var updatedSelection = Object.assign({}, selected);
+        delete updatedSelection[key];
+        selected = updatedSelection;
         statusLine = "Verified MP4: " + outputPath;
+        snapshotChanged(snapshot());
         if (!pauseAfterCurrent)
             runNext();
         return true;
@@ -155,6 +159,7 @@ Item {
         activeKey = "";
         pauseAfterCurrent = true;
         statusLine = "Stopped for review: " + String(reason);
+        snapshotChanged(snapshot());
         return true;
     }
     function pause() {
@@ -167,6 +172,7 @@ Item {
             return false;
         pauseAfterCurrent = false;
         runNext();
+        snapshotChanged(snapshot());
         return true;
     }
 

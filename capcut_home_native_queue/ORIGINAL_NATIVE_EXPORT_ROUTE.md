@@ -59,6 +59,37 @@ and has synthetic signature-regression tests. No proprietary binary or user
 report has been committed to GitHub. This is offline evidence, **not a
 working patched CapCut EXE or batch renderer**.
 
+## Export-Home controller Qt method (read-only original-DLL verification)
+
+The owner's unchanged, SHA-256 verified `VECreator.dll` also has a
+**different** Qt6 moc class, `ExportHomeBottomViewModel`, which was not
+previously in the PR's version-locked checks:
+
+- Original file string-table offset: `212600152`
+- Original file Qt metadata offset: `212601744` (revision 10)
+- 23 methods, 18 signals
+- `compileClick()`: **public, zero arguments, void return** (moc flags
+  `0x02`, return metatype `43`)
+- `cancelClick()` is another public void action.
+- `videoEnhanceCompileClick()` is public and returns `bool`, but this
+  is a separate enhancement action and does not prove batch admission.
+
+These are actual Qt meta-object signatures from the original 9.7.0.4153
+binary, *not* vendor-documented extension APIs or call addresses.
+`ExportHomeBottomViewModel.compileClick()` appears to be an export-panel
+compile action by its registered name, **but it is not confirmed to
+dispatch a particular Home draft**. It accepts neither `draftId` nor
+`strProjectPath` and cannot replace the missing live original-object
+binding, draft ownership verification, or original scheduler task
+admission signal.
+
+The same version-locked offline parser
+`inspect_original_export_moc.py` verifies both original export-panel
+classes; it rejects any changed DLL SHA-256/size or incompatible Qt moc
+signatures. Do not equate two identified invokable methods with an
+operational extension/injection interface. No original CapCut files,
+installed process or user drafts were changed in this verification.
+
 ## Confirmed false UI triggers
 
 The two original Home `onClicked` handlers at `156377425` and `156379561` invoke `viewModel.openRecycleBinWindow()` and `viewModel.openAutoUploadWindow(...)`, respectively. Neither is a video export trigger. Never map these to `submitExport`.

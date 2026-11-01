@@ -9,8 +9,13 @@ import subprocess
 import tempfile
 import time
 
-VERSION = "9.6.0.4097"
-DLL_SHA256 = "878df7053d8eb83bf2bf35621fbdc7652e80836680a658a786560689f788f9f7"
+VERSION = "9.7.0.4153"  # default when multiple installed; running version always wins
+DLL_SHA256 = "8177f813b8c3ee1b58f36a2339c83691f0c7c53bac3d114cd4b66757e7f0879f"
+SUPPORTED_DLLS = {
+    "9.6.0.4097": "878df7053d8eb83bf2bf35621fbdc7652e80836680a658a786560689f788f9f7",
+    "9.7.0.4153": DLL_SHA256,
+}
+CAPCUT_97_ARCHIVE_SHA256 = "a17790e03bf7ed2ffbaa2c32bab7a1ac96a5b8b75520904e7bd42e882bc9fff4"
 REF = re.compile(r"^local://[A-Za-z0-9_%.:/+\-]+$")
 
 
@@ -210,16 +215,43 @@ def verify_output(path, seconds=180, stop=None):
 
 
 def locate_capcut():
+    """Prefer one active pinned CapCut installation; otherwise select newest installed.
+
+    The launcher executable under Apps/ is NOT the versioned renderer.
+    """
+    active = {}
     try:
         import psutil
         for proc in psutil.process_iter(["name", "exe"]):
             try:
-                if (proc.info["name"] or "").casefold() == "capcut.exe" and proc.info["exe"]:
-                    exe = Path(proc.info["exe"])
-                    if exe.parent.name == VERSION: return exe
-            except (OSError, psutil.Error): pass
-    except ImportError: pass
-    return Path(os.environ.get("LOCALAPPDATA", "")) / "CapCut" / "Apps" / VERSION / "CapCut.exe"
+                if (proc.info["name"] or "").casefold() != "capcut.exe":
+                    continue
+                exe_path = proc.info["exe"]
+                if not exe_path:
+                    continue
+                exe = Path(exe_path)
+                if exe.parent.name in SUPPORTED_DLLS:
+                    active[str(exe).casefold()] = exe
+            except (OSError, psutil.Error):
+                continue
+    except ImportError:
+        pass
+    if len(active) > 1:
+        raise NativeUnavailable("Multiple supported CapCut versions are running. Close one, then Refresh. No engine was selected.")
+    if active:
+        return next(iter(active.values()))
+    candidates = []
+    for key in ("LOCALAPPDATA",):
+        base = os.environ.get(key)
+        if not base:
+            continue
+        for version in SUPPORTED_DLLS:
+            p = Path(base) / "CapCut" / "Apps" / version / "CapCut.exe"
+            if p.is_file():
+                candidates.append(p)
+    if candidates:
+        return sorted(candidates, key=lambda p: tuple(int(n) for n in p.parent.name.split(".")))[-1]
+    raise NativeUnavailable("CapCut 9.6/9.7 installation not found. Start CapCut 9.7, then Refresh.")
 
 
 class NativeIPC:
@@ -231,12 +263,12 @@ class NativeIPC:
         self.script = self.root / "Resources/common_agent/resources/lyra-cli-ipc/lyraCliIpcClient.mjs"
 
     def validate(self):
-        if self.exe.name.casefold() != "capcut.exe" or self.root.name != VERSION:
-            raise NativeUnavailable("Expected CapCut.exe in version 9.6.0.4097 install folder.")
+        if self.exe.name.casefold() != "capcut.exe" or self.root.name not in SUPPORTED_DLLS:
+            raise NativeUnavailable("Expected CapCut.exe in supported 9.6.0.4097 or 9.7.0.4153 version folder.")
         if any(not f.is_file() for f in (self.exe, self.dll, self.bun, self.script)):
             raise NativeUnavailable("Required CapCut native IPC files are missing.")
-        if sha256(self.dll) != DLL_SHA256:
-            raise NativeUnavailable("Native DLL fingerprint differs from verified 9.6 archive.")
+        if sha256(self.dll) != SUPPORTED_DLLS[self.root.name]:
+            raise NativeUnavailable("Native DLL fingerprint differs from verified " + self.root.name + " archive; no unverified execution.")
         return True
 
     def command(self, arguments, timeout=60):
@@ -253,7 +285,16 @@ class NativeIPC:
         except OSError as exc:
             raise NativeUnavailable(f"CapCut native IPC could not start: {exc}") from exc
         if result.returncode:
-            raise NativeUnavailable("Native IPC returned an error: " + (result.stderr or result.stdout)[-700:])
+            detail = (result.stderr or result.stdout)[-700:]
+            if "host project adapter is unavailable" in detail.casefold():
+                raise NativeUnavailable(
+                    "CapCut " + self.root.name +
+                    " native IPC is reachable, but the host ProjectAdapter is NOT registered. "
+                    "Its bundled lyra-cli cannot list or export existing local drafts in this "
+                    "host state. This is a CapCut-side binding issue, not a corrupt draft or "
+                    "DLL version mismatch. The queue remains read-only/disabled; "
+                    "no ref guessing, FFmpeg, GUI macro, or automatic retry. Raw error: " + detail)
+            raise NativeUnavailable("CapCut " + self.root.name + " native IPC returned an error: " + detail)
         return result.stdout
 
     def list(self):

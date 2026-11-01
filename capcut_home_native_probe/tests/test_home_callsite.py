@@ -58,6 +58,24 @@ class HomeCallsiteTests(unittest.TestCase):
         self.assertTrue(result["click_handler_actions"][0]["body_truncated"])
         self.assertFalse(result["candidate_export_entrypoint_verified"])
 
+    def test_original_two_home_clicks_are_not_export_routes(self):
+        original = (
+            b'MouseArea { onClicked: { console.log("click recycle bin button"); '
+            b'viewModel.openRecycleBinWindow(); recycleHint.visible = false } }\n'
+            b'Button { onClicked: { trackingReportHelper.invokeReport("cloud_home_auto_backup", '
+            b'JSON.stringify({action_type: "enhance_click"})); '
+            b'viewModel.openAutoUploadWindow(Qt.rect(1, 2, 3, 4)) } }'
+        )
+        report = home_callsite.analyze_home_slice(original, 156360000)
+        handlers = report["click_handler_actions"]
+        self.assertEqual(len(handlers), 2)
+        self.assertEqual(handlers[0]["classification"], "RECYCLE_BIN_NOT_EXPORT")
+        self.assertEqual(handlers[1]["classification"], "AUTO_UPLOAD_WINDOW_NOT_EXPORT")
+        self.assertIn("viewModel.openRecycleBinWindow", report["viewmodel_call_counts"])
+        self.assertIn("viewModel.openAutoUploadWindow", report["viewmodel_call_counts"])
+        self.assertFalse(any(h["native_export_verified"] for h in handlers))
+        self.assertFalse(report["candidate_export_entrypoint_verified"])
+
     def test_verify_sha_before_interpreting_vendor_content(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "VECreator.dll"

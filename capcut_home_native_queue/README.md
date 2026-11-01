@@ -11,7 +11,7 @@ This folder is the **actual QML Home queue implementation**, not a separate GUI 
 - Native admission must return `true`; errors/ambiguous status stop the queue and leave remaining drafts pending. No blind retry or manual UI automation.
 - Stop-after-current, resume remaining, status and progress callbacks; accidental duplicate completion and foreign result signals are ignored.
 - `snapshotChanged(snapshot)` emitted for host persistence. Persistence requires native host wiring; nothing here writes draft, timeline, media, preferences or original CapCut files.
-- No external video render dependency. UI is disabled unless `nativeAdapter.submitExport` is genuinely provided.
+- No external video render dependency. UI is disabled unless the host proves a live native bridge, exposes `verifyCurrentDraftBinding`, and supplies `submitExport`.
 
 ## Durable queue recovery added (2026-11-01)
 
@@ -32,7 +32,7 @@ A guarded Windows Actions research job attempted to download the owner's **exist
 
 Using the owner's authenticated private Drive archive (parts 005 and 006), the exact original `VECreator.dll` was recovered, SHA-256 verified, and inspected without changing any executable. Its internal strings identify `ExportPanelEntryImpl::clickBackgroudExport` (including the explicit Home-origin log), `BackEndExportImpl::pushTask`, `exportNextTask`, and `clickDraftFromHomeView`. These identify the relevant private-native component family but **do not reveal a callable Qt/QML ABI**. See [ORIGINAL_NATIVE_EXPORT_ROUTE.md](ORIGINAL_NATIVE_EXPORT_ROUTE.md) for precise offsets, evidence and boundaries.
 
-The Home queue UI now requires `nativeAdapter.nativeBridgeVerified === true` **and** callable `submitExport(...)`. The first flag can only be supplied by a trusted, genuine in-process host after verification; exposing a method name alone must not enable the export UI. The synthetic Qt tests supply this field strictly as mock behavior and do not demonstrate CapCut integration.
+The Home queue UI now requires `nativeAdapter.nativeBridgeVerified === true`, callable `verifyCurrentDraftBinding(draftId, path, key)` **and** callable `submitExport(...)`. Every queued draft must pass binding verification separately before the original export request. The first flag can only be supplied by a trusted, genuine in-process host after verification; exposing a method name alone must not enable the export UI. The synthetic Qt tests supply this field strictly as mock behavior and do not demonstrate CapCut integration.
 
 ## Native MP4 completion guard (source available; host integration pending)
 
@@ -75,7 +75,7 @@ The verified CapCut 9.7 `VECreator.dll` contains `HomePageLocalDraftViewModel`, 
 The **actual** in-process Qt adapter must own:
 
 1. Verified Home draft identification and mapping into `panel.drafts` (no guessed draft ID).
-2. A read-only Qt `nativeBridgeVerified` property, true only **after live in-process binding verification**, plus `bool submitExport(draftId, strProjectPath, key)` implemented only through the verified **existing native CapCut background-export API**. It must return `true` only after actual original-engine admission.
+2. A read-only Qt `nativeBridgeVerified` property true only **after live in-process binding verification**. The host must provide `bool verifyCurrentDraftBinding(draftId, strProjectPath, key)` comparing the original currently active export-panel model to the exact queued Home draft. It must be rechecked **for every job** and fail closed on mismatch. Then `bool submitExport(draftId, strProjectPath, key)` may use the verified original CapCut export API, returning `true` only after actual original-engine task admission; the recovered zero-argument void `clickBackgroudExport()` alone is insufficient.
 3. `exportProgress(key, percent)`, `exportFailed(key, reason)`, and `exportVerified(key, outputPath, sha256)` signals. **Do not** emit verified on 100% progress alone; verify native final MP4 and source linkage first.
 4. Persist queue snapshots and reconcile an interrupted render in Review before any manual replay.
 5. Preserve current CapCut project settings, effects, audio, transitions, and export settings without overriding them.

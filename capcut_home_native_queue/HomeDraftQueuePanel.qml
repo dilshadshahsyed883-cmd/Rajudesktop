@@ -18,7 +18,10 @@ Item {
     // is verified. This module NEVER guesses a DLL address or ABI.
     //
     // Host contract:
+    //   bool verifyCurrentDraftBinding(draftId, strProjectPath, key)
+    //     TRUE only when live export-panel model belongs to this exact draft.
     //   bool submitExport(draftId, strProjectPath, key)
+    //     TRUE only after independent native task admission confirmation.
     //   signal exportVerified(key, outputPath, sha256) // verified native MP4
     //   signal exportFailed(key, message)
     //   signal exportProgress(key, percent)
@@ -37,6 +40,7 @@ Item {
     readonly property bool adapterReady:
         nativeAdapter !== null &&
         nativeAdapter.nativeBridgeVerified === true &&
+        typeof nativeAdapter.verifyCurrentDraftBinding === "function" &&
         typeof nativeAdapter.submitExport === "function"
     readonly property bool running: activeKey.length > 0
     readonly property int selectedCount: Object.keys(selected).filter(
@@ -232,8 +236,18 @@ Item {
         statusLine = "Rendering with original CapCut engine: " +
                      (draft.strTitle || draft.draftId);
         try {
-            // Only the host's *verified* adapter may enqueue an export.
-            // Do not treat undefined / Promise / inferred status as success.
+            // The zero-arg original export-panel Qt invokable is bound to
+            // the CURRENT panel draft, not to an arbitrary selected Home card.
+            // Never admit an export before a trusted live host verifies the
+            // exact draftId + project path against its current Qt model.
+            if (nativeAdapter.verifyCurrentDraftBinding(
+                    draft.draftId, draft.strProjectPath, key) !== true) {
+                nativeFailed(key, "Current CapCut export panel is not bound to this draft");
+                return;
+            }
+            // A void Qt click method alone is NOT proof of native admission.
+            // submitExport must return true only on separately verified
+            // original-engine acceptance, never on fire-and-forget click.
             if (nativeAdapter.submitExport(draft.draftId,
                                            draft.strProjectPath, key) !== true) {
                 nativeFailed(key, "Host did not confirm native queue admission");

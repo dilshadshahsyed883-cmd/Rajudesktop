@@ -20,8 +20,10 @@ Item {
     // Host contract:
     //   bool verifyCurrentDraftBinding(draftId, strProjectPath, key)
     //     TRUE only when live export-panel model belongs to this exact draft.
-    //   bool submitExport(draftId, strProjectPath, key)
-    //     TRUE only after independent native task admission confirmation.
+    //   bool requestExport(draftId, strProjectPath, key)
+    //     TRUE only that original-native dispatch request was sent.
+    //   signal exportAdmitted(key, taskId)
+    //     Must originate from independent original-native task admission.
     //   signal exportVerified(key, outputPath, sha256) // verified native MP4
     //   signal exportFailed(key, message)
     //   signal exportProgress(key, percent)
@@ -30,6 +32,7 @@ Item {
     property var results: ({})
     property var pending: []
     property string activeKey: ""
+    property string admittedTaskId: ""
     property bool pauseAfterCurrent: false
     property bool recoveryReviewRequired: false
     property string statusLine: "Native CapCut Home bridge not connected"
@@ -41,7 +44,7 @@ Item {
         nativeAdapter !== null &&
         nativeAdapter.nativeBridgeVerified === true &&
         typeof nativeAdapter.verifyCurrentDraftBinding === "function" &&
-        typeof nativeAdapter.submitExport === "function"
+        typeof nativeAdapter.requestExport === "function"
     readonly property bool running: activeKey.length > 0
     readonly property int selectedCount: Object.keys(selected).filter(
         function (k) { return selected[k] === true; }).length
@@ -81,6 +84,7 @@ Item {
             selectedKeys: Object.keys(selected).filter(function (k) { return selected[k]; }),
             pendingKeys: pending.map(function (d) { return keyFor(d); }),
             activeKey: activeKey,
+            admittedTaskId: admittedTaskId,
             results: Object.assign({}, results),
             paused: pauseAfterCurrent
         };
@@ -156,6 +160,8 @@ Item {
         selected = checked;
         results = nextResults;
         activeKey = "";
+        admittedTaskId = "";
+        admissionWatchdog.stop();
         pending = restored;
         pauseAfterCurrent = true;
         recoveryReviewRequired = needsReview;
@@ -232,9 +238,11 @@ Item {
             return;
         }
         activeKey = key;
-        setResult(key, "Rendering");
-        statusLine = "Rendering with original CapCut engine: " +
+        admittedTaskId = "";
+        setResult(key, "Submitting");
+        statusLine = "Waiting for native task admission: " +
                      (draft.strTitle || draft.draftId);
+        admissionWatchdog.restart();
         try {
             // The zero-arg original export-panel Qt invokable is bound to
             // the CURRENT panel draft, not to an arbitrary selected Home card.
@@ -245,28 +253,51 @@ Item {
                 nativeFailed(key, "Current CapCut export panel is not bound to this draft");
                 return;
             }
-            // A void Qt click method alone is NOT proof of native admission.
-            // submitExport must return true only on separately verified
-            // original-engine acceptance, never on fire-and-forget click.
-            if (nativeAdapter.submitExport(draft.draftId,
-                                           draft.strProjectPath, key) !== true) {
-                nativeFailed(key, "Host did not confirm native queue admission");
+            // The original Qt click method returns void. A TRUE here means
+            // the request was sent, NOT that the native task was admitted.
+            // Only exportAdmitted(key, taskId) advances the job to Rendering.
+            if (nativeAdapter.requestExport(draft.draftId,
+                                            draft.strProjectPath, key) !== true) {
+                nativeFailed(key, "Native export request was not dispatched");
             }
         } catch (error) {
             nativeFailed(key, String(error));
         }
     }
+    function nativeAdmitted(key, taskId) {
+        // Only actual original-engine admission can transition to Rendering.
+        if (!activeKey || key !== activeKey || admittedTaskId.length > 0)
+            return false;
+        if (typeof taskId !== "string" || taskId.trim().length === 0) {
+            nativeFailed(key, "Native admission task identity missing");
+            return false;
+        }
+        admittedTaskId = taskId;
+        admissionWatchdog.stop();
+        setResult(key, "Rendering");
+        statusLine = "Native CapCut task admitted: " + key;
+        snapshotChanged(snapshot());
+        return true;
+    }
+    function nativeAdmissionTimedOut() {
+        if (!activeKey || admittedTaskId.length > 0)
+            return false;
+        return nativeFailed(activeKey, "Native task admission not confirmed within 30 seconds");
+    }
     function nativeVerified(key, outputPath, sha256) {
         // The host MUST verify the full native MP4 before emitting this event.
-        if (!activeKey || key !== activeKey)
+        // A completion signal without confirmed task admission is NOT trusted.
+        if (!activeKey || key !== activeKey || admittedTaskId.length === 0)
             return false;
         if (typeof outputPath !== "string" || !outputPath ||
             typeof sha256 !== "string" || !/^[a-fA-F0-9]{64}$/.test(sha256)) {
             nativeFailed(key, "Native output verification evidence missing");
             return false;
         }
+        admissionWatchdog.stop();
         setResult(key, "Completed");
         activeKey = "";
+        admittedTaskId = "";
         var updatedSelection = Object.assign({}, selected);
         delete updatedSelection[key];
         selected = updatedSelection;
@@ -279,8 +310,10 @@ Item {
     function nativeFailed(key, reason) {
         if (!activeKey || key !== activeKey)
             return false;
+        admissionWatchdog.stop();
         setResult(key, "Review");
         activeKey = "";
+        admittedTaskId = "";
         pauseAfterCurrent = true;
         statusLine = "Stopped for review: " + String(reason);
         snapshotChanged(snapshot());
@@ -300,9 +333,20 @@ Item {
         return true;
     }
 
+    Timer {
+        id: admissionWatchdog
+        interval: 30000
+        repeat: false
+        running: false
+        onTriggered: root.nativeAdmissionTimedOut()
+    }
+
     Connections {
         target: root.nativeAdapter
         ignoreUnknownSignals: true
+        function onExportAdmitted(key, taskId) {
+            root.nativeAdmitted(key, taskId);
+        }
         function onExportVerified(key, outputPath, sha256) {
             root.nativeVerified(key, outputPath, sha256);
         }
@@ -310,7 +354,8 @@ Item {
             root.nativeFailed(key, reason);
         }
         function onExportProgress(key, percent) {
-            if (root.activeKey === key && percent >= 0 && percent <= 100)
+            if (root.activeKey === key && root.admittedTaskId.length > 0 &&
+                    percent >= 0 && percent <= 100)
                 root.statusLine = "Native render " + Math.round(percent) + "%";
         }
     }

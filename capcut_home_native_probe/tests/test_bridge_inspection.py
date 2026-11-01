@@ -43,7 +43,7 @@ def wide_pe(export_count, export_name=b"BackEndExportImpl::pushTask"):
     struct.pack_into("<I", raw, section + 16, span)
     struct.pack_into("<I", raw, 0x200 + 24, export_count)
     struct.pack_into("<I", raw, 0x200 + 32, 0x1038)
-    raw[string_at:string_at + len(export_name)+1] = export_name + b"\\0"
+    raw[string_at:string_at + len(export_name)+1] = export_name + b"\0"
     for i in range(export_count):
         struct.pack_into("<I", raw, name_table + 4 * i, 0x1000 + string_at - 0x200)
     return bytes(raw)

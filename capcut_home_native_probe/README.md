@@ -41,6 +41,14 @@ The latest build adds an **offline PE export-directory inspector** and 160-byte 
 
 This is the next necessary diagnostic step toward **select multiple Home drafts and enqueue in CapCut's actual `BackEndExportImpl` engine**, rather than calling the already-failing external lyra-cli adapter. Do not turn this into a CapCut binary patch until the **in-process Qt bridge method and one genuine native MP4 render have been validated in an isolated Windows installation**. No installation, drafts or settings are modified. Signed CapCut DLLs must never be overwritten by this probe.
 
+## Results from original Windows scan — November 1, 2026
+
+The owner supplied `capcut-home-native-probe2.json` from exact CapCut `9.7.0.4153`. All four original SHA-256 fingerprints matched. `bridge_level=EMBEDDED_SYMBOLS_ONLY` and all three DLL PE export tables parsed without errors. The QML callsite section reported two `onClicked` handlers at byte offsets **156377425** and **156379561** inside the bounded Home draft-card region, but **zero** matches for `rootViewModel.method()` / `baseViewModel.method()`, zero matching export tokens and no `Connections` object in that slice.
+
+**Conclusion:** those two handlers are not yet identified as export triggers. They may be simple card click/menu actions, use a signal or reference another QML object, or the export trigger may be implemented in a different resource. They do not justify calling `BackEndExportImpl` at an inferred address.
+
+Follow-up code now extracts bounded QML **handler bodies (max 420 readable chars each)**, candidate call names, enclosing id and local signal declarations from those same verified files. This is a targeted continuation from the owner's report, not a claim of a working native bridge. No bytecode patch, native DLL method call or renderer launch was performed.
+
 ## Home QML click-callsite analysis (new after 9.7 PE verification)
 
 The owner's previous original-binary report established that the native `BackEndExportImpl` names were **private**, not PE callable exports. To avoid repeating that search, the GUI's existing **Scan original CapCut files** button now performs a **targeted read-only QML callsite analysis** after all four SHA-256 checks succeed. It examines the bounded region around the original `HomePageLocalDraftViewModel` card and returns *names and byte offsets* for nearby `onClicked` handlers, ViewModel method calls, related properties and relevant export tokens. It does **not** return a copied vendor QML source file.

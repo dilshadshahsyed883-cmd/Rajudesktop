@@ -40,15 +40,19 @@ jobs:
       - name: Frozen no-CapCut self-test
         shell: pwsh
         run: |
-          & '.\\dist\\CapCut_Home_Native_Probe.exe' --self-check --json frozen_selfcheck.json
-          if ($LASTEXITCODE -ne 0) { throw 'Self-test failed' }
+          $exe = (Resolve-Path '.\\dist\\CapCut_Home_Native_Probe.exe').Path
+          $p = Start-Process -FilePath $exe -ArgumentList @('--self-check','--json','frozen_selfcheck.json') -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Self-test failed with code $($p.ExitCode)" }
+          if (!(Test-Path frozen_selfcheck.json)) { throw 'Self-check report missing' }
           python -c "import json; r=json.load(open('frozen_selfcheck.json')); assert r['self_check']=='PASS' and r['native_patch_available'] is False and r['real_capcut_tested'] is False"
           if ($LASTEXITCODE -ne 0) { throw 'Misleading status' }
       - name: Frozen window creation and missing-folder error smoke
         shell: pwsh
         run: |
-          & '.\\dist\\CapCut_Home_Native_Probe.exe' --gui-smoke gui_smoke.json
-          if ($LASTEXITCODE -ne 0) { throw 'GUI could not open' }
+          $exe = (Resolve-Path '.\\dist\\CapCut_Home_Native_Probe.exe').Path
+          $p = Start-Process -FilePath $exe -ArgumentList @('--gui-smoke','gui_smoke.json') -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "GUI smoke failed with code $($p.ExitCode)" }
+          if (!(Test-Path gui_smoke.json)) { throw 'GUI smoke report missing' }
           python -c "import json; r=json.load(open('gui_smoke.json')); assert r['gui_window_created'] and r['error_does_not_close_window'] and not r['live_export_verified']; print('GUI_STAYS_OPEN=PASS')"
           if ($LASTEXITCODE -ne 0) { throw 'GUI smoke status invalid' }
       - name: Package portable probe

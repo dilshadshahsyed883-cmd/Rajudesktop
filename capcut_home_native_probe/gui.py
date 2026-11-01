@@ -81,7 +81,16 @@ def summary_lines(result):
                 lines.append("  " + method + " (" + str(count) + ")")
             lines.append("UI handler types: " +
                          ", ".join(sorted(callsite["qml_handlers_counts"].keys())))
-            lines.append("These are static QML references, not verified native calls.")
+            for handler in callsite.get("click_handler_actions", []):
+                lines.append("  " + handler["handler"] + " @ " +
+                             str(handler["file_offset"]) +
+                             " [id=" + str(handler["nearest_id"]) + "]")
+                lines.append("    Calls: " +
+                             (", ".join(handler["candidate_calls"]) or "NONE"))
+            lines.append("Declared signals: " +
+                         ", ".join(x["signal"] for x in
+                                   callsite.get("local_signal_declarations", [])))
+            lines.append("These are static QML actions, not verified native calls.")
     lines.extend(["", "Home checkboxes installed: NO", "Native export working: NOT VERIFIED",
                   "Your CapCut files were not changed."])
     return "\n".join(lines)

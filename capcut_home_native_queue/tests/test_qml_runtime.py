@@ -77,6 +77,12 @@ class NativeHomePanelTests(unittest.TestCase):
         self.engine.deleteLater()
         self.app.processEvents()
 
+    def result_for(self, key):
+        states = self.panel.property("results")
+        if hasattr(states, "toVariant"):
+            states = states.toVariant()
+        return states[key]
+
     def test_no_native_adapter_means_no_dispatch(self):
         self.assertFalse(self.panel.property("adapterReady"))
         self.assertTrue(self.panel.setSelected(self.items[0], True))
@@ -163,7 +169,7 @@ class NativeHomePanelTests(unittest.TestCase):
         self.panel.setSelected(self.items[1], True)
         self.assertTrue(self.panel.startSelected())
         self.assertEqual(len(adapter.calls), 1)
-        self.assertEqual(self.panel.property("results")["a::D:/CapCut/A"],
+        self.assertEqual(self.result_for("a::D:/CapCut/A"),
                          "Submitting")
         first = adapter.calls[0][2]
         self.assertFalse(self.panel.nativeVerified(first, "out.mp4", "c" * 64))
@@ -199,7 +205,7 @@ class NativeHomePanelTests(unittest.TestCase):
         adapter.exportAdmitted.emit(first, "live-task-A")
         self.app.processEvents()
         self.assertEqual(self.panel.property("admittedTaskId"), "live-task-A")
-        self.assertEqual(self.panel.property("results")[first], "Rendering")
+        self.assertEqual(self.result_for(first), "Rendering")
         self.assertFalse(self.panel.nativeAdmitted(first, "duplicate-task"))
         adapter.exportVerified.emit(first, "D:/exports/a.mp4", "a" * 64)
         self.app.processEvents()

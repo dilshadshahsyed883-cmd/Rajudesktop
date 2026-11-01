@@ -23,10 +23,10 @@ WINDOW_FORWARD = 100000
 # Only names and offsets, not the vendor's QML implementation/body text.
 HANDLER = re.compile(rb"\b(onClicked|onPressed|onTriggered|onDoubleClicked|onAccepted)\s*:")
 METHOD = re.compile(
-    rb"\b(rootViewModel|baseViewModel)\.([a-zA-Z_][a-zA-Z_0-9]*)\s*\("
+    rb"\b(rootViewModel|baseViewModel|viewModel)\.([a-zA-Z_][a-zA-Z_0-9]*)\s*\("
 )
 OBJECT_PROPERTY = re.compile(
-    rb"\b(rootViewModel|baseViewModel)\.([a-zA-Z_][a-zA-Z_0-9]*)\b"
+    rb"\b(rootViewModel|baseViewModel|viewModel)\.([a-zA-Z_][a-zA-Z_0-9]*)\b"
 )
 CONNECTIONS = re.compile(rb"\bConnections\s*\{")
 SIGNAL = re.compile(rb"\bon([A-Z][a-zA-Z0-9_]*)\s*:")
@@ -114,7 +114,17 @@ def _clicked_handler_details(data, origin, limit=HANDLER_LIMIT):
                 calls.append(name)
         prelude = data[max(0, m.start() - 450):m.start()]
         ids = list(LOCAL_ID.finditer(prelude))
+        # The original owner's 9.7 report shows these are unrelated UI
+        # handlers, not the native background-export entry point.
+        if "viewModel.openRecycleBinWindow" in calls:
+            kind = "RECYCLE_BIN_NOT_EXPORT"
+        elif "viewModel.openAutoUploadWindow" in calls:
+            kind = "AUTO_UPLOAD_WINDOW_NOT_EXPORT"
+        else:
+            kind = "UNRESOLVED_NO_NATIVE_PROOF"
         details.append({
+            "classification": kind,
+            "native_export_verified": False,
             "handler": m.group(1).decode("ascii"),
             "file_offset": origin + m.start(),
             "nearest_id": ids[-1].group(1).decode("ascii") if ids else None,

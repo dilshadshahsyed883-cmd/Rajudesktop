@@ -35,6 +35,22 @@ jobs:
         run: |
           python -m unittest discover -s capcut_home_native_queue/tests -v
           if ($LASTEXITCODE -ne 0) { throw 'QML native queue contract failed' }
+      - name: Live process feasibility script smoke test (no CapCut on runner)
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'capcut-live-runtime-smoke.json'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File capcut_home_native_queue/CapCut_Live_Bridge_Check.ps1 -OutFile $report
+          if ($LASTEXITCODE -ne 0) { throw 'Live bridge check script failed' }
+          $result = Get-Content -Raw -LiteralPath $report | ConvertFrom-Json
+          if ($result.schema -ne 'capcut-9.7-live-qt-bridge-feasibility-v1') { throw 'Unexpected report schema' }
+          if ($result.original_capcut_files_modified -ne $false -or
+              $result.process_injection_or_attachment_attempted -ne $false -or
+              $result.debugger_port_connection_attempted -ne $false -or
+              $result.live_qobject_verified -ne $false -or
+              $result.unattended_capcut_mp4_export_verified -ne $false) {
+            throw 'Read-only or unverified guard failed'
+          }
+          Write-Output ('LIVE_RUNTIME_SMOKE=' + $result.status)
       - name: No modified CapCut binaries or separate renderer shipped
         shell: pwsh
         run: |

@@ -21,6 +21,44 @@ On 2026-11-01 the owner's **existing private Drive archive** parts 005 and 006 w
 
 The original library also contains C++ RTTI for `export_ns::IExportPanelEntry` and `ExportPanelEntryImpl`. This suggests a dependency-injection/service boundary and is **not** a Qt meta-object API. Earlier fully parsed PE export tables showed none of the named `BackEndExportImpl` methods as public exports.
 
+## Newly recovered original Qt6 meta-object method (2026-11-01)
+
+On a temporary server-side copy of the owner's existing **SHA-256 verified**
+CapCut 9.7.0.4153 `VECreator.dll`, the original Qt6 moc data were
+decoded directly, without running or modifying CapCut:
+
+- Qt meta-object: `ExportCompileBottomViewModel`
+- Static UTF-8 string table at original **file offset** `212657504`
+- Qt MOC uint32 metadata table at original **file offset** `212658112`
+- MOC revision **10**, class method count **18**, signal count **10**
+- Method `clickBackgroudExport`: public access flag `0x02`, **zero
+  arguments**, Qt return metatype **43 (void)**, **not a signal**
+- Neighboring invokable methods: `pauseExport`, `resumeExport`, `cancel`
+- `ExportPanelEntryImpl::clickBackgroudExport` and
+  `BackEndExportImpl::pushTask` remain private C++ implementations/log
+  markers, **not public PE exports or automatically callable QML objects**.
+
+**Meaning:** CapCut's original **Export Compile Bottom** Qt view model
+exposes an actual zero-argument public invokable method named
+`clickBackgroudExport()`. This is more specific than log strings: its Qt
+call signature is recorded. However, this object belongs to the **Export
+panel**; the research has **not** located a live instance in the running
+original CapCut process, shown that a Home draft's `draftId` and
+`strProjectPath` can be mapped to the export panel, or established
+programmatic queue admission for an arbitrary ready draft.
+
+Do not implement `submitExport(draftId, path, key)` by blindly calling
+this zero-argument method: without a proven live model and current-draft
+binding it could export the **wrong project**, be a no-op, or change
+the user's session. The non-administered CI cannot invoke CapCut's live
+in-process QObject, and the manual MP4 test did not establish this link.
+
+The source-only reproducible analyzer is
+`inspect_original_export_moc.py`; it refuses **any version/hash mismatch**
+and has synthetic signature-regression tests. No proprietary binary or user
+report has been committed to GitHub. This is offline evidence, **not a
+working patched CapCut EXE or batch renderer**.
+
 ## Confirmed false UI triggers
 
 The two original Home `onClicked` handlers at `156377425` and `156379561` invoke `viewModel.openRecycleBinWindow()` and `viewModel.openAutoUploadWindow(...)`, respectively. Neither is a video export trigger. Never map these to `submitExport`.

@@ -33,6 +33,36 @@ class OriginalExportMOCContractTests(unittest.TestCase):
         self.assertFalse(result["native_queue_admission_verified"])
         self.assertFalse(result["original_engine_automatic_mp4_verified"])
 
+    def test_export_home_bottom_compile_click_is_a_distinct_method(self):
+        strings, metadata = fixture(
+            class_name=b"ExportHomeBottomViewModel",
+            method_name=b"compileClick",
+        )
+        result = parse_original_export_meta(
+            strings, metadata,
+            expected_model="ExportHomeBottomViewModel",
+            required_method="compileClick",
+        )
+        self.assertEqual(result["model"], "ExportHomeBottomViewModel")
+        self.assertEqual(result["method"]["name"], "compileClick")
+        self.assertEqual(result["method"]["argument_count"], 0)
+        self.assertFalse(result["native_queue_admission_verified"])
+        self.assertFalse(result["original_engine_automatic_mp4_verified"])
+
+    def test_export_home_method_must_be_public_void_and_not_signal(self):
+        for kwargs in ({"access": 1}, {"kind": 4},
+                       {"argc": 1}, {"return_type": 1}):
+            strings, metadata = fixture(
+                class_name=b"ExportHomeBottomViewModel",
+                method_name=b"compileClick", **kwargs,
+            )
+            with self.subTest(kwargs=kwargs), self.assertRaises(MOCError):
+                parse_original_export_meta(
+                    strings, metadata,
+                    expected_model="ExportHomeBottomViewModel",
+                    required_method="compileClick",
+                )
+
     def test_private_or_protected_methods_rejected(self):
         for access in (0, 1):
             with self.subTest(access=access), self.assertRaisesRegex(

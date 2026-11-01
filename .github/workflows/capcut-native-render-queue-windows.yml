@@ -1,0 +1,61 @@
+name: CapCut Native Render Queue — Windows
+on:
+  pull_request:
+    paths:
+      - 'capcut_native_render_queue/**'
+      - '.github/workflows/capcut-native-render-queue-windows.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'capcut_native_render_queue/**'
+      - '.github/workflows/capcut-native-render-queue-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-queue:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Native-only queue unit tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s capcut_native_render_queue/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native queue tests failed' }
+      - name: Install independent build tools
+        shell: pwsh
+        run: |
+          python -m pip install -r capcut_native_render_queue/requirements.txt pyinstaller==6.16.0
+          if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
+      - name: Build Windows portable EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --console --paths . --name CapCut_Native_Render_Queue capcut_native_render_queue/app.py
+          if ($LASTEXITCODE -ne 0) { throw 'EXE build failed' }
+      - name: Frozen self-check without CapCut or FFmpeg
+        shell: pwsh
+        run: |
+          & ".\dist\CapCut_Native_Render_Queue.exe" --self-check ".\native_queue_selfcheck.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen app could not start' }
+          python -c "import json,pathlib; p=pathlib.Path('native_queue_selfcheck.json'); assert p.is_file(); d=json.loads(p.read_text()); assert d['engine']=='capcut-native-ipc'; assert d['ffmpeg'] is False; assert d['mouse_macro'] is False; assert d['windows_live_export_verified'] is False; print(d)"
+          if ($LASTEXITCODE -ne 0) { throw 'Self-check invalid' }
+      - name: Package and SHA256
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force 'native-queue-package' | Out-Null
+          Copy-Item 'dist/CapCut_Native_Render_Queue.exe' 'native-queue-package/'
+          Copy-Item 'capcut_native_render_queue/README.md' 'native-queue-package/README.md'
+          Copy-Item 'native_queue_selfcheck.json' 'native-queue-package/SELF_CHECK.json'
+          $sum = (Get-FileHash 'native-queue-package/CapCut_Native_Render_Queue.exe' -Algorithm SHA256).Hash.ToLower()
+          "$sum  CapCut_Native_Render_Queue.exe" | Out-File -Encoding ascii 'native-queue-package/SHA256SUMS.txt'
+          Compress-Archive 'native-queue-package/*' 'CapCut_Native_Render_Queue_Windows.zip' -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CapCut_Native_Render_Queue_Windows
+          path: CapCut_Native_Render_Queue_Windows.zip
+          if-no-files-found: error
+          retention-days: 90

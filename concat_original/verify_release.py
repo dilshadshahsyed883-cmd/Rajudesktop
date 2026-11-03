@@ -10,7 +10,7 @@ import hashlib
 import re
 from pathlib import Path
 
-ASSET_NAME = "windows-x86_64-setup.exe"
+ASSET_NAME = "Concat-0.2.8-windows-x86_64-setup.exe"
 MIN_INSTALLER_SIZE = 1_000_000
 SUM_RE = re.compile(r"([0-9a-fA-F]{64})\s+\*?(.+)")
 

@@ -4,7 +4,7 @@
 
 - **Upstream:** https://github.com/jub0t/Concat
 - **Pinned version:** v0.2.8, https://github.com/jub0t/Concat/releases/tag/v0.2.8
-- **Binary:** `windows-x86_64-setup.exe`, straight from the upstream release
+- **Binary:** `Concat-0.2.8-windows-x86_64-setup.exe`, straight from the upstream release
 - **Integrity:** download upstream `SHA256SUMS`; enforce exact matching SHA-256, nontrivial size, and Windows PE header
 - **Build method:** package/verify the upstream-produced binary on a Windows GitHub Actions runner. **This workflow does not compile source or modify Concat.**
 - **Artifact:** `Concat-v0.2.8-Windows-x64` from the `Concat Original Windows EXE (verified upstream)` workflow.
@@ -12,7 +12,7 @@
 ## Install and test on a Windows 64-bit PC
 
 1. Open the Rajudesktop **Actions** tab, select **Concat Original Windows EXE (verified upstream)**, then choose the newest successful run and download its artifact ZIP.
-2. Extract ZIP. Run `windows-x86_64-setup.exe`.
+2. Extract ZIP. Run `Concat-0.2.8-windows-x86_64-setup.exe`.
 3. In original Concat, create a project, import MP4/image/audio, edit on its timeline and export a 30-second MP4.
 4. Check the exported MP4 in a player. Keep your original media files unchanged.
 

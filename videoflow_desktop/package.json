@@ -1,0 +1,56 @@
+{
+  "name": "videoflow-original-desktop-test",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Original upstream VideoFlow React Editor packaged as an independent Windows Electron app",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "build:web": "vite build",
+    "package:win": "npm run build:web && electron-builder --win portable --x64 --publish never"
+  },
+  "dependencies": {
+    "@videoflow/core": "1.3.4",
+    "@videoflow/react-video-editor": "1.3.5",
+    "@videoflow/renderer-browser": "1.3.4",
+    "@videoflow/renderer-dom": "1.3.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.7.0",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12",
+    "vite": "6.3.5"
+  },
+  "build": {
+    "appId": "online.scenebuilder.videoflowdesktop",
+    "productName": "VideoFlow Original Desktop Test",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "THIRD_PARTY_LICENSES.md",
+        "to": "THIRD_PARTY_LICENSES.md"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "VideoFlow-Original-Portable.exe"
+    }
+  }
+}

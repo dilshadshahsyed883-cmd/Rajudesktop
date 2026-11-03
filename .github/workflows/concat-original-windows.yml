@@ -47,6 +47,10 @@ jobs:
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           gh release download v0.2.8 --repo jub0t/Concat --pattern "windows-x86_64-setup.exe" --pattern "SHA256SUMS" --dir dist
           if ($LASTEXITCODE -ne 0) { throw "Upstream download failed" }
+          Write-Host "Actual upstream asset names:"
+          gh release view v0.2.8 --repo jub0t/Concat --json assets --jq '.assets[].name'
+          Write-Host "Downloaded files:"
+          Get-ChildItem -Path dist -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
 
       - name: Verify SHA256, Windows PE header and installer size
         shell: pwsh

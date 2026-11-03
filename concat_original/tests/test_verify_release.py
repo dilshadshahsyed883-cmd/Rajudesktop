@@ -12,17 +12,17 @@ class ConcatVerificationTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        self.installer = self.root / "windows-x86_64-setup.exe"
+        self.installer = self.root / "Concat-0.2.8-windows-x86_64-setup.exe"
         self.sums = self.root / "SHA256SUMS"
         self.installer.write_bytes(b"MZ" + b"x" * 1_000_001)
         self.digest = hashlib.sha256(self.installer.read_bytes()).hexdigest()
-        self.sums.write_text(f"{self.digest}  windows-x86_64-setup.exe\n", encoding="utf-8")
+        self.sums.write_text(f"{self.digest}  Concat-0.2.8-windows-x86_64-setup.exe\n", encoding="utf-8")
 
     def test_valid(self):
         self.assertEqual(verify(self.installer, self.sums), self.digest)
 
     def test_checksum_mismatch(self):
-        self.sums.write_text("0" * 64 + "  windows-x86_64-setup.exe\n", encoding="utf-8")
+        self.sums.write_text("0" * 64 + "  Concat-0.2.8-windows-x86_64-setup.exe\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
             verify(self.installer, self.sums)
 
@@ -48,7 +48,7 @@ class ConcatVerificationTests(unittest.TestCase):
 
     def test_accept_starred_path_in_sums(self):
         self.assertEqual(
-            expected_digest(self.digest + " *./windows-x86_64-setup.exe\n"), self.digest
+            expected_digest(self.digest + " *./Concat-0.2.8-windows-x86_64-setup.exe\n"), self.digest
         )
 
 

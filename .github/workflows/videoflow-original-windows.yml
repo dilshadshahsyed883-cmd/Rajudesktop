@@ -73,8 +73,8 @@ jobs:
             Where-Object { $_.Name -notlike '*elevate*' } |
             Select-Object -First 1
           if (-not $exe) { throw 'Unpacked Electron executable missing' }
-          & $exe.FullName --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Packaged self-test failed: $LASTEXITCODE" }
+          $smoke = Start-Process -FilePath $exe.FullName -ArgumentList '--self-test' -Wait -PassThru
+          if ($smoke.ExitCode -ne 0) { throw "Packaged self-test failed: $($smoke.ExitCode)" }
           (Get-FileHash 'release/VideoFlow-Original-Portable.exe' -Algorithm SHA256).Hash.ToLower() |
             Set-Content -NoNewline 'release/VideoFlow-Original-Portable.exe.sha256'
       - name: Upload ready-to-test Windows EXE

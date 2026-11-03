@@ -45,17 +45,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          gh release download v0.2.8 --repo jub0t/Concat --pattern "windows-x86_64-setup.exe" --pattern "SHA256SUMS" --dir dist
+          gh release download v0.2.8 --repo jub0t/Concat --pattern "Concat-0.2.8-windows-x86_64-setup.exe" --pattern "SHA256SUMS" --dir dist
           if ($LASTEXITCODE -ne 0) { throw "Upstream download failed" }
-          Write-Host "Actual upstream asset names:"
-          gh release view v0.2.8 --repo jub0t/Concat --json assets --jq '.assets[].name'
-          Write-Host "Downloaded files:"
-          Get-ChildItem -Path dist -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
 
       - name: Verify SHA256, Windows PE header and installer size
         shell: pwsh
         run: |
-          python concat_original/verify_release.py --installer dist/windows-x86_64-setup.exe --checksums dist/SHA256SUMS
+          python concat_original/verify_release.py --installer dist/Concat-0.2.8-windows-x86_64-setup.exe --checksums dist/SHA256SUMS
           if ($LASTEXITCODE -ne 0) { throw "Upstream installer verification failed" }
 
       - name: Upload verified installer
@@ -63,7 +59,7 @@ jobs:
         with:
           name: Concat-v0.2.8-Windows-x64
           path: |
-            dist/windows-x86_64-setup.exe
+            dist/Concat-0.2.8-windows-x86_64-setup.exe
             dist/SHA256SUMS
             concat_original/README.md
           if-no-files-found: error

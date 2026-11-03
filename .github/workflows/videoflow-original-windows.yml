@@ -1,0 +1,98 @@
+name: VideoFlow Original - Windows portable EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'feature/**']
+    paths:
+      - 'videoflow_desktop/**'
+      - '.github/workflows/videoflow-original-windows.yml'
+  pull_request:
+    paths:
+      - 'videoflow_desktop/**'
+      - '.github/workflows/videoflow-original-windows.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: videoflow-original-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-portable:
+    name: Build original VideoFlow portable EXE
+    runs-on: windows-latest
+    timeout-minutes: 70
+    defaults:
+      run:
+        working-directory: videoflow_desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: videoflow_desktop/package.json
+      - name: Install official upstream editor and Electron
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm install failed' }
+          npm ls --depth=0
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed validation' }
+      - name: Test safe file routing and JavaScript syntax
+        shell: pwsh
+        run: |
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'Security path tests failed' }
+          node --check electron/main.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Main process syntax error' }
+          node --check electron/preload.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Preload syntax error' }
+      - name: Build official VideoFlow editor bundle
+        shell: pwsh
+        run: |
+          npm run build:web
+          if ($LASTEXITCODE -ne 0) { throw 'Vite build failed' }
+          if (-not (Test-Path 'dist/index.html')) { throw 'VideoFlow editor assets missing' }
+      - name: Package Windows portable EXE
+        shell: pwsh
+        run: |
+          npx electron-builder --win portable --x64 --publish never
+          if ($LASTEXITCODE -ne 0) { throw 'Electron packaging failed' }
+          if (-not (Test-Path 'release/VideoFlow-Original-Portable.exe')) { throw 'Portable EXE missing' }
+          $bytes = (Get-Item 'release/VideoFlow-Original-Portable.exe').Length
+          if ($bytes -lt 30000000) { throw "EXE unexpectedly small: $bytes" }
+      - name: Run packaged resource smoke and SHA256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem 'release/win-unpacked' -Filter '*.exe' |
+            Where-Object { $_.Name -notlike '*elevate*' } |
+            Select-Object -First 1
+          if (-not $exe) { throw 'Unpacked Electron executable missing' }
+          & $exe.FullName --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Packaged self-test failed: $LASTEXITCODE" }
+          (Get-FileHash 'release/VideoFlow-Original-Portable.exe' -Algorithm SHA256).Hash.ToLower() |
+            Set-Content -NoNewline 'release/VideoFlow-Original-Portable.exe.sha256'
+      - name: Upload ready-to-test Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Original-Windows-Portable
+          path: |
+            videoflow_desktop/release/VideoFlow-Original-Portable.exe
+            videoflow_desktop/release/VideoFlow-Original-Portable.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish direct EXE release from main only
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "videoflow-original-desktop-run-$env:GITHUB_RUN_NUMBER"
+          gh release create $tag 'release/VideoFlow-Original-Portable.exe' 'release/VideoFlow-Original-Portable.exe.sha256' --title 'VideoFlow Original Desktop Test - Windows Portable' --notes 'Original upstream VideoFlow React Video Editor in an independent unsigned Electron wrapper for local testing. No VPS, SaladCloud or other Rajudesktop apps changed.' --target $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Direct EXE release failed' }

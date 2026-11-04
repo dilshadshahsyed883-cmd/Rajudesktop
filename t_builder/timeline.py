@@ -166,9 +166,16 @@ def plan_timeline(assets, duration, image_weights, video_weights=None, coverage=
                 for i,d in enumerate(durs):
                     positions.append(cursor);cursor+=d+gaps[i+1]
             else:
-                slack=total-(positions[-1]+durs[-1])
-                # Shift within slack without losing complete image gaps.
-                if n==1: positions[0]=rng.randint(0,slack)
+                # Spread overlays across the full narration using random base-image boundaries.
+                # Moving from the last overlay backwards preserves the known-feasible layout.
+                for i in reversed(range(n)):
+                    options=[]
+                    for im in images:
+                        start=im.start
+                        if start<positions[i] or start+durs[i]>total:continue
+                        if i<n-1 and not any(g.start>=start+durs[i] and g.end<=positions[i+1] for g in images):continue
+                        options.append(start)
+                    if options:positions[i]=rng.choice(options)
             for (k,a),start,d in zip(selected,positions,durs):
                 trim=rng.randint(0,max(0,round(a['duration']*1e6)-d))
                 videos.append(Clip(a['path'],'video',k,start,d,trim))

@@ -55,6 +55,14 @@ class TimelineTests(unittest.TestCase):
             for a,b in zip(t.videos,t.videos[1:]):
                 self.assertNotEqual(a.keyword,b.keyword);self.assertGreater(b.start,a.end)
                 self.assertTrue(any(im.start>=a.end and im.end<=b.start for im in t.images))
+    def test_video_positions_random_across_audio(self):
+        ends=[];starts=[]
+        for seed in range(10):
+            t=plan_timeline(assets(),120,{'Alexa':50,'Emma':50},{'Alexa':50,'Emma':50},20,seed)
+            starts.append(t.videos[0].start);ends.append(t.videos[-1].end)
+        self.assertGreater(len(set(starts)),3)
+        self.assertTrue(any(end>90_000_000 for end in ends))
+
     def test_video_duration_limits_and_source_trims(self):
         a=assets()
         for x in a:

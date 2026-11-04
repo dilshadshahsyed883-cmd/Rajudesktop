@@ -16,6 +16,7 @@ from .timeline import plan_timeline, validate_timeline
 
 def audio_duration(path):
     p=Path(path).resolve(strict=True)
+    if not p.is_file():raise ValueError('Select an existing audio file')
     try:
         import mutagen
         media=mutagen.File(p)
@@ -32,6 +33,7 @@ def prepare(catalog, selected_root, audio, images, videos, coverage, name, draft
         raise ValueError('Enter a valid new project name')
     root=Path(selected_root).resolve(strict=True)
     if str(root) not in catalog.roots(): raise ValueError('Select an imported library folder')
+    if not str(drafts).strip():raise ValueError('Select a CapCut draft destination')
     dest=Path(drafts).expanduser().resolve()
     if not dest.is_dir(): raise ValueError('Select an existing CapCut draft destination')
     if not find_node(): raise ValueError('Bundled Node runtime is missing')

@@ -68,12 +68,9 @@ class Catalog(ZCatalog):
         with self._connect() as c:
             c.executemany("UPDATE moves SET project=?,status='verified' WHERE path=?",[(str(folder),p) for p in paths])
 
-    def cleanup_candidates(self, selected_root, drafts_roots):
-        root=Path(selected_root).resolve(strict=True)
-        if str(root) not in self.roots(): raise ValueError('Choose an imported library folder')
+    def project_references(self,drafts_roots):
         with self._connect() as c:
             known=[r[0] for r in c.execute('SELECT path FROM draft_roots')]
-            moved=[r[0] for r in c.execute('SELECT path FROM moves')]
         references=set()
         def walk(value):
             if isinstance(value,dict):
@@ -91,6 +88,15 @@ class Catalog(ZCatalog):
             for p in base.rglob('draft_content.json'):
                 try: walk(json.loads(p.read_text(encoding='utf-8-sig')))
                 except Exception as exc: raise ValueError(f'Cannot verify project references in {p}; cleanup blocked: {exc}')
+        return references
+
+    def cleanup_candidates(self, selected_root, drafts_roots):
+        root=Path(selected_root).resolve(strict=True)
+        if str(root) not in self.roots(): raise ValueError('Choose an imported library folder')
+        with self._connect() as c:
+            known=[r[0] for r in c.execute('SELECT path FROM draft_roots')]
+            moved=[r[0] for r in c.execute('SELECT path FROM moves')]
+        references=self.project_references(drafts_roots)
         eligible=[];protected=[]
         for name in moved:
             p=Path(name)
@@ -104,7 +110,10 @@ class Catalog(ZCatalog):
     def cleanup(self, selected_root, paths, drafts_roots, confirmed=False):
         if not confirmed: raise ValueError('Explicit cleanup confirmation required')
         eligible,_=self.cleanup_candidates(selected_root,drafts_roots)
-        if not set(paths).issubset(eligible): raise ValueError('Cleanup eligibility changed; review again')
+        canonical={str(Path(p).resolve()).casefold():p for p in eligible}
+        requested=[str(Path(p).resolve()).casefold() for p in paths]
+        if not set(requested).issubset(canonical): raise ValueError('Cleanup eligibility changed; review again')
+        paths=[canonical[p] for p in dict.fromkeys(requested)]
         from send2trash import send2trash
         for name in paths:
             send2trash(name)

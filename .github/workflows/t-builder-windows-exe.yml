@@ -2,7 +2,7 @@ name: T Builder — standalone Windows EXE
 
 on:
   push:
-    branches: ['feat/t-builder-standalone', main]
+    branches: [main]
     paths: ['t_builder/**', 'launch_t_builder.py', 'requirements-t-builder.txt', '.github/workflows/t-builder-windows-exe.yml']
   pull_request:
     paths: ['t_builder/**', 'launch_t_builder.py', 'requirements-t-builder.txt', '.github/workflows/t-builder-windows-exe.yml']

@@ -229,7 +229,8 @@ class Window(LibraryWindow):
     def task_failed(self,message):
         self.worker.wait();self.idle();self.refresh_library();self.export_log.append(message);self.alert('Operation incomplete',message)
     def refresh_idle(self):
-        if not (self.worker and self.worker.isRunning()):self.refresh_library()
+        if not (self.worker and self.worker.isRunning()):
+            self.remember_controls_root();self.refresh_library()
     def import_folder(self):
         folder=QFileDialog.getExistingDirectory(self,'Import media folder recursively')
         if folder:self.run_task(lambda log:self.catalog.add_folder(folder),lambda r:self.statusBar().showMessage(f'Imported {r[0]} files; {len(r[1])} errors'))
@@ -320,9 +321,93 @@ class Window(LibraryWindow):
         self.capcut_controls_tab.projects_root=Path(result['folder']).parent;self.capcut_controls_tab.refresh()
         self.statusBar().showMessage('Verified project: '+result['folder'])
     def clean_entire_library(self):
-        # Keep the canonical keep-originals path; physical recycling uses protected used-media cleanup.
-        answer=QMessageBox.question(self,'Clear Library Records','Clear catalog entries and tags? All media files and move/protection history will be kept.',QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
-        if answer==QMessageBox.StandardButton.Yes:self.catalog.clear_library_records();self.refresh_library()
+        """Manually clear all catalog items, with distinct keep-files/recycle choices."""
+        if self.worker is not None and self.worker.isRunning():
+            self.alert('Export in progress', 'Finish the CapCut export before cleaning the library.')
+            return
+        entries = self.catalog.assets()
+        if not entries:
+            QMessageBox.information(self, 'Library is empty', 'No images or videos to clean.')
+            return
+        options = [
+            'Clear Library Only (keep ALL original PC files)',
+            'Move ALL Library Original Files to Windows Recycle Bin',
+        ]
+        choice, accepted = QInputDialog.getItem(
+            self, 'Clean Entire Media Library',
+            f'Choose how to clean {len(entries)} library items.\n'
+            'Default keeps all original PC files intact.', options, 0, False)
+        if not accepted:
+            return
+        recycle_originals = choice == options[1]
+        n_images = sum(a['kind'] == 'image' for a in entries)
+        n_videos = len(entries) - n_images
+        if recycle_originals and not self.render_confirm.isChecked():
+            self.alert('Render confirmation required',
+                       'To remove ALL original PC media, confirm that your final CapCut '
+                       'videos have been rendered and verified by ticking the checkbox '
+                       'in the right panel. Otherwise choose Clear Library Only.')
+            return
+        if recycle_originals:
+            action_details = (
+                'Original PC images/videos imported from ANY folder will be moved '
+                'to the Windows Recycle Bin, including UNUSED media.\n'
+                'This may break other CapCut projects that still reference these files.\n'
+                'T Builder cannot verify final render completion.\n'
+                'Failed files will remain in the library for review.')
+        else:
+            action_details = (
+                'Only T Builder library entries, tags, and used-media history will be cleared.\n'
+                'No originals, CapCut drafts, or final renders will be deleted.')
+        result = QMessageBox.question(
+            self, 'Confirm Whole Library Cleanup',
+            f'{len(entries)} files: {n_images} images + {n_videos} videos.\n\n'
+            f'{action_details}\n\nContinue?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if result != QMessageBox.StandardButton.Yes:
+            return
+        if recycle_originals:
+            phrase, confirmed = QInputDialog.getText(
+                self, 'Final confirmation',
+                'Type DELETE ALL to move every library original file to Recycle Bin:')
+            if not confirmed or phrase.strip() != 'DELETE ALL':
+                return
+        self.clean_library_button.setEnabled(False)
+        self.player.stop()
+        self.player.setSource(QUrl())
+        self.image.clear()
+        try:
+            if recycle_originals:
+                references=self.catalog.project_references(self.draft_locations())
+                protected=[a['path'] for a in entries if str(Path(a['path']).resolve()).casefold() in references]
+                if protected:
+                    self.alert('Cleanup blocked', f'{len(protected)} files are referenced by active projects. All originals were preserved.');return
+                moved, missing, failures = self.catalog.recycle_entire_library()
+                text = (f'{len(moved)} original files moved to Recycle Bin.\n'
+                        f'{len(missing)} missing original references removed.\n'
+                        f'{len(failures)} files could not be cleaned and remain listed.')
+                self.statusBar().showMessage(text.replace('\n', '  |  '))
+                if failures:
+                    self.alert('Partial Library Cleanup',
+                               text + '\n\nErrors:\n' + '\n'.join(failures[:15]))
+                else:
+                    QMessageBox.information(self, 'Library Cleaned', text)
+            else:
+                removed = self.catalog.clear_library_records()
+                self.statusBar().showMessage(
+                    f'Cleared {removed} library records. All original PC media preserved.')
+                QMessageBox.information(
+                    self, 'Library Cleaned',
+                    f'{removed} library entries cleared. Original PC media was NOT deleted.')
+        except Exception as exc:
+            self.alert('Library cleanup error', str(exc))
+        finally:
+            self.render_confirm.setChecked(False)
+            self.media_filter.setCurrentIndex(0)
+            self.refresh_library()
+            self.clean_library_button.setEnabled(True)
+
     def delete_used_media(self):
         selected=[self.visible_assets[i.row()]['path'] for i in self.media_table.selectionModel().selectedRows()]
         if not selected:return

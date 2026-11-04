@@ -87,7 +87,7 @@ class TimelineTests(unittest.TestCase):
 class FilesTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.root=Path(self.temp.name);self.media=self.root/'media';self.media.mkdir();self.drafts=self.root/'drafts';self.drafts.mkdir()
+        self.root=Path(self.temp.name).resolve();self.media=self.root/'media';self.media.mkdir();self.drafts=self.root/'drafts';self.drafts.mkdir()
         self.catalog=Catalog(self.root/'app'/'lib.sqlite');self.catalog.add_root(self.media)
         self.image=self.media/'Alexa 1.png'
         self.image.write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a+4sAAAAASUVORK5CYII='))

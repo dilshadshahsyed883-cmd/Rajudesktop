@@ -5,12 +5,15 @@ import math
 import os
 import subprocess
 import tempfile
+import sys
 from z_builder.capcut import probe, find_node as system_node
 
 
 def find_node():
     bundled=Path(__file__).resolve().parents[1]/'.runtime'/'node'/'node.exe'
-    return str(bundled) if bundled.is_file() else system_node()
+    if bundled.is_file():return str(bundled)
+    if getattr(sys,'frozen',False):raise RuntimeError('Bundled Node runtime is missing from T_Builder.exe')
+    return system_node()
 from .timeline import plan_timeline, validate_timeline
 
 

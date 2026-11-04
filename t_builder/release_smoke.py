@@ -44,7 +44,7 @@ def run(report):
             checks['three_timeline_subtabs']=win.steps.count()==3
             checks['canonical_controls']=win.capcut_controls_tab.sections.count()==2
             import sys
-            checks['bundled_node']=bool(find_node()) and (not getattr(sys,'frozen',False) or Path(find_node()).is_relative_to(sys._MEIPASS))
+            checks['bundled_node']=bool(find_node()) and (not getattr(sys,'frozen',False) or Path(find_node()).resolve().is_relative_to(Path(sys._MEIPASS).resolve()))
             checks['bundled_ffmpeg']=Path(ffmpeg).is_file()
             catalog=win.catalog;count,errors=catalog.add_folder(media)
             checks['recursive_import']=count==12 and not errors

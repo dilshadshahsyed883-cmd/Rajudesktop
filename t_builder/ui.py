@@ -295,6 +295,8 @@ class Window(LibraryWindow):
         if default.exists():roots.append(str(default))
         return roots
     def start_generation(self):
+        # Release Windows preview handles before moving selected media.
+        self.player.stop();self.player.setSource(QUrl());self.image.clear()
         self.export_log.clear();self.steps.setCurrentIndex(2)
         args=(self.catalog,self.library_root.currentText(),self.audio_path.text(),dict(self.image_strengths.weights),dict(self.video_strengths.weights) if self.video_enabled.isChecked() else None,self.coverage.value(),self.project_name.text(),self.drafts.text())
         cleanup=self.cleanup_check.isChecked();root=self.library_root.currentText();locations=self.draft_locations();launch=self.launch.isChecked()

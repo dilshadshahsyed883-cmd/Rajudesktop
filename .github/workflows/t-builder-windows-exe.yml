@@ -36,7 +36,7 @@ jobs:
         run: |
           python -m unittest discover -s t_builder/tests -v
           if ($LASTEXITCODE -ne 0) { throw 'T Builder tests failed' }
-          python -m unittest discover -s tests -p 'test_z_builder*.py' -v
+          python -m t_builder.regression_runner
           if ($LASTEXITCODE -ne 0) { throw 'Z Builder regressions failed' }
           python -m unittest discover -s autocapcut_transitions_only/tests -p 'test_*.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'Transition regressions failed' }

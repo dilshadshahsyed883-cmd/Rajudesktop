@@ -100,6 +100,16 @@ def verify_native(folder,t,audio):
     visual=[tr for tr in raw['tracks'] if tr['type']=='video']
     expected=[('Images - Lower Layer',t.images)]+([('Videos - Upper Layer',t.videos)] if t.videos else [])
     if len(visual)!=len(expected): raise ValueError('Wrong visual track count')
+    # Two editable video/image tracks are permitted, but their combined
+    # visible ranges must form ONE continuous, non-overlapping sequence.
+    merged=sorted((s['target_timerange']['start'],s['target_timerange']['duration'])
+                  for track in visual for s in track['segments'])
+    cursor=0
+    for start,duration in merged:
+        if start!=cursor or duration<=0:
+            raise ValueError('Native draft contains image/video overlap or an uncovered gap')
+        cursor+=duration
+    if cursor!=t.duration: raise ValueError('Native visual sequence misses narration endpoint')
     for tr,(name,clips) in zip(visual,expected):
         if tr['name']!=name or len(tr['segments'])!=len(clips): raise ValueError('Wrong layer placement')
         for s,c in zip(tr['segments'],clips):

@@ -55,6 +55,31 @@ class TimelineTests(unittest.TestCase):
             for a,b in zip(t.videos,t.videos[1:]):
                 self.assertNotEqual(a.keyword,b.keyword);self.assertGreater(b.start,a.end)
                 self.assertTrue(any(im.start>=a.end and im.end<=b.start for im in t.images))
+    def test_strict_sequential_image_video_cut_boundaries(self):
+        for seed in range(20):
+            timeline=plan_timeline(assets(),120,{'Alexa':60,'Emma':40},
+                                   {'Alexa':50,'Emma':50},20,seed)
+            visuals=sorted(timeline.images+timeline.videos,key=lambda c:c.start)
+            self.assertEqual(visuals[0].start,0)
+            self.assertEqual(visuals[-1].end,timeline.duration)
+            self.assertEqual(sum(c.duration for c in visuals),timeline.duration)
+            for left,right in zip(visuals,visuals[1:]):
+                self.assertEqual(left.end,right.start)
+                if left.kind=='video':
+                    self.assertEqual(right.kind,'image')
+                if right.kind=='video':
+                    self.assertEqual(left.kind,'image')
+            for image in timeline.images:
+                self.assertFalse(any(image.start < video.end and video.start < image.end
+                                     for video in timeline.videos))
+
+    def test_invalid_overlap_and_gap_rejected(self):
+        timeline=plan_timeline(assets(),120,{'Alexa':100},
+                               {'Alexa':50,'Emma':50},20,4)
+        timeline.images[0].duration+=1
+        with self.assertRaisesRegex(ValueError,'gap or overlap'):
+            validate_timeline(timeline)
+
     def test_video_positions_random_across_audio(self):
         ends=[];starts=[]
         for seed in range(10):

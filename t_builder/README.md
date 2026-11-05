@@ -1,4 +1,4 @@
-# T Builder
+# T Builder v0.1 — Sequential Timeline
 
 Independent Windows keyword timeline generator. Launch `T_Builder.exe`; Python, Qt, FFmpeg and Node are bundled. CapCut must be installed separately for opening/playback. No Scene Plan or SRT is required.
 
@@ -8,7 +8,7 @@ Independent Windows keyword timeline generator. Launch `T_Builder.exe`; Python, 
 4. **Generate & Open in CapCut** validates feasibility, moves selected files into their original parent’s `used/`, creates and verifies a native editable draft, and optionally launches CapCut. Select the new project from CapCut Home, as in Z Builder.
 5. **CapCut Controls** retains the canonical V6.3 Transitions and Scale/Position/Blur interface and engines, including project checks and backups.
 
-Images fill the entire narration with random 3–5s segments (the last segment fits the endpoint). Videos last 2.5–4s, are muted, never overlap/abut each other, never reuse individual files, and successive video keywords differ. A whole visible image between video overlays is preferred. If the requested coverage only permits shorter image gaps, the log reports that explicitly; gaps remain at least 0.25s. Impossible requests are blocked before media moves. Weighted selections are approximate; alternating video keywords can constrain the attainable weighting.
+**v0.1 — sequential timing:** Images fill only the spaces BETWEEN video clips, not under them. Every image-to-video cut is exact (`image.end == video.start`), every video-to-image cut is exact (`video.end == next_image.start`), and the combined visual timeline has no gaps or overlaps. Images are usually random 3–5s segments; short boundary pictures are used only when exact gap fitting requires them. Videos are muted 2.5–4s clips with no reuse, consecutive videos are separated by images, and successive video keywords differ. Requested video coverage is still the exact total duration across the narration; the video positions are randomized across the entire timeline, with image gaps kept. The two editable CapCut visual tracks remain separate, but never occupy the same timestamp. Impossible requests are rejected before media moves. Weighted selections are approximate; alternating video keywords can constrain the attainable weighting.
 
 T Builder stores its catalog and move journal in its own Windows local application data directory and uses separate QSettings/Windows identity. Source lives in `t_builder/`; the canonical controls and JS writer are isolated copies. Z Builder files/settings/databases are not modified. Shared imports are read-only library helpers and existing transition/scale engines.
 

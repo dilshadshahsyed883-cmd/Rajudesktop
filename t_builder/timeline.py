@@ -94,111 +94,174 @@ def pick_key(pool, weights, counts, rng, previous=None):
     return rng.choices(choices, scores)[0]
 
 
+def _image_gap_lengths(image_total, gap_count, rng):
+    """Distribute image-only time across the whole narration without visual overlap."""
+    if gap_count <= 0 or image_total < gap_count * 3_000_000:
+        raise FeasibilityError('Not enough time for an image between every video.')
+    # Where possible, reserve enough time for complete 3–5s pictures in each gap.
+    floor = 6_000_000 if image_total >= gap_count * 6_000_000 else 3_000_000
+    spare = image_total - gap_count * floor
+    jitter = [rng.uniform(.75, 1.25) for _ in range(gap_count)]
+    denominator = sum(jitter)
+    gaps = [floor + int(spare * weight / denominator) for weight in jitter]
+    gaps[-1] += image_total - sum(gaps)
+    return gaps
+
+
+def _image_durations(span, rng):
+    """Fit random pictures within a precise image-only gap, without exceeding 5s."""
+    if span <= 0:
+        return []
+    minimum = math.ceil(span / 5_000_000)
+    maximum = span // 3_000_000
+    if minimum > maximum:
+        # Short audio endpoints or rare 5–6s gaps need shorter boundary pictures.
+        count = minimum
+        return [span // count + (1 if i < span % count else 0) for i in range(count)]
+    count = max(minimum, min(maximum, round(span / 4_000_000)))
+    durations = []
+    remaining = span
+    for i in range(count):
+        others = count - i - 1
+        low = max(3_000_000, remaining - others * 5_000_000)
+        high = min(5_000_000, remaining - others * 3_000_000)
+        duration = rng.randint(low, high)
+        durations.append(duration)
+        remaining -= duration
+    return durations
+
+
 def plan_timeline(assets, duration, image_weights, video_weights=None, coverage=20, seed=None):
     rng = random.Random(seed)
-    total = round(float(duration)*1_000_000)
+    total = round(float(duration) * 1_000_000)
     if total <= 0:
         raise FeasibilityError('Audio duration must be positive.')
     validate_weights(image_weights, 'Images')
-    pool = groups(assets, 'image', image_weights)
-    bags = {k:rng.sample(v, len(v)) for k,v in pool.items()}
-    images, counts, cursor, previous, last_path = [], defaultdict(int), 0, None, None
-    while cursor < total:
-        k = pick_key(pool, image_weights, counts, rng)
-        # Deficit allocation naturally limits clustering while preserving unequal strengths.
-        if not bags[k]:
-            bags[k] = rng.sample(pool[k],len(pool[k]))
-        if len(bags[k])>1 and bags[k][-1]['path']==last_path:
-            bags[k].insert(0,bags[k].pop())
-        a = bags[k].pop()
-        dur = min(rng.randint(3_000_000,5_000_000),total-cursor)
-        images.append(Clip(a['path'],'image',k,cursor,dur))
-        counts[k]+=1;cursor+=dur;previous=k;last_path=a['path']
-    videos, warnings = [], []
+    image_pool = groups(assets, 'image', image_weights)
     if not 0 <= coverage <= 100:
         raise FeasibilityError('Video coverage must be between 0 and 100%.')
-    if video_weights is None or coverage == 0:
-        return Timeline(total, images, videos, warnings)
-    validate_weights(video_weights,'Videos')
-    vpool = groups(assets,'video',video_weights)
-    vpool = {k:[a for a in v if a.get('duration',0)>=2.5] for k,v in vpool.items()}
-    target = round(total*coverage/100)
-    lower = math.ceil(target/4_000_000)
-    upper = min(target//2_500_000,sum(len(v) for v in vpool.values()))
-    possible = list(range(lower,upper+1))
-    rng.shuffle(possible)
-    for n in possible:
-        if n > 1 and sum(bool(v) for v in vpool.values()) < 2:
-            continue
-        # Try weighted, nonrepeating keyword sequences and source duration bounds.
-        for attempt in range(100):
-            vp={k:rng.sample(v,len(v)) for k,v in vpool.items()}
-            selected=[];vc=defaultdict(int);prev=None
-            for i in range(n):
-                choices={k:v for k,v in vp.items() if v and k!=prev}
-                if not choices: break
-                k=pick_key(choices,video_weights,vc,rng)
-                a=vp[k].pop();selected.append((k,a));vc[k]+=1;prev=k
-            if len(selected)!=n: continue
-            caps=[min(4_000_000,round(a['duration']*1e6)) for k,a in selected]
-            if sum(caps)<target: continue
-            durs=[];remaining=target
-            for i,cap in enumerate(caps):
-                lo=max(2_500_000,remaining-sum(caps[i+1:]))
-                hi=min(cap,remaining-2_500_000*(n-i-1))
-                d=rng.randint(lo,hi);durs.append(d);remaining-=d
-            # Prefer a whole base-image segment between overlays.
-            cursor=0;positions=[]
-            for d in durs:
-                positions.append(cursor);end=cursor+d
-                full=next((im for im in images if im.start>=end),None)
-                cursor=full.end if full else total+1
-            fits=positions[-1]+durs[-1]<=total
-            if not fits:
-                # Positive image-only gaps remain mandatory; the full-image preference may be infeasible.
-                spare=total-target
-                if n>1 and spare < (n-1)*250_000: continue
-                gaps=[spare//(n+1)]*(n+1)
-                gaps[-1]+=spare-sum(gaps)
-                if n>1 and min(gaps[1:-1])<250_000:
-                    gaps=[0]+[spare//(n-1)]*(n-1)+[spare%(n-1)]
-                positions=[];cursor=gaps[0]
-                for i,d in enumerate(durs):
-                    positions.append(cursor);cursor+=d+gaps[i+1]
-            else:
-                # Spread overlays across the full narration using random base-image boundaries.
-                # Moving from the last overlay backwards preserves the known-feasible layout.
-                for i in reversed(range(n)):
-                    options=[]
-                    for im in images:
-                        start=im.start
-                        if start<positions[i] or start+durs[i]>total:continue
-                        if i<n-1 and not any(g.start>=start+durs[i] and g.end<=positions[i+1] for g in images):continue
-                        options.append(start)
-                    if options:positions[i]=rng.choice(options)
-            for (k,a),start,d in zip(selected,positions,durs):
-                trim=rng.randint(0,max(0,round(a['duration']*1e6)-d))
-                videos.append(Clip(a['path'],'video',k,start,d,trim))
-            if any(not any(im.start>=a.end and im.end<=b.start for im in images) for a,b in zip(videos,videos[1:])):
-                warnings.append('Coverage allows image-only gaps, but not a complete visible image in every gap.')
-            result=Timeline(total,images,videos,warnings)
-            validate_timeline(result)
-            return result
-    detail=' Select at least two video keywords for multiple clips.' if sum(bool(v) for v in vpool.values())<2 else ''
-    raise FeasibilityError(f'{coverage}% video coverage is infeasible with the selected usable clips, 2.5–4s durations and image-only gaps.{detail} Reduce coverage or add clips/keywords.')
+    videos, warnings = [], []
+    gaps = [total]
+    if video_weights is not None and coverage > 0:
+        validate_weights(video_weights, 'Videos')
+        pool = groups(assets, 'video', video_weights)
+        pool = {k: [a for a in available if a.get('duration', 0) >= 2.5]
+                for k, available in pool.items()}
+        target = round(total * coverage / 100)
+        lower = math.ceil(target / 4_000_000)
+        upper = min(target // 2_500_000, sum(len(items) for items in pool.values()))
+        possibilities = list(range(lower, upper + 1))
+        rng.shuffle(possibilities)
+        found = False
+        for n in possibilities:
+            # Every video must be preceded and followed by actual image footage.
+            if total - target < (n + 1) * 3_000_000:
+                continue
+            if n > 1 and sum(bool(items) for items in pool.values()) < 2:
+                continue
+            for attempt in range(100):
+                available = {k: rng.sample(items, len(items)) for k, items in pool.items()}
+                chosen, counts, previous = [], defaultdict(int), None
+                for i in range(n):
+                    choices = {k: items for k, items in available.items() if items and k != previous}
+                    if not choices:
+                        break
+                    k = pick_key(choices, video_weights, counts, rng)
+                    chosen.append((k, available[k].pop()))
+                    counts[k] += 1
+                    previous = k
+                if len(chosen) != n:
+                    continue
+                caps = [min(4_000_000, round(a['duration'] * 1_000_000)) for _, a in chosen]
+                if sum(caps) < target:
+                    continue
+                remaining = target
+                durations = []
+                for i, cap in enumerate(caps):
+                    lo = max(2_500_000, remaining - sum(caps[i + 1:]))
+                    hi = min(cap, remaining - 2_500_000 * (n - i - 1))
+                    if lo > hi:
+                        break
+                    d = rng.randint(lo, hi)
+                    durations.append(d)
+                    remaining -= d
+                if len(durations) != n or remaining:
+                    continue
+                gaps = _image_gap_lengths(total - target, n + 1, rng)
+                cursor = gaps[0]
+                videos = []
+                for i, ((k, a), clip_duration) in enumerate(zip(chosen, durations)):
+                    trim = rng.randint(0, max(0, round(a['duration'] * 1_000_000) - clip_duration))
+                    videos.append(Clip(a['path'], 'video', k, cursor, clip_duration, trim))
+                    cursor += clip_duration + gaps[i + 1]
+                if cursor != total:
+                    raise AssertionError('Sequential video timing did not reach narration endpoint')
+                found = True
+                break
+            if found:
+                break
+        if not found:
+            detail = (' Select at least two video keywords for multiple clips.'
+                      if sum(bool(items) for items in pool.values()) < 2 else '')
+            raise FeasibilityError(
+                f'{coverage}% video coverage is infeasible with the selected clips, '
+                '2.5–4s video lengths and mandatory image-only gaps.'
+                f'{detail} Reduce coverage or add media.'
+            )
+
+    # Construct image footage only between video slots. Exactly one type of visual
+    # occupies each timestamp; the cut boundaries match to the microsecond.
+    bags = {k: rng.sample(items, len(items)) for k, items in image_pool.items()}
+    image_counts = defaultdict(int)
+    images, cursor, last_path = [], 0, None
+    for index, gap in enumerate(gaps):
+        for length in _image_durations(gap, rng):
+            k = pick_key(image_pool, image_weights, image_counts, rng)
+            if not bags[k]:
+                bags[k] = rng.sample(image_pool[k], len(image_pool[k]))
+            if len(bags[k]) > 1 and bags[k][-1]['path'] == last_path:
+                bags[k].insert(0, bags[k].pop())
+            asset = bags[k].pop()
+            images.append(Clip(asset['path'], 'image', k, cursor, length))
+            last_path = asset['path']
+            image_counts[k] += 1
+            cursor += length
+        if index < len(videos):
+            if cursor != videos[index].start:
+                raise AssertionError('Image end must equal video start')
+            cursor += videos[index].duration
+    if cursor != total:
+        raise AssertionError('Last image must finish with narration')
+    result = Timeline(total, images, videos, warnings)
+    validate_timeline(result)
+    return result
 
 
 def validate_timeline(t):
-    cursor=0
-    for i,c in enumerate(t.images):
-        if c.start!=cursor or c.duration<=0 or c.duration>5_000_000 or (i<len(t.images)-1 and c.duration<3_000_000):
-            raise ValueError('Invalid continuous image base layer')
-        cursor=c.end
-    if cursor!=t.duration: raise ValueError('Images do not match audio endpoint')
-    seen=set()
-    for i,c in enumerate(t.videos):
-        if not 2_500_000<=c.duration<=4_000_000 or c.end>t.duration or c.start<0 or c.path in seen:
-            raise ValueError('Invalid video duration, position or reuse')
-        seen.add(c.path)
-        if i and (c.start<=t.videos[i-1].end or c.keyword==t.videos[i-1].keyword):
-            raise ValueError('Videos require image gaps and alternating keywords')
+    """Reject even a one-microsecond image/video gap or overlap."""
+    visuals = sorted(t.images + t.videos, key=lambda c: c.start)
+    if not t.images or not visuals:
+        raise ValueError('At least one image is required')
+    cursor, previous = 0, None
+    video_paths = set()
+    for clip in visuals:
+        if clip.start != cursor or clip.duration <= 0:
+            raise ValueError('Image/video boundary has a gap or overlap')
+        if clip.kind == 'image':
+            if clip.duration > 5_000_000:
+                raise ValueError('Invalid image duration')
+        elif clip.kind == 'video':
+            if not 2_500_000 <= clip.duration <= 4_000_000 or clip.path in video_paths:
+                raise ValueError('Invalid video duration or source reuse')
+            if previous is not None and previous.kind == 'video':
+                raise ValueError('Consecutive videos need an image between them')
+            video_paths.add(clip.path)
+        else:
+            raise ValueError('Unknown media kind')
+        cursor = clip.end
+        previous = clip
+    if cursor != t.duration:
+        raise ValueError('Visual timeline does not match narration endpoint')
+    for left, right in zip(t.videos, t.videos[1:]):
+        if left.keyword == right.keyword or left.end >= right.start:
+            raise ValueError('Video keywords must alternate with an image-only gap')

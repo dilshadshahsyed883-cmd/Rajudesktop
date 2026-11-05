@@ -59,6 +59,22 @@ def run(report):
             t=prepared[0];project=Path(out['folder']);raw=verify_native(project,t,str(voice))
             checks['native_editable_three_tracks']=[tr['type'] for tr in raw['tracks']]==['video','video','audio']
             checks['coverage_exact']=sum(c.duration for c in t.videos)==6_000_000
+            visuals=sorted(t.images+t.videos,key=lambda c:c.start)
+            checks['sequential_no_overlap']=(
+                len(visuals)>2 and visuals[0].start==0
+                and visuals[-1].end==t.duration
+                and all(a.end==b.start for a,b in zip(visuals,visuals[1:]))
+                and all(not (im.start<v.end and v.start<im.end)
+                        for im in t.images for v in t.videos))
+            native_visual=sorted((s['target_timerange']['start'],
+                                  s['target_timerange']['duration'])
+                                 for tr in raw['tracks'] if tr['type']=='video'
+                                 for s in tr['segments'])
+            checks['native_sequential_timing']=(
+                native_visual[0][0]==0
+                and sum(d for _,d in native_visual)==t.duration
+                and all(a[0]+a[1]==b[0]
+                        for a,b in zip(native_visual,native_visual[1:])))
             checks['moved_paths']=all(Path(c.path).parent.name=='used' for c in t.images+t.videos)
             checks['cleanup_off_preserves_used']=all(Path(c.path).exists() for c in t.images+t.videos)
             eligible,protected=catalog.cleanup_candidates(media,[drafts]);checks['reference_protection']=not eligible and bool(protected)

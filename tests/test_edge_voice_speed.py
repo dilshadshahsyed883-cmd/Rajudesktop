@@ -23,19 +23,21 @@ def pretend_concat(parts, output):
 
 
 class SlowVoiceTests(unittest.TestCase):
-    def test_default_five_configurable_up_to_ten_and_single_fallback(self):
-        with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "5"}):
-            self.assertEqual(edge_stream_count(), 5)
+    def test_default_ten_configurable_up_to_twenty_and_single_fallback(self):
+        with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "10"}):
+            self.assertEqual(edge_stream_count(), 10)
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "1"}):
             self.assertEqual(edge_stream_count(), 1)
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "30"}):
-            self.assertEqual(edge_stream_count(), 10)
+            self.assertEqual(edge_stream_count(), 20)
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "broken"}):
-            self.assertEqual(edge_stream_count(), 5)
+            self.assertEqual(edge_stream_count(), 10)
         self.assertEqual(edge_stream_count(3), 3)
         self.assertEqual(edge_stream_count(5), 5)
         self.assertEqual(edge_stream_count(10), 10)
-        self.assertEqual(edge_stream_count(15), 10)
+        self.assertEqual(edge_stream_count(15), 15)
+        self.assertEqual(edge_stream_count(20), 20)
+        self.assertEqual(edge_stream_count(200), 20)
         self.assertEqual(edge_stream_count(0), 1)
 
     def test_bounded_concurrency_preserves_order_and_queue_outputs(self):

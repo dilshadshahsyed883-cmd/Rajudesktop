@@ -32,7 +32,7 @@ unusual phrases/silences may produce a shorter/longer cue.
 
 ## Long narration speed settings
 
-In **Settings**, set **Parallel chunks** from **1 to 10**, with **5 as the default**.
+In **Settings**, set **Parallel chunks** from **1 to 20**, with **10 as the default**.
 Each request is one script chunk, independently synthesized by online Edge TTS.
 The separate **Chunk size** selector is 800, 1,200, 1,600, 2,000 or 2,600
 characters (default 2,600). Chunk size is fixed per submitted job; parallel
@@ -40,7 +40,7 @@ limit is sampled when each job begins. Existing cached chunk pairs are preserved
 then the ordered audio is merged before any Auto SRT work begins.
 
 Rolling parallel streams replace each completed chunk immediately, without
-waiting for the other chunks in that batch. Up to ten streams may shorten long
+waiting for the other chunks in that batch. Up to twenty streams may shorten long
 jobs but are **not** guaranteed faster:
 the upstream service can throttle. Switch to 1 or 2 when requests repeatedly
 fail. Slow or stalled requests time out after 240 seconds and retry at most

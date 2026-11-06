@@ -23,18 +23,20 @@ def pretend_concat(parts, output):
 
 
 class SlowVoiceTests(unittest.TestCase):
-    def test_five_streams_default_and_one_stream_fallback(self):
+    def test_default_five_configurable_up_to_ten_and_single_fallback(self):
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "5"}):
             self.assertEqual(edge_stream_count(), 5)
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "1"}):
             self.assertEqual(edge_stream_count(), 1)
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "30"}):
-            self.assertEqual(edge_stream_count(), 5)
+            self.assertEqual(edge_stream_count(), 10)
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "broken"}):
             self.assertEqual(edge_stream_count(), 5)
         self.assertEqual(edge_stream_count(3), 3)
         self.assertEqual(edge_stream_count(5), 5)
-        self.assertEqual(edge_stream_count(10), 5)
+        self.assertEqual(edge_stream_count(10), 10)
+        self.assertEqual(edge_stream_count(15), 10)
+        self.assertEqual(edge_stream_count(0), 1)
 
     def test_bounded_concurrency_preserves_order_and_queue_outputs(self):
         self.assertGreaterEqual(len(split_script(SCRIPT)), 5)
@@ -79,6 +81,70 @@ class SlowVoiceTests(unittest.TestCase):
             logs = list((root / "cache").rglob("performance.log"))
             self.assertEqual(len(logs), 1)
             self.assertIn("event=success", logs[0].read_text())
+
+
+    def test_rolling_fifth_slot_refills_without_waiting_for_other_four(self):
+        # Old five-at-once batches would deadlock: four requests wait for #6.
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("edge_voice_studio.engine.concat_mp3", side_effect=pretend_concat):
+            root = Path(tmp)
+            store = Store(root / "db.sqlite")
+            jid = store.add_job("rolling", SCRIPT, "en-US-AndrewNeural", subtitles=False)
+            self.assertGreaterEqual(store.get(jid)["total"], 6)
+            release_first_four = asyncio.Event()
+            started = []
+            finished = []
+            state_at_sixth_start = []
+
+            async def fake(text, voice, rate, pitch, volume, target, stopped):
+                index = int(target.stem)
+                started.append(index)
+                if index in {0, 1, 3, 4}:
+                    await release_first_four.wait()
+                elif index == 2:
+                    await asyncio.sleep(0.02)
+                elif index == 5:
+                    state_at_sixth_start.append(set(finished))
+                    release_first_four.set()
+                target.write_bytes(b"mock audio")
+                finished.append(index)
+                return []
+
+            output = asyncio.run(asyncio.wait_for(render_job(
+                store, jid, root / "out", root / "cache",
+                synthesis=fake, parallel_chunks=5), timeout=3))
+            self.assertTrue(output.exists())
+            self.assertEqual(started[:5], list(range(5)))
+            self.assertEqual(state_at_sixth_start, [{2}])
+            self.assertEqual(store.get(jid)["status"], "done")
+
+    def test_ten_slot_limit_never_exceeded(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("edge_voice_studio.engine.concat_mp3", side_effect=pretend_concat):
+            root = Path(tmp)
+            store = Store(root / "jobs.db")
+            jid = store.add_job("ten", SCRIPT * 3, "en-US-AndrewNeural", subtitles=False)
+            self.assertGreater(store.get(jid)["total"], 10)
+            active, peak = 0, 0
+
+            async def fake(text, voice, rate, pitch, volume, target, stopped):
+                nonlocal active, peak
+                active += 1
+                peak = max(peak, active)
+                try:
+                    await asyncio.sleep(0.02)
+                    target.write_bytes(b"fake mp3")
+                    return []
+                finally:
+                    active -= 1
+
+            audio = asyncio.run(render_job(
+                store, jid, root / "output", root / "cache",
+                synthesis=fake, parallel_chunks=10))
+            self.assertTrue(audio.is_file())
+            self.assertEqual(peak, 10)
+            self.assertEqual(active, 0)
+            self.assertEqual(store.get(jid)["completed"], store.get(jid)["total"])
 
     def test_pause_and_restart_reuse_completed_chunk_pairs(self):
         with tempfile.TemporaryDirectory() as tmp, \

@@ -489,9 +489,9 @@ class StudioWindow(QMainWindow):
         match = self.chunk_size.findData(saved_size)
         self.chunk_size.setCurrentIndex(match if match >= 0 else self.chunk_size.count() - 1)
         lay.addWidget(self.chunk_size)
-        lay.addWidget(QLabel("Parallel chunks (1–5 simultaneous requests)"))
+        lay.addWidget(QLabel("Parallel chunks (1–10 simultaneous requests)"))
         self.parallel_chunks = QComboBox()
-        self.parallel_chunks.addItems([str(n) for n in range(1, 6)])
+        self.parallel_chunks.addItems([str(n) for n in range(1, 11)])
         self.parallel_chunks.setCurrentText(str(edge_stream_count(
             self.store.get_setting("parallel_chunks", 5))))
         self.parallel_chunks.setToolTip("Maximum simultaneous Edge TTS requests for one narration")
@@ -671,7 +671,11 @@ class StudioWindow(QMainWindow):
         except Exception as exc:
             self._error(str(exc))
             return
+        # Clear only after SQLite accepted the job; a rejected submission
+        # must preserve the user's script for correction and retry.
+        self.script.clear()
         self._refresh_queue()
+        self._show_page(2)
         self._start_queue()
         self._message("Narration added to queue")
 

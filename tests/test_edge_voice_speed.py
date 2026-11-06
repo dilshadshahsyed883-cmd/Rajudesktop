@@ -159,6 +159,7 @@ class SlowVoiceTests(unittest.TestCase):
                     "INSERT INTO jobs(id,title,script,voice,rate,pitch,volume,total) "
                     "VALUES ('legacy','old',?,'en-US-AndrewNeural',0,0,0,?)",
                     (SCRIPT, len(split_script(SCRIPT))))
+            connection.close()  # SQLite's context manager does not close Windows handles.
             store = Store(db)
             self.assertEqual(store.get("legacy")["chunk_size"], 2600)
             self.assertEqual(store.get("legacy")["total"], len(split_script(SCRIPT)))

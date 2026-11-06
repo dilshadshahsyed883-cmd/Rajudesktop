@@ -1,0 +1,123 @@
+name: T Builder — standalone Windows EXE
+
+on:
+  push:
+    branches: [main, feat/t-builder-standalone]
+    paths: ['t_builder/**', 'launch_t_builder.py', 'requirements-t-builder.txt', '.github/workflows/t-builder-windows-exe.yml']
+  pull_request:
+    paths: ['t_builder/**', 'launch_t_builder.py', 'requirements-t-builder.txt', '.github/workflows/t-builder-windows-exe.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t-builder-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install runtime and build dependencies
+        run: python -m pip install -r requirements-t-builder.txt pyinstaller
+      - name: T Builder acceptance and Z Builder regressions
+        shell: pwsh
+        run: |
+          python -m unittest discover -s t_builder/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'T Builder tests failed' }
+          python -m t_builder.regression_runner
+          if ($LASTEXITCODE -ne 0) { throw 'Z Builder regressions failed' }
+          python -m unittest discover -s autocapcut_transitions_only/tests -p 'test_*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Transition regressions failed' }
+          python -m unittest discover -s capcut_visual_controls_standalone/tests -p 'test_*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Scale regressions failed' }
+      - name: Bundle Node runtime
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force '.runtime/node' | Out-Null
+          Copy-Item (Get-Command node.exe).Source '.runtime/node/node.exe'
+      - name: Build single standalone EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name T_Builder `
+            --collect-all imageio_ffmpeg --collect-all mutagen `
+            --collect-submodules autocapcut_transitions_only `
+            --collect-submodules capcut_visual_controls_standalone `
+            --add-data 't_builder/capcut-draft.js;t_builder' `
+            --add-data 't_builder/capcut_bridge.js;t_builder' `
+            --add-binary '.runtime/node/node.exe;.runtime/node' `
+            launch_t_builder.py
+          if ($LASTEXITCODE -ne 0) { throw 'EXE build failed' }
+          if ((Get-Item 'dist/T_Builder.exe').Length -lt 5MB) { throw 'Invalid EXE' }
+      - name: Verify frozen EXE with real test media and native drafts
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD 'dist/T-Builder-Windows-Smoke.json'
+          $p = Start-Process 'dist/T_Builder.exe' -ArgumentList @('--self-test-report',"`"$report`"") -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw 'EXE smoke timed out' }
+          if ($p.ExitCode -ne 0) { Get-Content $report; throw "EXE failed: $($p.ExitCode)" }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if (-not $result.passed) { throw 'Frozen acceptance failed' }
+          Get-Content $report
+          $hash = (Get-FileHash 'dist/T_Builder.exe' -Algorithm SHA256).Hash.ToLower()
+          "$hash  T_Builder.exe" | Set-Content 'dist/SHA256SUMS.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: T-Builder-v0.1-Windows
+          path: |
+            dist/T_Builder.exe
+            dist/T-Builder-Windows-Smoke.json
+            dist/T-Builder-Windows-Smoke.png
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-windows-release:
+    needs: windows-exe
+    # Publish only after a verified Windows binary exists; no PR token writes.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/t-builder-standalone'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: T-Builder-v0.1-Windows
+          path: release
+      - name: Verify downloaded binary and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/T_Builder.exe
+          (cd release && sha256sum -c SHA256SUMS.txt)
+      - name: Publish public Windows EXE and SHA256
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="t-builder-v0.1-windows-20261106"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release tag already exists. Refusing to silently replace a public build."
+            exit 1
+          fi
+          gh release create "$TAG" \
+            release/T_Builder.exe \
+            release/SHA256SUMS.txt \
+            release/T-Builder-Windows-Smoke.json \
+            --target "$GITHUB_SHA" \
+            --title "T Builder v0.1 - Windows standalone verified build" \
+            --notes "Independent T Builder v0.1 Windows x64 portable EXE. Exact image/video sequential cuts, real native draft acceptance, bundled runtime, and automated Windows verification. Source: feat/t-builder-standalone at $GITHUB_SHA. This is a preview release pending PR #61 merge to main; actual CapCut playback on the user's PC has not yet been tested." \
+            --prerelease

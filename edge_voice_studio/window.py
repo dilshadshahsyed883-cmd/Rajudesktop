@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from .core import MAX_CHUNK, english_voice, safe_title
-from .engine import generate_preview, list_english_voices, render_job, to_wav
+from .engine import edge_stream_count, generate_preview, list_english_voices, render_job, to_wav
 from .store import Store
 from .srt_tasks import Cancelled, make_model, transcribe_completed_voice
 
@@ -125,7 +125,8 @@ class QueueWorker(QThread):
                 asyncio.run(render_job(
                     self.store, job["id"], self.output, self.cache,
                     stopped=self.stop_flag.is_set,
-                    progress=lambda _done, _total: self.changed.emit()))
+                    progress=lambda _done, _total: self.changed.emit(),
+                    parallel_chunks=self.store.get_setting("parallel_chunks", 5)))
                 self.note.emit("Completed: " + job["title"])
             except Exception as exc:
                 self.note.emit(job["title"] + ": " + str(exc)[:170])
@@ -488,6 +489,13 @@ class StudioWindow(QMainWindow):
         match = self.chunk_size.findData(saved_size)
         self.chunk_size.setCurrentIndex(match if match >= 0 else self.chunk_size.count() - 1)
         lay.addWidget(self.chunk_size)
+        lay.addWidget(QLabel("Parallel chunks (1–5 simultaneous requests)"))
+        self.parallel_chunks = QComboBox()
+        self.parallel_chunks.addItems([str(n) for n in range(1, 6)])
+        self.parallel_chunks.setCurrentText(str(edge_stream_count(
+            self.store.get_setting("parallel_chunks", 5))))
+        self.parallel_chunks.setToolTip("Maximum simultaneous Edge TTS requests for one narration")
+        lay.addWidget(self.parallel_chunks)
         chunk_info = QLabel(
             "Smaller chunks can recover faster from network failures, but send more requests. "
             "Saved chunk size applies to NEW voice jobs only; existing jobs keep their original "
@@ -979,8 +987,9 @@ class StudioWindow(QMainWindow):
             self.store.set_setting("cache_folder", str(cache))
             self.store.set_setting("theme", self.theme.currentText())
             self.store.set_setting("chunk_size", int(self.chunk_size.currentData()))
+            self.store.set_setting("parallel_chunks", int(self.parallel_chunks.currentText()))
             self.setStyleSheet(stylesheet(self.theme.currentText()))
-            self._message("Settings saved. New jobs will use the selected chunk size and folders.")
+            self._message("Settings saved. Next jobs use the chosen chunk size, parallel limit and folders.")
         except Exception as exc:
             self._error(str(exc))
 

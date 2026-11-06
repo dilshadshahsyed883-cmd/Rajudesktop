@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QAbstractItemView,
 )
 
-from .core import english_voice, safe_title
+from .core import MAX_CHUNK, english_voice, safe_title
 from .engine import generate_preview, list_english_voices, render_job, to_wav
 from .store import Store
 from .srt_tasks import Cancelled, make_model, transcribe_completed_voice
@@ -480,6 +480,21 @@ class StudioWindow(QMainWindow):
             row.addWidget(edit, 1)
             row.addWidget(button("Browse", lambda _=False, e=edit: self.select_folder(e)))
             lay.addLayout(row)
+        lay.addWidget(QLabel("Chunk size (characters per Edge TTS request)"))
+        self.chunk_size = QComboBox()
+        for size in (800, 1200, 1600, 2000, MAX_CHUNK):
+            self.chunk_size.addItem(f"{size:,} characters", size)
+        saved_size = self.store.get_setting("chunk_size", MAX_CHUNK)
+        match = self.chunk_size.findData(saved_size)
+        self.chunk_size.setCurrentIndex(match if match >= 0 else self.chunk_size.count() - 1)
+        lay.addWidget(self.chunk_size)
+        chunk_info = QLabel(
+            "Smaller chunks can recover faster from network failures, but send more requests. "
+            "Saved chunk size applies to NEW voice jobs only; existing jobs keep their original "
+            "size and resumable audio cache.")
+        chunk_info.setWordWrap(True)
+        chunk_info.setObjectName("muted")
+        lay.addWidget(chunk_info)
         lay.addWidget(QLabel("Theme"))
         self.theme = QComboBox()
         self.theme.addItems(["Dark", "Light"])
@@ -643,7 +658,8 @@ class StudioWindow(QMainWindow):
             rate, pitch, volume = self.control_values()
             self.store.add_job(self.title_input.text() or "Narration", script,
                                self.selected_voice, rate, pitch, volume,
-                               self.subtitles.isChecked())
+                               self.subtitles.isChecked(),
+                               chunk_size=self.store.get_setting("chunk_size", MAX_CHUNK))
         except Exception as exc:
             self._error(str(exc))
             return
@@ -674,7 +690,8 @@ class StudioWindow(QMainWindow):
             try:
                 self.store.add_job(p.stem, p.read_text(encoding="utf-8-sig"),
                                    self.selected_voice, rate, pitch, volume,
-                                   self.subtitles.isChecked())
+                                   self.subtitles.isChecked(),
+                                   chunk_size=self.store.get_setting("chunk_size", MAX_CHUNK))
                 added += 1
             except Exception as exc:
                 errors.append(p.name + ": " + str(exc))
@@ -961,8 +978,9 @@ class StudioWindow(QMainWindow):
             self.store.set_setting("output_folder", str(output))
             self.store.set_setting("cache_folder", str(cache))
             self.store.set_setting("theme", self.theme.currentText())
+            self.store.set_setting("chunk_size", int(self.chunk_size.currentData()))
             self.setStyleSheet(stylesheet(self.theme.currentText()))
-            self._message("Settings saved. Future jobs will use the selected folders.")
+            self._message("Settings saved. New jobs will use the selected chunk size and folders.")
         except Exception as exc:
             self._error(str(exc))
 

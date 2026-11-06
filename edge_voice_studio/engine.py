@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 from typing import Callable
 
 from .core import english_voice, safe_title, settings_hash, split_script
@@ -113,6 +114,19 @@ async def synthesize_chunk(text: str, voice: str, rate: int, pitch: int,
         part.unlink(missing_ok=True)
 
 
+# Online Edge streaming can stall without raising. Keep the deadline conservative
+# for long 2,600-character chunks; never leave a request running indefinitely.
+SYNTH_TIMEOUT_SECONDS = 240.0
+
+
+def edge_stream_count() -> int:
+    """Two bounded online requests by default, one if the service throttles."""
+    try:
+        return max(1, min(2, int(os.environ.get("EDGE_VOICE_STREAMS", "2"))))
+    except (TypeError, ValueError):
+        return 2
+
+
 async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Path,
                      stopped: Callable[[], bool] = lambda: False,
                      progress: Callable[[int, int], None] = lambda a, b: None,
@@ -128,51 +142,110 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     store.update(job_id, status="processing", error="")
-    parts: list[Path] = []
-    try:
-        for index, text in enumerate(chunks):
-            if stopped() or store.get(job_id)["status"] != "processing":
+
+    # Query SQLite at most twice per second, even when the stream emits many
+    # audio events. Stop callbacks remain responsive without a DB hit per frame.
+    state_check = [0.0, False]
+
+    def interrupted() -> bool:
+        if stopped():
+            return True
+        now = time.monotonic()
+        if now - state_check[0] >= 0.5:
+            state_check[0] = now
+            state_check[1] = store.get(job_id)["status"] != "processing"
+        return state_check[1]
+
+    def metric(event: str, index: int, seconds: float, attempt: int = 0) -> None:
+        # No narration text, network payloads or credentials in diagnostics.
+        try:
+            with (work / "performance.log").open("a", encoding="utf-8") as log:
+                log.write(
+                    f"{time.time():.0f} chunk={index+1}/{len(chunks)} "
+                    f"event={event} attempt={attempt} seconds={seconds:.2f}\n")
+        except OSError:
+            pass  # Metrics must never affect a completed voice.
+
+    async def render_chunk(index: int, text: str) -> int:
+        if interrupted():
+            raise RenderStopped("Job paused or cancelled")
+        audio = work / f"{index:05}.mp3"
+        timings = work / f"{index:05}.json"
+        if audio.is_file() and audio.stat().st_size > 0 and timings.is_file():
+            metric("cached", index, 0)
+            return index
+
+        audio.unlink(missing_ok=True)
+        timings.unlink(missing_ok=True)
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            if interrupted():
                 raise RenderStopped("Job paused or cancelled")
-            audio = work / f"{index:05}.mp3"
-            timings = work / f"{index:05}.json"
-            if not audio.is_file() or audio.stat().st_size == 0:
+            started = time.monotonic()
+            try:
+                words = await asyncio.wait_for(
+                    synthesis(text, job["voice"], job["rate"], job["pitch"],
+                              job["volume"], audio, interrupted),
+                    timeout=SYNTH_TIMEOUT_SECONDS)
+                if interrupted():
+                    raise RenderStopped("Job paused or cancelled")
+                timings.write_text(json.dumps(words), encoding="utf-8")
+                metric("success", index, time.monotonic() - started, attempt + 1)
+                return index
+            except RenderStopped:
+                raise
+            except Exception as exc:
                 audio.unlink(missing_ok=True)
                 timings.unlink(missing_ok=True)
-                last_exc = None
-                for attempt in range(3):
-                    if stopped() or store.get(job_id)["status"] != "processing":
-                        raise RenderStopped("Job paused or cancelled")
-                    try:
-                        words = await synthesis(
-                            text, job["voice"], job["rate"], job["pitch"],
-                            job["volume"], audio, stopped)
-                        timings.write_text(json.dumps(words), encoding="utf-8")
-                        last_exc = None
-                        break
-                    except RenderStopped:
-                        raise
-                    except Exception as exc:
-                        audio.unlink(missing_ok=True)
-                        last_exc = exc
-                        if attempt != 2:
-                            await asyncio.sleep(min(6.0, 0.8 * 2 ** attempt))
-                if last_exc is not None:
-                    raise RuntimeError(f"Chunk {index+1}/{len(chunks)}: {last_exc}")
-            try:
-                words = json.loads(timings.read_text(encoding="utf-8")) if timings.exists() else []
-            except (OSError, ValueError):
-                words = []
-            parts.append(audio)
-            store.update(job_id, completed=index + 1)
-            progress(index + 1, len(chunks))
+                last_exc = exc
+                metric("timeout" if isinstance(exc, TimeoutError) else
+                       "error_" + type(exc).__name__, index,
+                       time.monotonic() - started, attempt + 1)
+                if attempt < 2:
+                    # Small backoff to avoid hammering Edge if it is throttling.
+                    await asyncio.sleep((1.5, 3.0)[attempt])
 
-        if stopped() or store.get(job_id)["status"] != "processing":
+        raise RuntimeError(
+            f"Chunk {index+1}/{len(chunks)} failed after 3 attempts: "
+            f"{type(last_exc).__name__}")
+
+    parts: list[Path] = []
+    completed: set[int] = set()
+    contiguous = 0
+    streams = edge_stream_count()
+    try:
+        # Only two online streams are active. A failed/paused batch cancels
+        # outstanding work; fully written audio and timing pairs remain reusable.
+        for first in range(0, len(chunks), streams):
+            if interrupted():
+                raise RenderStopped("Job paused or cancelled")
+            tasks = [
+                asyncio.create_task(render_chunk(i, chunks[i]))
+                for i in range(first, min(first + streams, len(chunks)))
+            ]
+            try:
+                for finished_task in asyncio.as_completed(tasks):
+                    index = await finished_task
+                    completed.add(index)
+                    while contiguous in completed:
+                        parts.append(work / f"{contiguous:05}.mp3")
+                        contiguous += 1
+                        store.update(job_id, completed=contiguous)
+                        progress(contiguous, len(chunks))
+                        if interrupted():
+                            raise RenderStopped("Job paused or cancelled")
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+        if interrupted():
             raise RenderStopped("Job paused or cancelled")
         stem = safe_title(job["title"]) + "-" + job_id[:8]
         destination = output_dir / (stem + ".mp3")
         concat_mp3(parts, destination)
-        # A separate queue starts transcription immediately after the MP3 is
-        # committed, without blocking synthesis of the next voice job.
+        # Auto SRT stays on its own queue after the verified MP3 is committed.
         store.complete_voice(job_id, str(destination), len(chunks))
         return destination
     except RenderStopped:
@@ -182,7 +255,6 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
     except Exception as exc:
         store.update(job_id, status="failed", error=str(exc)[:2000])
         raise
-
 
 async def generate_preview(text: str, voice: str, rate: int, pitch: int,
                            volume: int, target: Path) -> Path:

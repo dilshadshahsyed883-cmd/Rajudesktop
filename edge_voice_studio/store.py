@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from .core import english_voice, split_script, safe_title
+from .core import MAX_CHUNK, english_voice, split_script, safe_title
 
 
 class Store:
@@ -24,6 +24,7 @@ class Store:
                     rate INTEGER NOT NULL,
                     pitch INTEGER NOT NULL,
                     volume INTEGER NOT NULL,
+                    chunk_size INTEGER NOT NULL DEFAULT 2600,
                     subtitles INTEGER NOT NULL DEFAULT 1,
                     srt_status TEXT NOT NULL DEFAULT 'off',
                     srt_error TEXT NOT NULL DEFAULT '',
@@ -41,6 +42,11 @@ class Store:
             # Backwards-compatible migration; never transcribe old completed projects
             # unexpectedly on first launch.
             columns = {row["name"] for row in con.execute("PRAGMA table_info(jobs)")}
+            if "chunk_size" not in columns:
+                # Existing jobs retain their original 2600-character chunking
+                # so cached segments survive a desktop application upgrade.
+                con.execute(
+                    "ALTER TABLE jobs ADD COLUMN chunk_size INTEGER NOT NULL DEFAULT 2600")
             if "srt_status" not in columns:
                 con.execute("ALTER TABLE jobs ADD COLUMN srt_status TEXT NOT NULL DEFAULT 'off'")
                 con.execute("ALTER TABLE jobs ADD COLUMN srt_error TEXT NOT NULL DEFAULT ''")
@@ -70,20 +76,24 @@ class Store:
             con.close()
 
     def add_job(self, title: str, script: str, voice: str, rate=0, pitch=0,
-                volume=0, subtitles=True) -> str:
+                volume=0, subtitles=True, chunk_size=MAX_CHUNK) -> str:
         if not english_voice(voice):
             raise ValueError("Select an English neural voice")
-        chunks = split_script(script)
+        chunk_size = int(chunk_size)
+        if not 800 <= chunk_size <= MAX_CHUNK:
+            raise ValueError("Chunk size must be 800-2600 characters")
+        chunks = split_script(script, limit=chunk_size)
         for n, lo, hi in [(rate, -50, 50), (pitch, -100, 100), (volume, -50, 50)]:
             if not lo <= int(n) <= hi:
                 raise ValueError("Voice control outside supported UI range")
         id_ = uuid4().hex
         with self.connect() as con:
             con.execute("""INSERT INTO jobs
-                (id,title,script,voice,rate,pitch,volume,subtitles,srt_status,total)
-                VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (id,title,script,voice,rate,pitch,volume,chunk_size,subtitles,srt_status,total)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (id_, safe_title(title), script.strip(), voice, int(rate), int(pitch),
-                 int(volume), int(bool(subtitles)), "waiting" if subtitles else "off", len(chunks)))
+                 int(volume), chunk_size, int(bool(subtitles)),
+                 "waiting" if subtitles else "off", len(chunks)))
         return id_
 
     def complete_voice(self, id_: str, output: str, completed: int) -> None:

@@ -10,7 +10,7 @@ import tempfile
 import time
 from typing import Callable
 
-from .core import english_voice, safe_title, settings_hash, split_script
+from .core import MAX_CHUNK, english_voice, safe_title, settings_hash, split_script
 from .store import Store
 
 
@@ -136,7 +136,8 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
     job = store.get(job_id)
     if job["status"] not in {"queued", "processing"}:
         raise RenderStopped("Job not queued")
-    chunks = split_script(job["script"])
+    # Immutable per-job value keeps chunk boundaries stable after changing Settings.
+    chunks = split_script(job["script"], limit=int(job.get("chunk_size", MAX_CHUNK)))
     signature = settings_hash(job["script"], job["voice"], job["rate"],
                               job["pitch"], job["volume"])
     work = Path(cache_dir) / (job_id + "-" + signature[:10])

@@ -120,12 +120,12 @@ SYNTH_TIMEOUT_SECONDS = 240.0
 
 
 def edge_stream_count(configured: int | None = None) -> int:
-    """Clamp the PC setting to 1–10 online requests; default to five."""
+    """Clamp the PC setting to 1–20 online requests; default to ten."""
     try:
-        choice = configured if configured is not None else os.environ.get("EDGE_VOICE_STREAMS", "5")
-        return max(1, min(10, int(choice)))
+        choice = configured if configured is not None else os.environ.get("EDGE_VOICE_STREAMS", "10")
+        return max(1, min(20, int(choice)))
     except (TypeError, ValueError):
-        return 5
+        return 10
 
 
 async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Path,

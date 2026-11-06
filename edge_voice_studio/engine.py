@@ -119,18 +119,20 @@ async def synthesize_chunk(text: str, voice: str, rate: int, pitch: int,
 SYNTH_TIMEOUT_SECONDS = 240.0
 
 
-def edge_stream_count() -> int:
-    """Two bounded online requests by default, one if the service throttles."""
+def edge_stream_count(configured: int | None = None) -> int:
+    """Clamp the PC setting to 1–5 online requests; default to five."""
     try:
-        return max(1, min(2, int(os.environ.get("EDGE_VOICE_STREAMS", "2"))))
+        choice = configured if configured is not None else os.environ.get("EDGE_VOICE_STREAMS", "5")
+        return max(1, min(5, int(choice)))
     except (TypeError, ValueError):
-        return 2
+        return 5
 
 
 async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Path,
                      stopped: Callable[[], bool] = lambda: False,
                      progress: Callable[[int, int], None] = lambda a, b: None,
-                     synthesis=synthesize_chunk) -> Path:
+                     synthesis=synthesize_chunk,
+                     parallel_chunks: int | None = None) -> Path:
     job = store.get(job_id)
     if job["status"] not in {"queued", "processing"}:
         raise RenderStopped("Job not queued")
@@ -212,9 +214,9 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
     parts: list[Path] = []
     completed: set[int] = set()
     contiguous = 0
-    streams = edge_stream_count()
+    streams = edge_stream_count(parallel_chunks)
     try:
-        # Only two online streams are active. A failed/paused batch cancels
+        # At most five online streams are active. A failed/paused batch cancels
         # outstanding work; fully written audio and timing pairs remain reusable.
         for first in range(0, len(chunks), streams):
             if interrupted():

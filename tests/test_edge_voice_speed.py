@@ -1,6 +1,7 @@
 """Offline regression coverage for bounded PC Edge TTS throughput and stalls."""
 import asyncio
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -112,6 +113,75 @@ class SlowVoiceTests(unittest.TestCase):
             self.assertEqual(store.get(jid)["status"], "done")
             self.assertLessEqual(len(called), first_run_count + store.get(jid)["total"])
             self.assertIn("event=cached", next((root / "cache").rglob("performance.log")).read_text())
+
+    def test_new_job_chunk_setting_persists_per_job_and_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "settings.db"
+            store = Store(db)
+            old = store.add_job("old", SCRIPT, "en-US-AndrewNeural")
+            store.set_setting("chunk_size", 1200)
+            new = store.add_job("new", SCRIPT, "en-US-AndrewNeural",
+                                chunk_size=store.get_setting("chunk_size", 2600))
+            self.assertEqual(store.get(old)["chunk_size"], 2600)
+            self.assertEqual(store.get(new)["chunk_size"], 1200)
+            self.assertEqual(store.get(old)["total"], len(split_script(SCRIPT, limit=2600)))
+            self.assertEqual(store.get(new)["total"], len(split_script(SCRIPT, limit=1200)))
+            store2 = Store(db)
+            store2.set_setting("chunk_size", 800)
+            self.assertEqual(store2.get(old)["chunk_size"], 2600)
+            self.assertEqual(store2.get(new)["chunk_size"], 1200)
+            self.assertEqual(store2.get_setting("chunk_size"), 800)
+            with self.assertRaisesRegex(ValueError, "Chunk size"):
+                store2.add_job("invalid", SCRIPT, "en-US-AndrewNeural",
+                               chunk_size=100)
+
+    def test_pre_settings_db_migration_keeps_default_2600(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "legacy.db"
+            with sqlite3.connect(db) as connection:
+                connection.execute("""CREATE TABLE jobs(
+                    id TEXT PRIMARY KEY, title TEXT NOT NULL, script TEXT NOT NULL,
+                    voice TEXT NOT NULL, rate INTEGER NOT NULL,
+                    pitch INTEGER NOT NULL, volume INTEGER NOT NULL,
+                    subtitles INTEGER NOT NULL DEFAULT 1,
+                    srt_status TEXT NOT NULL DEFAULT 'off',
+                    srt_error TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'queued',
+                    completed INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
+                    output TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+                connection.execute(
+                    "INSERT INTO jobs(id,title,script,voice,rate,pitch,volume,total) "
+                    "VALUES ('legacy','old',?,'en-US-AndrewNeural',0,0,0,?)",
+                    (SCRIPT, len(split_script(SCRIPT))))
+            store = Store(db)
+            self.assertEqual(store.get("legacy")["chunk_size"], 2600)
+            self.assertEqual(store.get("legacy")["total"], len(split_script(SCRIPT)))
+            self.assertEqual(Store(db).get("legacy")["chunk_size"], 2600)
+
+    def test_selected_chunk_size_is_used_for_render_not_current_preference(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "2"}), \
+             patch("edge_voice_studio.engine.concat_mp3", side_effect=pretend_concat):
+            root = Path(tmp)
+            store = Store(root / "db")
+            jid = store.add_job("small", SCRIPT, "en-US-AndrewNeural",
+                                subtitles=False, chunk_size=800)
+            store.set_setting("chunk_size", 2600)
+            samples = []
+
+            async def fake(text, voice, rate, pitch, volume, target, stopped):
+                samples.append(text)
+                target.write_bytes(b"fake mp3")
+                return []
+
+            output = asyncio.run(render_job(store, jid, root / "out", root / "cache",
+                                            synthesis=fake))
+            self.assertTrue(output.is_file())
+            self.assertTrue(all(len(t) <= 800 for t in samples))
+            self.assertEqual(len(samples), len(split_script(SCRIPT, limit=800)))
+            self.assertEqual(store.get(jid)["completed"], len(samples))
 
     def test_hung_network_chunk_has_bounded_attempts_and_no_final_mp3(self):
         with tempfile.TemporaryDirectory() as tmp, \

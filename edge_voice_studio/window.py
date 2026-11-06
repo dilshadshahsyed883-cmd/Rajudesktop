@@ -126,7 +126,7 @@ class QueueWorker(QThread):
                     self.store, job["id"], self.output, self.cache,
                     stopped=self.stop_flag.is_set,
                     progress=lambda _done, _total: self.changed.emit(),
-                    parallel_chunks=self.store.get_setting("parallel_chunks", 5)))
+                    parallel_chunks=self.store.get_setting("parallel_chunks", 10)))
                 self.note.emit("Completed: " + job["title"])
             except Exception as exc:
                 self.note.emit(job["title"] + ": " + str(exc)[:170])
@@ -489,11 +489,11 @@ class StudioWindow(QMainWindow):
         match = self.chunk_size.findData(saved_size)
         self.chunk_size.setCurrentIndex(match if match >= 0 else self.chunk_size.count() - 1)
         lay.addWidget(self.chunk_size)
-        lay.addWidget(QLabel("Parallel chunks (1–10 simultaneous requests)"))
+        lay.addWidget(QLabel("Parallel chunks (1–20 simultaneous requests)"))
         self.parallel_chunks = QComboBox()
-        self.parallel_chunks.addItems([str(n) for n in range(1, 11)])
+        self.parallel_chunks.addItems([str(n) for n in range(1, 21)])
         self.parallel_chunks.setCurrentText(str(edge_stream_count(
-            self.store.get_setting("parallel_chunks", 5))))
+            self.store.get_setting("parallel_chunks", 10))))
         self.parallel_chunks.setToolTip("Maximum simultaneous Edge TTS requests for one narration")
         lay.addWidget(self.parallel_chunks)
         chunk_info = QLabel(

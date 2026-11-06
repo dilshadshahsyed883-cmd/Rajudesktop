@@ -65,12 +65,12 @@ class QueueSubmitUITests(unittest.TestCase):
         error.assert_called_once()
         self.start_mock.assert_not_called()
 
-    def test_settings_allow_one_to_ten_with_saved_five_default(self):
-        self.assertEqual(self.window.parallel_chunks.count(), 10)
-        self.assertEqual(self.window.parallel_chunks.currentText(), "5")
-        self.window.parallel_chunks.setCurrentText("10")
+    def test_settings_allow_one_to_twenty_with_saved_ten_default(self):
+        self.assertEqual(self.window.parallel_chunks.count(), 20)
+        self.assertEqual(self.window.parallel_chunks.currentText(), "10")
+        self.window.parallel_chunks.setCurrentText("20")
         self.window.save_settings()
-        self.assertEqual(self.store.get_setting("parallel_chunks"), 10)
+        self.assertEqual(self.store.get_setting("parallel_chunks"), 20)
 
 
 if __name__ == "__main__":

@@ -120,12 +120,12 @@ SYNTH_TIMEOUT_SECONDS = 240.0
 
 
 def edge_stream_count(configured: int | None = None) -> int:
-    """Clamp the PC setting to 1–5 online requests; default to five."""
+    """Clamp the PC setting to 1–20 online requests; default to ten."""
     try:
-        choice = configured if configured is not None else os.environ.get("EDGE_VOICE_STREAMS", "5")
-        return max(1, min(5, int(choice)))
+        choice = configured if configured is not None else os.environ.get("EDGE_VOICE_STREAMS", "10")
+        return max(1, min(20, int(choice)))
     except (TypeError, ValueError):
-        return 5
+        return 10
 
 
 async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Path,
@@ -217,18 +217,35 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
     contiguous = 0
     streams = edge_stream_count(parallel_chunks)
     try:
-        # At most five online streams are active. A failed/paused batch cancels
-        # outstanding work; fully written audio and timing pairs remain reusable.
-        for first in range(0, len(chunks), streams):
-            if interrupted():
-                raise RenderStopped("Job paused or cancelled")
-            tasks = [
-                asyncio.create_task(render_chunk(i, chunks[i]))
-                for i in range(first, min(first + streams, len(chunks)))
-            ]
-            try:
-                for finished_task in asyncio.as_completed(tasks):
-                    index = await finished_task
+        # Rolling window: immediately replace whichever request finishes first.
+        # Always keep <= streams requests running; avoid batch-wide barriers.
+        pending: set[asyncio.Task[int]] = set()
+        next_index = 0
+
+        def fill_slots() -> None:
+            nonlocal next_index
+            while next_index < len(chunks) and len(pending) < streams:
+                if interrupted():
+                    raise RenderStopped("Job paused or cancelled")
+                pending.add(asyncio.create_task(
+                    render_chunk(next_index, chunks[next_index])))
+                next_index += 1
+
+        try:
+            fill_slots()
+            while pending:
+                if interrupted():
+                    raise RenderStopped("Job paused or cancelled")
+                finished, pending = await asyncio.wait(
+                    pending, return_when=asyncio.FIRST_COMPLETED)
+
+                # Consume all finished tasks, including concurrent failures,
+                # before scheduling any replacements.
+                outcomes = await asyncio.gather(*finished, return_exceptions=True)
+                failures = [value for value in outcomes if isinstance(value, BaseException)]
+                if failures:
+                    raise failures[0]
+                for index in outcomes:
                     completed.add(index)
                     while contiguous in completed:
                         parts.append(work / f"{contiguous:05}.mp3")
@@ -237,11 +254,13 @@ async def render_job(store: Store, job_id: str, output_dir: Path, cache_dir: Pat
                         progress(contiguous, len(chunks))
                         if interrupted():
                             raise RenderStopped("Job paused or cancelled")
-            finally:
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
+                fill_slots()
+        finally:
+            # On failure, pause, cancel or shutdown never leave orphan requests.
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
         if interrupted():
             raise RenderStopped("Job paused or cancelled")

@@ -23,20 +23,23 @@ def pretend_concat(parts, output):
 
 
 class SlowVoiceTests(unittest.TestCase):
-    def test_two_streams_default_and_one_stream_fallback(self):
-        with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "2"}):
-            self.assertEqual(edge_stream_count(), 2)
+    def test_five_streams_default_and_one_stream_fallback(self):
+        with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "5"}):
+            self.assertEqual(edge_stream_count(), 5)
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "1"}):
             self.assertEqual(edge_stream_count(), 1)
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "30"}):
-            self.assertEqual(edge_stream_count(), 2)
+            self.assertEqual(edge_stream_count(), 5)
         with patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "broken"}):
-            self.assertEqual(edge_stream_count(), 2)
+            self.assertEqual(edge_stream_count(), 5)
+        self.assertEqual(edge_stream_count(3), 3)
+        self.assertEqual(edge_stream_count(5), 5)
+        self.assertEqual(edge_stream_count(10), 5)
 
     def test_bounded_concurrency_preserves_order_and_queue_outputs(self):
         self.assertGreaterEqual(len(split_script(SCRIPT)), 5)
         with tempfile.TemporaryDirectory() as tmp, \
-             patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "2"}), \
+             patch.dict(os.environ, {"EDGE_VOICE_STREAMS": "1"}), \
              patch("edge_voice_studio.engine.concat_mp3", side_effect=pretend_concat):
             root = Path(tmp)
             store = Store(root / "jobs.db")
@@ -62,9 +65,10 @@ class SlowVoiceTests(unittest.TestCase):
 
             output = asyncio.run(render_job(
                 store, jid, root / "output", root / "cache",
-                synthesis=fake, progress=lambda done, total: seen.append(done)))
+                synthesis=fake, parallel_chunks=5,
+                progress=lambda done, total: seen.append(done)))
             row = store.get(jid)
-            self.assertEqual(peak, 2)
+            self.assertEqual(peak, 5)
             self.assertEqual(active, 0)
             self.assertEqual(row["status"], "done")
             self.assertEqual(row["srt_status"], "pending")

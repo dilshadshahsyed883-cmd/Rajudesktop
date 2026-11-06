@@ -30,6 +30,21 @@ submission; changing it later does not alter existing queue jobs.
 SRT cues target 3-4 seconds, respecting real spoken word boundaries and pauses;
 unusual phrases/silences may produce a shorter/longer cue.
 
+## Long narration speed settings
+
+In **Settings**, set **Parallel chunks** from **1 to 5**, with **5 as the default**.
+Each request is one script chunk, independently synthesized by online Edge TTS.
+The separate **Chunk size** selector is 800, 1,200, 1,600, 2,000 or 2,600
+characters (default 2,600). Chunk size is fixed per submitted job; parallel
+limit is sampled when each job begins. Existing cached chunk pairs are preserved,
+then the ordered audio is merged before any Auto SRT work begins.
+
+Five parallel streams may shorten long jobs but are **not** guaranteed faster:
+the upstream service can throttle. Switch to 1 or 2 when requests repeatedly
+fail. Slow or stalled requests time out after 240 seconds and retry at most
+three times. Each job's cache contains `performance.log` with attempt timings
+and error categories (no script content).
+
 ## Distribution
 
 GitHub Actions workflow `.github/workflows/edge-voice.yml` runs Windows unit

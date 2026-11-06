@@ -2,7 +2,7 @@ name: T Builder — standalone Windows EXE
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/t-builder-standalone]
     paths: ['t_builder/**', 'launch_t_builder.py', 'requirements-t-builder.txt', '.github/workflows/t-builder-windows-exe.yml']
   pull_request:
     paths: ['t_builder/**', 'launch_t_builder.py', 'requirements-t-builder.txt', '.github/workflows/t-builder-windows-exe.yml']
@@ -82,3 +82,42 @@ jobs:
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 90
+
+  publish-windows-release:
+    needs: windows-exe
+    # Publish only after a verified Windows binary exists; no PR token writes.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/t-builder-standalone'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: T-Builder-v0.1-Windows
+          path: release
+      - name: Verify downloaded binary and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/T_Builder.exe
+          (cd release && sha256sum -c SHA256SUMS.txt)
+      - name: Publish public Windows EXE and SHA256
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="t-builder-v0.1-windows-20261106"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release tag already exists. Refusing to silently replace a public build."
+            exit 1
+          fi
+          gh release create "$TAG" \
+            release/T_Builder.exe \
+            release/SHA256SUMS.txt \
+            release/T-Builder-Windows-Smoke.json \
+            --target "$GITHUB_SHA" \
+            --title "T Builder v0.1 - Windows standalone verified build" \
+            --notes "Independent T Builder v0.1 Windows x64 portable EXE. Exact image/video sequential cuts, real native draft acceptance, bundled runtime, and automated Windows verification. Source: feat/t-builder-standalone at $GITHUB_SHA. This is a preview release pending PR #61 merge to main; actual CapCut playback on the user's PC has not yet been tested." \
+            --prerelease

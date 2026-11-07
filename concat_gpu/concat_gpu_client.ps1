@@ -181,6 +181,9 @@ try {
     $headers=@{"Salad-Api-Key"=$saladKey;"Authorization"="Bearer $rendererKey"}
     $health=Invoke-RestMethod -Uri "$domain/health/ready" -Headers $headers -TimeoutSec 30
     if (-not $health.ok) {throw "Existing Salad worker is not ready"}
+    if ($health.cuda_stage1 -ne $true) {
+        throw "Existing Salad image lacks native Concat CUDA Stage 1. Upgrade matching GPU image before uploading media."
+    }
     $fp=SHA-File $projectManifest
     $state=$null
     if (Test-Path -LiteralPath $stateFile) {

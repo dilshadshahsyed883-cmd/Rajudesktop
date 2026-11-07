@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 # Embedded in the actual Concat Windows EXE. No additional desktop editor.
 # Use only the existing SaladCloud Gateway and existing VPS receiver.
-param([Parameter(Mandatory=$true)][string]$ProjectDir)
+param([Parameter(Mandatory=$true)][string]$ProjectDir,[switch]$BundleOnly,[string]$BundlePath="")
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -142,6 +142,12 @@ if (-not (Test-Path -LiteralPath $projectManifest -PathType Leaf)) {
     $projectManifest=Join-Path $root "wolfcut.json"
 }
 if (-not (Test-Path -LiteralPath $projectManifest -PathType Leaf)) {throw "Save a real Concat project first"}
+if ($BundleOnly) {
+    if (-not $BundlePath) {throw "Offline bundle test requires -BundlePath"}
+    Concat-Bundle $root $BundlePath
+    Write-Host "Offline native Concat ZIP contract: PASS"
+    return
+}
 $home=Join-Path $env:LOCALAPPDATA "Concat\GPU"
 $jobs=Join-Path $home "Jobs"
 New-Item -ItemType Directory -Force -Path $jobs | Out-Null

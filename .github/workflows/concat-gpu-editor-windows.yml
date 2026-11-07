@@ -1,12 +1,6 @@
 name: Concat Native Windows EXE — Send to Salad GPU
 
 on:
-  push:
-    branches:
-      - feature/concat-native-gpu-send-20261107
-    paths:
-      - concat_gpu/**
-      - .github/workflows/concat-gpu-editor-windows.yml
   pull_request:
     paths:
       - concat_gpu/**
@@ -18,7 +12,7 @@ permissions:
 
 concurrency:
   group: concat-native-gpu-windows
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   native-editor-windows:

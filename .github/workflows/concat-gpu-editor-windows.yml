@@ -145,7 +145,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $out="dist\Concat-0.2.8-GPU-Windows-x64"
           New-Item -ItemType Directory -Force $out | Out-Null
-          Copy-Item "upstream\src\target\x86_64-pc-windows-msvc\app\concat.exe" "$out\Concat-GPU.exe"
+          Copy-Item "upstream\src\target\x86_64-pc-windows-msvc\app\concat.exe" "$out\concat.exe"
           Copy-Item "$env:FFMPEG_DIR\bin\*.dll" $out
           Copy-Item "$env:SHERPA_DLL_DIR\*.dll" $out
           Copy-Item "$env:ORT_DIR\lib\*.dll" $out
@@ -155,7 +155,7 @@ jobs:
           Copy-Item "$($built.DirectoryName)\whisper.dll", "$($built.DirectoryName)\ggml*.dll" $out
           Copy-Item "upstream\LICENSE", "upstream\THIRD_PARTY_NOTICES.md" $out
           Copy-Item "concat_gpu\README.md" $out
-          $exe="$out\Concat-GPU.exe"
+          $exe="$out\concat.exe"
           $version=& $exe --version
           if ($LASTEXITCODE -ne 0 -or $version -notmatch "0.2.8") { throw "Modified Concat EXE version smoke failed" }
           Get-FileHash $exe -Algorithm SHA256 | Format-List

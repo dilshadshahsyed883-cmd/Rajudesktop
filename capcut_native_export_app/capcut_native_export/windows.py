@@ -4,7 +4,10 @@ Never reads or writes a CapCut draft or changes its timeline.
 from __future__ import annotations
 from pathlib import Path
 import time
-from .core import GuardError, WindowInfo, click_location, ensure_export, ensure_single_editor, is_export
+import json
+import os
+import sys
+from .core import GuardError, WindowInfo, click_location, ensure_export, ensure_single_editor, ensure_matching_dialog, is_editor, is_export
 
 EDITOR_EXPORT_X=0.920  # Audit editor screenshot 2026-10-28
 EDITOR_EXPORT_Y=0.023
@@ -27,37 +30,73 @@ class WindowsCapCut:
         self.mouse.FAILSAFE=True
         self.mouse.PAUSE=0.12
 
-    def _capcut_process(self,pid: int) -> bool:
+    def _process_info(self, pid: int) -> tuple[bool,str]:
         try:
-            proc=self.psutil.Process(pid)
-            return Path(proc.exe()).name.lower()=="capcut.exe"
-        except (self.psutil.NoSuchProcess,self.psutil.AccessDenied,OSError):
-            return False
+            p=self.psutil.Process(pid)
+            try:
+                name=p.name()
+            except (self.psutil.AccessDenied,OSError):
+                name=""
+            if name.casefold()=="capcut.exe":
+                return True,name
+            try:
+                exe=Path(p.exe()).name
+            except (self.psutil.AccessDenied,OSError):
+                exe=""
+            return exe.casefold()=="capcut.exe",name or exe or "unavailable"
+        except (self.psutil.NoSuchProcess,self.psutil.AccessDenied,OSError) as exc:
+            return False,type(exc).__name__
 
-    def windows(self) -> list[WindowInfo]:
+    def _scan(self) -> tuple[list[WindowInfo],list[dict]]:
         found=[]
+        candidates=[]
+        cache={}
         def collect(hwnd,_):
-            if not self.gui.IsWindowVisible(hwnd):
-                return
             try:
                 _,pid=self.proc.GetWindowThreadProcessId(hwnd)
-                if not self._capcut_process(pid):
-                    return
+                if pid not in cache:
+                    cache[pid]=self._process_info(pid)
+                verified,name=cache[pid]
+                title=self.gui.GetWindowText(hwnd)
+                cls=self.gui.GetClassName(hwnd)
+                visible=bool(self.gui.IsWindowVisible(hwnd))
                 left,top,right,bottom=self.gui.GetWindowRect(hwnd)
-                found.append(WindowInfo(hwnd=hwnd,pid=pid,title=self.gui.GetWindowText(hwnd),
-                                        class_name=self.gui.GetClassName(hwnd),left=left,top=top,
-                                        right=right,bottom=bottom))
-            except Exception:
-                return
+                item=WindowInfo(hwnd,pid,title,cls,left,top,right,bottom)
+                if verified or title.strip().casefold().startswith("capcut") or "MainWindow_QMLTYPE_" in cls or "ExportWindow_QMLTYPE_" in cls:
+                    candidates.append(dict(hwnd=int(hwnd),pid=int(pid),process=name,
+                        verified_process=verified,title=title[:150],class_name=cls,
+                        visible=visible,bounds=[left,top,right,bottom],
+                        classification=("editor" if verified and visible and is_editor(item) else
+                            "export" if verified and visible and is_export(item) else "not accepted")))
+                if verified and visible and right>left and bottom>top:
+                    found.append(item)
+            except Exception as exc:
+                candidates.append(dict(hwnd=int(hwnd),error=type(exc).__name__))
         self.gui.EnumWindows(collect,None)
-        return found
+        return found,candidates
+
+    def windows(self) -> list[WindowInfo]:
+        return self._scan()[0]
+
+    def diagnostic_report(self,destination: Path) -> tuple[Path,list[dict]]:
+        windows,candidates=self._scan()
+        data=dict(version="0.2.0",os=os.name,python=sys.version.split()[0],
+            capcut_candidates=candidates,trusted_window_count=len(windows),
+            editors=sum(is_editor(w) for w in windows),
+            export_dialogs=sum(is_export(w) for w in windows))
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        destination.write_text(json.dumps(data,indent=2,ensure_ascii=False),encoding="utf-8")
+        return destination,candidates
 
     def editor(self) -> WindowInfo:
         return ensure_single_editor(self.windows())
 
     def dialog(self,expected: str) -> WindowInfo:
-        editor=self.editor()
-        return ensure_export(self.windows(),editor,expected)
+        windows=self.windows()
+        editors=[w for w in windows if is_editor(w)]
+        if len(editors)>1:
+            raise GuardError(f"Multiple CapCut editor windows: {len(editors)}.")
+        return ensure_matching_dialog(windows,expected,editors[0] if editors else None)
 
     def _focus(self,win: WindowInfo) -> None:
         if self.gui.IsIconic(win.hwnd):

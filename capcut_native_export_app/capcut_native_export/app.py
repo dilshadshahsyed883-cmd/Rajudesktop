@@ -13,7 +13,7 @@ from tkinter import filedialog,messagebox,ttk
 from .core import FileObserver,GuardError,target_file,validate_project_name
 from .windows import WindowsCapCut,DIALOG_EXPORT_X,DIALOG_EXPORT_Y
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 def state_dir() -> Path:
     return Path(os.environ.get("LOCALAPPDATA") or str(Path.home()))/"CapCutNativeExport"
@@ -173,6 +173,12 @@ class NativeExportApp(tk.Tk):
             try:
                 fn(settings)
             except Exception as exc:
+                if isinstance(exc,GuardError):
+                    try:
+                        report,items=WindowsCapCut().diagnostic_report(self.root_dir/"diagnostic_windows.json")
+                        self._emit("log",f"Diagnostic saved: {report}; candidate windows: {len(items)}")
+                    except Exception as diag_exc:
+                        self._emit("log",f"Diagnostic unavailable: {type(diag_exc).__name__}: {diag_exc}")
                 self._emit("error",exc)
             finally:
                 self._emit("done",None)
@@ -180,7 +186,14 @@ class NativeExportApp(tk.Tk):
 
     def _detect(self):
         def worker(settings):
-            editor=WindowsCapCut().editor()
+            api=WindowsCapCut()
+            try:
+                editor=api.editor()
+            except GuardError:
+                dialog=api.dialog(validate_project_name(settings["project"]))
+                self._emit("log",f"CapCut native Export dialog verified directly: {dialog.title}, PID {dialog.pid}")
+                self._emit("status","Native Export dialog verified; editor detection not required.")
+                return
             self._emit("log",f"Editor confirmed: hwnd={editor.hwnd}, pid={editor.pid}, class={editor.class_name}, size={editor.width}x{editor.height}")
             self._emit("status","CapCut editor detected. You can open native Export.")
         self._run(worker)

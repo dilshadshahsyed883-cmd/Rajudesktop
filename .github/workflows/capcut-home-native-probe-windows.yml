@@ -1,0 +1,73 @@
+name: CapCut 9.7 Home native probe (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'capcut_home_native_probe/**'
+      - '.github/workflows/capcut-home-native-probe-windows.yml'
+  pull_request:
+    paths:
+      - 'capcut_home_native_probe/**'
+      - '.github/workflows/capcut-home-native-probe-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-probe:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Safety and stream-scanner unit tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s capcut_home_native_probe/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
+      - name: Build read-only Windows EXE
+        shell: pwsh
+        run: |
+          python -m pip install pyinstaller==6.16.0
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --paths . --name CapCut_Home_Native_Probe capcut_home_native_probe/gui.py
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+      - name: Verify GUI source and exception-safe result formatting
+        shell: pwsh
+        run: |
+          python -m unittest discover -s capcut_home_native_probe/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'UI tests failed' }
+      - name: Frozen no-CapCut self-test
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path '.\\dist\\CapCut_Home_Native_Probe.exe').Path
+          $p = Start-Process -FilePath $exe -ArgumentList @('--self-check','--json','frozen_selfcheck.json') -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Self-test failed with code $($p.ExitCode)" }
+          if (!(Test-Path frozen_selfcheck.json)) { throw 'Self-check report missing' }
+          python -c "import json; r=json.load(open('frozen_selfcheck.json')); assert r['self_check']=='PASS' and r['native_patch_available'] is False and r['real_capcut_tested'] is False"
+          if ($LASTEXITCODE -ne 0) { throw 'Misleading status' }
+      - name: Frozen window creation and missing-folder error smoke
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path '.\\dist\\CapCut_Home_Native_Probe.exe').Path
+          $p = Start-Process -FilePath $exe -ArgumentList @('--gui-smoke','gui_smoke.json') -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "GUI smoke failed with code $($p.ExitCode)" }
+          if (!(Test-Path gui_smoke.json)) { throw 'GUI smoke report missing' }
+          python -c "import json; r=json.load(open('gui_smoke.json')); assert r['gui_window_created'] and r['error_does_not_close_window'] and not r['live_export_verified']; print('GUI_STAYS_OPEN=PASS')"
+          if ($LASTEXITCODE -ne 0) { throw 'GUI smoke status invalid' }
+      - name: Package portable probe
+        shell: pwsh
+        run: |
+          New-Item -Force -ItemType Directory 'home-probe-package' | Out-Null
+          Copy-Item 'dist/CapCut_Home_Native_Probe.exe' 'home-probe-package/'
+          Copy-Item 'capcut_home_native_probe/README.md' 'home-probe-package/'
+          Copy-Item 'frozen_selfcheck.json' 'home-probe-package/'
+          $sum = (Get-FileHash 'home-probe-package/CapCut_Home_Native_Probe.exe' -Algorithm SHA256).Hash.ToLower()
+          "$sum  CapCut_Home_Native_Probe.exe" | Out-File -Encoding ascii 'home-probe-package/SHA256SUMS.txt'
+          Compress-Archive 'home-probe-package/*' 'CapCut_Home_Native_Probe.zip' -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CapCut_Home_Native_Probe_Windows
+          path: CapCut_Home_Native_Probe.zip
+          if-no-files-found: error
+          retention-days: 30

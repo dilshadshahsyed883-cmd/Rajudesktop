@@ -54,4 +54,4 @@ jobs:
           name: CapCutVisualControlsV2-Windows-EXE
           path: dist/CapCutVisualControlsV2.exe
           if-no-files-found: error
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}

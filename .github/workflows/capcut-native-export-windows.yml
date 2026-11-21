@@ -34,4 +34,4 @@ jobs:
         with:
           name: CapCut-Native-Export-Controller-Source
           path: CapCut_Native_Export_Controller_Source.zip
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}

@@ -49,11 +49,13 @@ jobs:
           python -m unittest discover -s capcut_visual_controls_standalone/tests -p 'test_*.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'Reference controls tests failed' }
       - name: Include official Node runtime
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path '.runtime/node' | Out-Null
           Copy-Item (Get-Command node.exe).Source '.runtime/node/node.exe'
       - name: Build one-file Windows executable
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name Z_Builder_V6.3 `
@@ -67,6 +69,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           if ((Get-Item 'dist/Z_Builder_V6.3.exe').Length -lt 5MB) { throw 'Invalid EXE' }
       - name: Launch frozen EXE and verify native project workflows
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $report = Join-Path $PWD 'dist/Windows-Smoke.json'
@@ -78,13 +81,14 @@ jobs:
           Get-Content $report
           Get-FileHash -Algorithm SHA256 'dist/Z_Builder_V6.3.exe' | Format-List
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: Z-Builder-V6.3-Windows-Verified
           path: |
             dist/Z_Builder_V6.3.exe
             dist/Windows-Smoke.json
             dist/Windows-Smoke.png
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

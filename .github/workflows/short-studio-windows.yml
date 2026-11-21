@@ -39,6 +39,7 @@ jobs:
           python -m compileall -q short_studio launch_short_studio.py
           if ($LASTEXITCODE -ne 0) { throw 'Short Studio syntax check failed' }
       - name: Bundle FFmpeg (Windows)
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -49,6 +50,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path short_studio/bin | Out-Null
           Copy-Item $ffmpeg.FullName short_studio/bin/ffmpeg.exe
       - name: Build onefile ShortStudio.exe
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -58,6 +60,7 @@ jobs:
           if ((Get-Item dist/ShortStudio.exe).Length -lt 10000000) { throw 'Unexpectedly small EXE' }
           (Get-FileHash dist/ShortStudio.exe -Algorithm SHA256).Hash.ToLower() | Set-Content dist/ShortStudio.exe.sha256
       - name: Test real frozen EXE and GUI launch
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -73,13 +76,14 @@ jobs:
             & taskkill.exe /F /T /PID $gui.Id 2>$null | Out-Null
           }
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: ShortStudio-Windows-EXE
           path: |
             dist/ShortStudio.exe
             dist/ShortStudio.exe.sha256
           if-no-files-found: error
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
       - name: Publish direct EXE on main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:

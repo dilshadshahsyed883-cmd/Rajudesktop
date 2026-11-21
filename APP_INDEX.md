@@ -1,3 +1,7 @@
+# Rajudesktop — App Directory
+
+Current Z Builder source contract: **V6.3**, described in [Z_BUILDER.md](Z_BUILDER.md) and built by [its Windows workflow](.github/workflows/z-builder-windows-exe.yml). Older dated sections below are historical records.
+
 ## Original Concat — Windows PC test (4 November 2026)
 
 Canonical setup: [`concat_original/`](concat_original/README.md). The dedicated workflow [`concat-original-windows.yml`](.github/workflows/concat-original-windows.yml) downloads the **unmodified upstream Concat v0.2.8 Windows x64 setup.exe** and verifies it against upstream SHA256SUMS before publishing a downloadable `Concat-v0.2.8-Windows-x64` GitHub Actions artifact. This is upstream-binary packaging **not a from-source build**. The existing Z Builder, CapCut projects, desktop editors, VPS and production are unchanged; no automatic PC installation occurs. See the README for Windows testing and AGPL licensing.
@@ -20,9 +24,9 @@ Z Builder and existing application folders unchanged.
 
 Canonical source: `capcut_controls_studio/` on main. Extracted from Z Builder V6.1 (`dfb39f8`) with its native Transitions, Combo Animations and Scale/Position/Blur engines. AutoCapCut-inspired compact dark UI, one project selector/Refresh, background processing and guarded per-project saves. Effects/filters excluded. Z Builder source, engines and releases are unchanged. Windows workflow builds and launches `CapCut_Controls_Studio.exe` before publishing. Source/provenance, exact UI references, tests and limitations: `capcut_controls_studio/README.md`.
 
-## Z Builder V6.1 — 29 October 2026
+## Z Builder V6.3 — current source contract
 
-Canonical source: `z_builder/` on main; exact V6 base `eaba2a0`. Windows release workflow publishes `Z_Builder_V6.1.exe` after real frozen startup/native export checks. Universal project controls, project-specific native resources and Scale tab are integrated. Same-track images/videos and full-duration native Combo records are enabled. First-page CapCut Summary button is excluded; Media Summary remains. Details and limitations: `Z_BUILDER.md`. Superseded V7–V9 Scene Plan extensions are retained under `archive/z_builder_v9` and historical releases.
+Canonical source: `z_builder/` on main. The Windows workflow builds `Z_Builder_V6.3.exe` after regression and frozen-startup checks. V6.3 retains Transitions and Scale/Position/Blur, removes the standalone native Animation editor from the packaged UI, and preserves existing animation records. Image and video exports use separate layers. See [Z_BUILDER.md](Z_BUILDER.md) for the exact current contract and labelled version history; installed CapCut playback still requires platform acceptance. V6.2 is the documented rollback release.
 
 # Rajudesktop — App Directory (main)
 
@@ -34,7 +38,7 @@ For each application, use the **main-branch path below** instead of searching ol
 
 | App / record | Canonical location in `main` | Start / source instructions | Notes |
 | --- | --- | --- | --- |
-| **Z Builder** | [`z_builder/`](z_builder/) | [`start_z_builder.bat`](start_z_builder.bat), [`Z_BUILDER.md`](Z_BUILDER.md) | Windows **v9**: Scene Plan builds **ONE chronological visual track** for images + videos (not separate lower/upper layers), applies native image-only Combo animations and adjacent same-track transitions including image↔video; retains v8/v7 releases as rollback, original standalone tools untouched |
+| **Z Builder** | [`z_builder/`](z_builder/) | [`start_z_builder.bat`](start_z_builder.bat), [`Z_BUILDER.md`](Z_BUILDER.md) | Current source **V6.3**: separate image/video layers, Transitions and Scale/Position/Blur; standalone native Animation editor excluded from packaged UI. V6.2 is the documented rollback; historical V7–V9 descriptions do not define current behavior. |
 | **Scene Builder Desktop** | [`scene_builder_desktop/`](scene_builder_desktop/) | [`start_scene_builder_desktop.bat`](start_scene_builder_desktop.bat), [guide](SCENE_BUILDER_DESKTOP.md) | Separate Python desktop app; PR #7 |
 | **Edge Voice Studio** | [`edge_voice_studio/`](edge_voice_studio/) | [`launch_edge_voice.py`](launch_edge_voice.py), [guide](EDGE_VOICE_STUDIO.md) | One-checkbox auto Whisper SRT (3–4 sec) after MP3, same folder, independent queue, single-file `EdgeVoiceStudio.exe` via verified Windows Actions release |
 | **Voice → SRT Studio (batch)** | [`voice_to_srt_batch/`](voice_to_srt_batch/) | [`start.bat`](voice_to_srt_batch/start.bat), [guide](voice_to_srt_batch/VOICE_TO_SRT_STUDIO.md) | Batch voice transcription/SRT and Windows EXE workflow; PR #15 |

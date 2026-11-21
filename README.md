@@ -1,6 +1,10 @@
 > **Looking for an app?** See the [Rajudesktop App Directory](APP_INDEX.md) for every application, the canonical main-branch files, launchers, test commands, and preserved legacy branches.
 
-# Scene Desktop Studio — Rajudesktop
+# Rajudesktop
+
+A collection of independent Windows desktop applications. Start with the [App Directory](APP_INDEX.md) to choose an app and its own setup, tests and download workflow.
+
+## Scene Desktop Studio MVP
 
 A **new, independent Windows desktop video editor** combining an indexed-media-library direction with Scene Builder-inspired planning and CapCut-like editing. The **initial MVP** is intentionally focused on a functional cut timeline, rather than presenting unfinished advanced controls.
 
@@ -40,3 +44,7 @@ Repository is currently public: **do not commit user videos, private keys, OAuth
 `python -m unittest discover -s tests -v`
 
 Master plan and progress are maintained only in the separate **Scene Desktop Studio Master Google Doc** (not the VPS_1 Master Doc).
+
+## Repository maintenance
+
+See the [repository guide](docs/REPOSITORY_GUIDE.md) for source ownership, validation and release/storage policy, and [CONTRIBUTING.md](CONTRIBUTING.md) for changes and review.

@@ -73,7 +73,7 @@ jobs:
             dist/Windows-Smoke.json
             dist/Studio-*.png
           if-no-files-found: error
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

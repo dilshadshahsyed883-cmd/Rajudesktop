@@ -34,7 +34,7 @@ jobs:
             capcut_desktop_gui_runner/build/CapCut_Desktop_GUI_Export.zip
             capcut_desktop_gui_runner/build/CapCut_Desktop_GUI_Export/WINDOWS_SMOKE.json
           if-no-files-found: error
-          retention-days: 90
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: windows

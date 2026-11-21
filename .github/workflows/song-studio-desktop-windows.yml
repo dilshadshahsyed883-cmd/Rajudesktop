@@ -124,7 +124,7 @@ jobs:
             dist/SongStudio.exe
             dist/SongStudio.exe.sha256
           if-no-files-found: error
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
       - name: Publish direct Windows EXE on main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:

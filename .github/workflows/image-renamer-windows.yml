@@ -55,7 +55,7 @@ jobs:
             ImageRenamer-Windows-x64.zip
             ImageRenamer-Windows-x64.zip.sha256
           if-no-files-found: error
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
       - name: Publish permanent Windows ZIP on main
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         shell: pwsh

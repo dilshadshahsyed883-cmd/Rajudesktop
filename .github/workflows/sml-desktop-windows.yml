@@ -86,7 +86,7 @@ jobs:
           name: SML-Desktop-Windows
           path: dist/SML-Desktop-Windows.zip
           if-no-files-found: error
-          retention-days: 30
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 7 }}
 
       - name: Publish permanent downloadable Windows ZIP
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'

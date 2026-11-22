@@ -62,12 +62,24 @@ class ValidationTests(unittest.TestCase):
                               Decimal("1"), Decimal("1"))
                     job.folder.mkdir()
                     self.assertEqual(len(process_job(job, output_height=quality)), 1)
+                silent = Job(source, folder / "silent", "Frame",
+                             Decimal("1"), Decimal("1"))
+                silent.folder.mkdir()
+                self.assertEqual(len(process_job(silent, output_height=720,
+                                                 include_audio=False)), 1)
             self.assertIn("-vf", commands[0])
             self.assertIn("min(iw,1280)", commands[0][commands[0].index("-vf") + 1])
             self.assertIn("min(ih,720)", commands[0][commands[0].index("-vf") + 1])
             self.assertIn("min(iw,1920)", commands[1][commands[1].index("-vf") + 1])
             self.assertIn("min(ih,1080)", commands[1][commands[1].index("-vf") + 1])
             self.assertNotIn("-vf", commands[2])
+            # Standalone cutter keeps audio unless caller requests silent output.
+            self.assertIn("0:a?", commands[0])
+            self.assertIn("-c:a", commands[0])
+            self.assertIn("-an", commands[3])
+            self.assertNotIn("0:a?", commands[3])
+            self.assertNotIn("-c:a", commands[3])
+            self.assertNotIn("-b:a", commands[3])
             with self.assertRaises(ValueError):
                 process_job(Job(source, folder, "Bad", Decimal("1"), Decimal("1")),
                             output_height=2160)

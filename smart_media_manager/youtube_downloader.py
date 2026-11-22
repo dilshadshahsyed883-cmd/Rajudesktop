@@ -1,4 +1,4 @@
-"""Native fourth tab for Smart Media Manager: YouTube video, audio and snapshots."""
+"""YouTube download and snapshots tab for Smart Media Manager."""
 from __future__ import annotations
 
 import json
@@ -17,6 +17,8 @@ from tkinter import ttk, filedialog, messagebox
 
 QUALITIES = ("Best", "2160p", "1440p", "1080p", "720p", "480p", "360p")
 RESOLUTIONS = ("Original", "1080p", "720p", "480p")
+# Snapshots need a video stream only. YouTube may not offer muxed video+audio.
+SNAPSHOT_VIDEO_FORMAT = "bv*[ext=mp4]/bv*/best"
 
 def valid_url(url):
     try:
@@ -122,21 +124,37 @@ def snapshot_video(config, cancel, pause, notify):
         import yt_dlp
         cache = folder / ".snapshot_cache"
         cache.mkdir(parents=True, exist_ok=True)
-        opts = {"format": "best[ext=mp4]/best", "outtmpl": str(cache / "%(id)s.%(ext)s"),
+        opts = {"format": SNAPSHOT_VIDEO_FORMAT,
+                "outtmpl": str(cache / "%(id)s.%(ext)s"),
                 "noplaylist": True, "quiet": True, "continuedl": True,
                 "ffmpeg_location": str(Path(ffmpeg).parent)}
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(config["url"], download=False)
-            video_id = str(info.get("id", "video"))
-            source = next((p for p in cache.glob(video_id + ".*")
-                           if p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov")), None)
-            if source is None:
-                if cancel.is_set():
-                    return 0
-                notify("Downloading snapshot source", 0, 0)
-                ydl.extract_info(config["url"], download=True)
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(config["url"], download=False)
+                if not info or not info.get("id"):
+                    raise RuntimeError("Could not identify the YouTube video for snapshots")
+                video_id = str(info["id"])
+                # yt-dlp may choose a video-only MP4/WebM stream, which FFmpeg
+                # can decode without needing an audio track or a mux step.
                 source = next((p for p in cache.glob(video_id + ".*")
-                               if p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov")), None)
+                               if p.is_file() and p.stat().st_size > 0
+                               and p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov", ".m4v", ".ts")), None)
+                if source is None:
+                    if cancel.is_set():
+                        return 0
+                    notify("Downloading snapshot source", 0, 0)
+                    ydl.extract_info(config["url"], download=True)
+                    source = next((p for p in cache.glob(video_id + ".*")
+                                   if p.is_file() and p.stat().st_size > 0
+                                   and p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov", ".m4v", ".ts")), None)
+        except Exception as exc:
+            if "Requested format is not available" in str(exc):
+                raise RuntimeError(
+                    "YouTube did not provide an accessible video format for snapshots. "
+                    "Update yt-dlp and verify this video's availability; some videos "
+                    "require sign-in or additional YouTube access. Alternatively use "
+                    "'Choose Video from PC'.") from exc
+            raise
         if source is None:
             raise RuntimeError("Source video missing after download")
     probe = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration",

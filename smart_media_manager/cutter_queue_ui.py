@@ -28,6 +28,9 @@ class BatchCutterTab(ttk.Frame):
         self.running = False
         self.work_items = None  # Thread-safe incoming queue for active runs.
         self.duration = tk.StringVar(value=prefs.get("cutter_duration", "4"))
+        self.quality = tk.StringVar(value=prefs.get("cutter_quality", "720p"))
+        if self.quality.get() not in ("720p", "1080p"):
+            self.quality.set("720p")
         self.output = tk.StringVar(value=prefs.get("cutter_output", str(Path.home() / "Documents" / "ProcessedClips")))
         self.keyword = tk.StringVar()
         self.status = tk.StringVar(value="Ready — add PC videos or YouTube links")
@@ -96,6 +99,11 @@ class BatchCutterTab(ttk.Frame):
         for s in (2, 4, 5, 10):
             ttk.Button(line, text=f"{s}s", width=4,
                        command=lambda n=s: self.duration.set(str(n))).pack(side="left", padx=2)
+        ttk.Label(line, text="Video quality").pack(side="left", padx=(15, 6))
+        self.quality_select = ttk.Combobox(
+            line, textvariable=self.quality, values=("720p", "1080p"),
+            width=8, state="readonly")
+        self.quality_select.pack(side="left")
         output = ttk.Frame(settings)
         output.pack(fill="x", pady=(9, 0))
         ttk.Label(output, text="Output").pack(side="left")
@@ -109,12 +117,13 @@ class BatchCutterTab(ttk.Frame):
         ttk.Label(heading, textvariable=self.stats, style="Muted.TLabel").pack(side="right")
         table_frame = ttk.Frame(self)
         table_frame.pack(fill="both", expand=True)
-        cols = ("name", "source", "length", "progress", "status")
+        cols = ("name", "source", "length", "quality", "progress", "status")
         self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", height=9,
                                  selectmode="extended", style="Queue.Treeview")
-        widths = {"name": 320, "source": 110, "length": 85, "progress": 100, "status": 215}
+        widths = {"name": 320, "source": 110, "length": 85, "quality": 90,
+                  "progress": 100, "status": 215}
         labels = {"name": "Video / output keyword", "source": "Input", "length": "Clip length",
-                  "progress": "Progress", "status": "Status"}
+                  "quality": "Quality", "progress": "Progress", "status": "Status"}
         for col in cols:
             self.tree.heading(col, text=labels[col])
             self.tree.column(col, width=widths[col], minwidth=70, stretch=col in ("name", "status"))
@@ -148,6 +157,7 @@ class BatchCutterTab(ttk.Frame):
         for job in self.jobs:
             self.tree.insert("", "end", iid=job["id"],
                              values=(job["keyword"], job["kind"], str(job["duration"]) + " s",
+                                     job.get("quality") or "Original",
                                      str(round(job.get("progress", 0))) + "%", job["status"]))
         for identifier in selected:
             if self.tree.exists(identifier):
@@ -160,6 +170,7 @@ class BatchCutterTab(ttk.Frame):
     def _remember(self):
         self.prefs.set("cutter_output", self.output.get())
         self.prefs.set("cutter_duration", self.duration.get())
+        self.prefs.set("cutter_quality", self.quality.get())
 
     def _add(self, sources, kind):
         if not sources:
@@ -174,7 +185,9 @@ class BatchCutterTab(ttk.Frame):
                 prefix = self.keyword.get().strip()
                 if prefix and len(sources) > 1:
                     prefix = f"{prefix} {i}"
-                additions.append(new_job(source, kind, self.duration.get(), self.output.get(), prefix))
+                additions.append(new_job(
+                    source, kind, self.duration.get(), self.output.get(), prefix,
+                    quality=self.quality.get()))
             self.jobs.extend(additions)
             self._save()
             self._refresh()
@@ -374,6 +387,7 @@ class BatchCutterTab(ttk.Frame):
                         if self.tree.exists(identifier):
                             self.tree.item(identifier, values=(
                                 job["keyword"], job["kind"], str(job["duration"]) + " s",
+                                job.get("quality") or "Original",
                                 str(round(percent)) + "%", stage))
                 elif kind == "worker_error":
                     self.status.set("Worker error: " + item[1])

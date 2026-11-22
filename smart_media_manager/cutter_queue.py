@@ -12,6 +12,22 @@ from smart_media_manager.youtube_downloader import ffmpeg_paths, valid_url
 from video_clip_cutter.core import prepare_job, process_job, parse_duration, RESERVED_NAMES
 
 VIDEO_TYPES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".ts"}
+CLIP_QUALITIES = ("720p", "1080p")
+# A missing quality on old persisted jobs (or snapshot download jobs)
+# retains the old uncapped behavior.
+LEGACY_DOWNLOAD_FORMAT = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/best/bv*[ext=mp4]/bv*"
+
+
+def source_format(quality=None):
+    """Prefer the selected resolution, with a general fallback for availability."""
+    if quality is None:
+        return LEGACY_DOWNLOAD_FORMAT
+    if quality not in CLIP_QUALITIES:
+        raise ValueError("Video quality must be 720p or 1080p")
+    cap = "[height<=" + quality[:-1] + "]"
+    return (f"bv*{cap}[ext=mp4]+ba[ext=m4a]/b{cap}[ext=mp4]/"
+            f"bv*{cap}+ba/b{cap}/bv*{cap}/{LEGACY_DOWNLOAD_FORMAT}")
+
 
 
 def safe_name(value: str) -> str:
@@ -23,7 +39,8 @@ def safe_name(value: str) -> str:
     return result
 
 
-def new_job(source: str, kind: str, duration: str, output: str, keyword: str = "") -> dict:
+def new_job(source: str, kind: str, duration: str, output: str,
+            keyword: str = "", quality: str = "720p") -> dict:
     if kind not in ("Local", "YouTube"):
         raise ValueError("Unknown input type")
     if kind == "YouTube":
@@ -37,11 +54,14 @@ def new_job(source: str, kind: str, duration: str, output: str, keyword: str = "
             raise ValueError("Select an existing supported video file")
         default_name = Path(source).stem
     parse_duration(duration)
+    if quality not in CLIP_QUALITIES:
+        raise ValueError("Video quality must be 720p or 1080p")
     if not str(output).strip():
         raise ValueError("Choose an output folder")
     return {"id": uuid.uuid4().hex, "source": source, "kind": kind,
             "keyword": safe_name(keyword or default_name), "duration": str(duration),
-            "output": str(output), "status": "Queued", "progress": 0, "attempt": 0}
+            "quality": quality, "output": str(output),
+            "status": "Queued", "progress": 0, "attempt": 0}
 
 
 def job_output(job: dict) -> Path:
@@ -75,7 +95,7 @@ def download_source(job: dict, cache_root: Path, cancel: threading.Event, notify
             notify("Downloading", min(99, round(100 * downloaded / total)), "Downloading video")
 
     opts = {
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/best/bv*[ext=mp4]/bv*",
+        "format": source_format(job.get("quality")),
         "outtmpl": str(folder / "source.%(ext)s"),
         "noplaylist": True, "continuedl": True, "overwrites": False,
         "merge_output_format": "mp4",
@@ -113,10 +133,16 @@ def cut_source(job: dict, source: Path, cancel: threading.Event, notify) -> tupl
         notify("Cutting", 100, "Skipped video shorter than requested clip duration")
         return 0, folder
     notify("Cutting", 0, f"Cutting {full_clips} full-length clips")
+    options = {}
+    if job.get("quality") is not None:
+        if job["quality"] not in CLIP_QUALITIES:
+            raise ValueError("Video quality must be 720p or 1080p")
+        options["output_height"] = int(job["quality"][:-1])
     clips = process_job(
         prepared, cancel=cancel,
         progress=lambda i, n, path:
-            notify("Cutting", round(i * 100 / n), f"Clip {i}/{n}: {path.name}")
+            notify("Cutting", round(i * 100 / n), f"Clip {i}/{n}: {path.name}"),
+        **options
     )
     return len(clips), folder
 

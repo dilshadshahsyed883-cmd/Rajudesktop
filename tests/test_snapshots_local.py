@@ -1,4 +1,5 @@
-"""Headless tests for PC video snapshots; no network access or yt-dlp required."""
+"""Headless snapshot regression tests; no real YouTube network calls."""
+import sys
 import tempfile
 import threading
 import unittest
@@ -6,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from smart_media_manager.youtube_downloader import snapshot_video
+from smart_media_manager.youtube_downloader import SNAPSHOT_VIDEO_FORMAT, snapshot_video
 
 
 class LocalSnapshotsTests(unittest.TestCase):
@@ -48,6 +49,83 @@ class LocalSnapshotsTests(unittest.TestCase):
                        return_value=("ffmpeg", "ffprobe")):
                 with self.assertRaises(ValueError):
                     snapshot_video(config, threading.Event(), threading.Event(), lambda *x: None)
+
+
+class YouTubeSnapshotTests(unittest.TestCase):
+    def config(self, folder):
+        return {"url": "https://www.youtube.com/watch?v=X8SR49-YI_M", "local_video": "",
+                "output": str(folder), "start": "", "end": "",
+                "interval": "2", "format": "JPG", "quality": "90",
+                "resolution": "Original"}
+
+    def test_video_only_webm_supported_and_cached_without_audio(self):
+        """No muxed video+audio format is required to extract frames."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            log = {"formats": [], "downloads": 0}
+
+            class FakeYoutubeDL:
+                def __init__(self, opts):
+                    self.opts = opts
+                    log["formats"].append(opts["format"])
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_):
+                    return False
+
+                def extract_info(self, url, download):
+                    if self.opts["format"] == "best[ext=mp4]/best":
+                        raise RuntimeError("Requested format is not available")
+                    if download:
+                        log["downloads"] += 1
+                        cache = root / ".snapshot_cache"
+                        (cache / "X8SR49-YI_M.webm").write_bytes(b"video-only webm")
+                    return {"id": "X8SR49-YI_M"}
+
+            def fake_ffmpeg(cmd, **kwargs):
+                if cmd[0] == "ffprobe":
+                    self.assertTrue(str(cmd[-1]).endswith(".webm"))
+                    return SimpleNamespace(stdout="4.0", returncode=0)
+                Path(cmd[-1]).write_bytes(b"jpeg frame")
+                return SimpleNamespace(returncode=0)
+
+            with patch.dict(sys.modules, {"yt_dlp": SimpleNamespace(YoutubeDL=FakeYoutubeDL)}), \
+                 patch("smart_media_manager.youtube_downloader.ffmpeg_paths",
+                       return_value=("ffmpeg", "ffprobe")), \
+                 patch("smart_media_manager.youtube_downloader.subprocess.run",
+                       side_effect=fake_ffmpeg):
+                for _ in range(2):
+                    count = snapshot_video(self.config(root), threading.Event(),
+                                           threading.Event(), lambda *args: None)
+                    self.assertEqual(count, 2)
+            self.assertEqual(log["downloads"], 1)
+            self.assertEqual(log["formats"], [SNAPSHOT_VIDEO_FORMAT] * 2)
+            self.assertIn("bv*", SNAPSHOT_VIDEO_FORMAT)
+            self.assertEqual(len(list(root.glob("snapshot_*.jpg"))), 2)
+
+    def test_no_accessible_video_format_reports_actionable_message(self):
+        with tempfile.TemporaryDirectory() as td:
+            class NoFormats:
+                def __init__(self, opts):
+                    pass
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_):
+                    return False
+
+                def extract_info(self, url, download):
+                    raise RuntimeError("Requested format is not available")
+
+            with patch.dict(sys.modules, {"yt_dlp": SimpleNamespace(YoutubeDL=NoFormats)}), \
+                 patch("smart_media_manager.youtube_downloader.ffmpeg_paths",
+                       return_value=("ffmpeg", "ffprobe")):
+                with self.assertRaisesRegex(RuntimeError, "Choose Video from PC"):
+                    snapshot_video(self.config(Path(td)), threading.Event(),
+                                   threading.Event(), lambda *args: None)
 
 
 if __name__ == "__main__":

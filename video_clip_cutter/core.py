@@ -183,10 +183,123 @@ def prepare_job(source: Path, folder: Path, name: str, duration: str, *, ffprobe
     return job
 
 
+
+def _fast_copy_job(job: Job, *, binary: str, cancel: threading.Event,
+                   progress: Callable[[int, int, Path], None] | None,
+                   process_callback: Callable[[subprocess.Popen | None], None] | None) -> list[Path]:
+    """One FFmpeg stream-copy pass, split only on decodable keyframe boundaries.
+
+    Segments are created in an isolated staging folder. Each segment is
+    published with exclusive-create semantics after the next one starts, so
+    cancellation preserves previously completed outputs without overwriting
+    existing files. A short final remainder is discarded.
+    """
+    if cancel.is_set():
+        raise Cancelled("Cancelled. 0 completed clip(s) kept.")
+    staging = job.folder / f".fast-copy-{uuid.uuid4().hex}"
+    staging.mkdir(parents=True, exist_ok=False)
+    pattern = staging / "clip-%06d.mp4"
+    command = [
+        binary, "-hide_banner", "-loglevel", "error", "-nostdin",
+        "-i", str(job.source), "-t", _number(job.total),
+        "-map", "0:v:0", "-an", "-c:v", "copy",
+        "-f", "segment", "-segment_time", _number(job.step),
+        "-segment_start_number", "1", "-reset_timestamps", "1",
+        str(pattern),
+    ]
+    completed: list[Path] = []
+    process: subprocess.Popen | None = None
+
+    def publish(final: bool) -> None:
+        files = sorted(staging.glob("clip-*.mp4"))
+        # FFmpeg may still be writing the newest file until the next one opens.
+        safe_count = len(files) if final else max(0, len(files) - 1)
+        for index in range(len(completed), safe_count):
+            segment = files[index]
+            if index >= len(job.parts):
+                break
+            if final and index == len(files) - 1:
+                # Allow minor packet/frame rounding, but not a short tail.
+                tolerance = min(Decimal("0.15"), job.step * Decimal("0.05"))
+                if video_duration(segment) + tolerance < job.step:
+                    segment.unlink()
+                    break
+            target = job.folder / f"{job.name} {index + 1}.mp4"
+            try:
+                os.link(segment, target)
+            except FileExistsError:
+                raise CutterError(f"Output already exists: {target.name}. Existing clips were not overwritten.")
+            except OSError:
+                # FAT/network volumes may not support hard links. 'xb' still
+                # prevents overwriting a destination created concurrently.
+                created = False
+                try:
+                    with target.open("xb") as output:
+                        created = True
+                        with segment.open("rb") as input_file:
+                            shutil.copyfileobj(input_file, output)
+                except FileExistsError:
+                    raise CutterError(
+                        f"Output already exists: {target.name}. Existing clips were not overwritten."
+                    ) from None
+                except OSError:
+                    if created:
+                        target.unlink(missing_ok=True)
+                    raise
+            segment.unlink()
+            completed.append(target)
+            if progress:
+                progress(len(completed), len(job.parts), target)
+
+    try:
+        process = subprocess.Popen(
+            command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", creationflags=_flags(),
+        )
+        if process_callback:
+            process_callback(process)
+        while process.poll() is None:
+            publish(final=False)
+            if cancel.is_set():
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                publish(final=False)
+                raise Cancelled(f"Cancelled. {len(completed)} completed clip(s) kept.")
+            cancel.wait(0.12)
+        if cancel.is_set():
+            publish(final=False)
+            raise Cancelled(f"Cancelled. {len(completed)} completed clip(s) kept.")
+        stderr = process.stderr.read() if process.stderr else ""
+        if process.returncode != 0:
+            publish(final=False)
+            raise CutterError(
+                "Fast Copy could not split this source without re-encoding. "
+                "The video codec may not be compatible with MP4: "
+                + (stderr.strip()[-500:] or "FFmpeg failed")
+            )
+        publish(final=True)
+        if not completed:
+            raise CutterError("Fast Copy produced no complete clips; the source may have too few keyframes.")
+        return completed
+    except OSError as ex:
+        raise CutterError(f"Cannot write Fast Copy clips: {ex}") from ex
+    finally:
+        if process_callback:
+            process_callback(None)
+        if process and process.stderr:
+            process.stderr.close()
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def process_job(job: Job, *, ffmpeg: str | None = None, cancel: threading.Event | None = None,
                 progress: Callable[[int, int, Path], None] | None = None,
                 process_callback: Callable[[subprocess.Popen | None], None] | None = None,
-                output_height: int | None = None, include_audio: bool = True) -> list[Path]:
+                output_height: int | None = None, include_audio: bool = True,
+                fast_copy: bool = False) -> list[Path]:
     """Write each clip safely; optionally make silent video-only MP4 clips.
 
     The standalone cutter retains its original audio behavior by default.
@@ -195,6 +308,11 @@ def process_job(job: Job, *, ffmpeg: str | None = None, cancel: threading.Event 
         raise ValueError("Output quality must be 720p or 1080p.")
     binary = ffmpeg or find_executable("ffmpeg")
     cancel = cancel or threading.Event()
+    if fast_copy:
+        if include_audio or output_height is not None:
+            raise ValueError("Fast Copy requires silent video and preserves source resolution.")
+        return _fast_copy_job(job, binary=binary, cancel=cancel, progress=progress,
+                              process_callback=process_callback)
     completed: list[Path] = []
     for index, ((start, length), target) in enumerate(zip(job.parts, job.targets), 1):
         if cancel.is_set():

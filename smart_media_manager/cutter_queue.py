@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import threading
+from dataclasses import replace
 import uuid
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -96,19 +97,34 @@ def download_source(job: dict, cache_root: Path, cancel: threading.Event, notify
     return finished[0]
 
 
-def execute_job(job: dict, cancel: threading.Event, notify, cache_root: Path) -> tuple[int, Path]:
-    """Notify(stage, percentage, message); return clip count and folder."""
-    if cancel.is_set():
-        raise RuntimeError("Cancelled")
-    if job["kind"] == "YouTube":
-        source = download_source(job, cache_root, cancel, notify)
-    else:
-        source = Path(job["source"])
+def cut_source(job: dict, source: Path, cancel: threading.Event, notify) -> tuple[int, Path]:
+    """Cut only complete-length clips; never write a shorter final remainder.
+
+    This rule belongs to Smart Media Manager. The independent video cutter
+    retains its original behavior for short final segments.
+    """
     if cancel.is_set():
         raise RuntimeError("Cancelled")
     folder = job_output(job)
-    prepared = prepare_job(source, folder, job["keyword"], job["duration"])
-    notify("Cutting", 0, f'Cutting {len(prepared.parts)} clips')
-    clips = process_job(prepared, cancel=cancel, progress=lambda i, n, path:
-                        notify("Cutting", round(i * 100 / n), f'Clip {i}/{n}: {path.name}'))
+    prepared = prepare_job(Path(source), folder, job["keyword"], job["duration"])
+    full_clips = int(prepared.total // prepared.step)
+    prepared = replace(prepared, total=prepared.step * full_clips)
+    if not full_clips:
+        notify("Cutting", 100, "Skipped video shorter than requested clip duration")
+        return 0, folder
+    notify("Cutting", 0, f"Cutting {full_clips} full-length clips")
+    clips = process_job(
+        prepared, cancel=cancel,
+        progress=lambda i, n, path:
+            notify("Cutting", round(i * 100 / n), f"Clip {i}/{n}: {path.name}")
+    )
     return len(clips), folder
+
+
+def execute_job(job: dict, cancel: threading.Event, notify, cache_root: Path) -> tuple[int, Path]:
+    """Original single-job API, using the Smart Media Manager full-length policy."""
+    if cancel.is_set():
+        raise RuntimeError("Cancelled")
+    source = (download_source(job, cache_root, cancel, notify)
+              if job["kind"] == "YouTube" else Path(job["source"]))
+    return cut_source(job, source, cancel, notify)

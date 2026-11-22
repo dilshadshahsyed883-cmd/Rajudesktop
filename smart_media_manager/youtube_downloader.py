@@ -12,7 +12,7 @@ import sys
 import threading
 import uuid
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -40,6 +40,49 @@ def timestamp(value):
     for x in parts:
         result = result * 60 + int(x)
     return result
+
+def new_snapshot_job(config):
+    """Validate and freeze one snapshot job for the durable FIFO queue."""
+    from smart_media_manager.cutter_queue import safe_name, VIDEO_TYPES
+    local = str(config.get("local_video") or "").strip()
+    url = str(config.get("url") or "").strip()
+    if local:
+        video = Path(local).expanduser().resolve()
+        if not video.is_file() or video.suffix.lower() not in VIDEO_TYPES:
+            raise ValueError("Selected PC video is missing or unsupported")
+        default_name = video.stem
+        local = str(video)
+        url = ""
+    elif valid_url(url):
+        parsed = urlparse(url)
+        video_id = parse_qs(parsed.query).get("v", [""])[0] or parsed.path.rstrip("/").split("/")[-1]
+        default_name = "YouTube " + video_id
+    else:
+        raise ValueError("Choose a PC video or enter a valid YouTube URL")
+    interval = int(config["interval"])
+    quality = int(config["quality"])
+    start = timestamp(config.get("start", ""))
+    end_raw = str(config.get("end", ""))
+    end = timestamp(end_raw) if end_raw.strip() else None
+    if not 1 <= interval <= 3600 or not 1 <= quality <= 100:
+        raise ValueError("Interval must be 1-3600 seconds and quality must be 1-100")
+    if end is not None and end <= start:
+        raise ValueError("End time must follow start")
+    if config.get("format") not in ("JPG", "PNG"):
+        raise ValueError("Snapshot format must be JPG or PNG")
+    if config.get("resolution") not in RESOLUTIONS:
+        raise ValueError("Invalid snapshot resolution")
+    if not str(config.get("output") or "").strip():
+        raise ValueError("Choose an output folder")
+    return {
+        "id": uuid.uuid4().hex, "name": safe_name(config.get("name") or default_name),
+        "url": url, "local_video": local, "output": str(config["output"]),
+        "interval": str(interval), "format": config["format"],
+        "quality": str(quality), "resolution": config["resolution"],
+        "start": str(config.get("start", "")), "end": end_raw,
+        "status": "Queued", "progress": 0, "frames": 0,
+    }
+
 
 def selector(mode, quality):
     number = re.search(r"\d+", quality)
@@ -102,14 +145,24 @@ def snapshot_video(config, cancel, pause, notify):
     ffmpeg, ffprobe = ffmpeg_paths()
     if not ffmpeg or not ffprobe:
         raise RuntimeError("FFmpeg and FFprobe required")
-    folder = Path(config["output"]).expanduser()
-    if local:
+    root = Path(config["output"]).expanduser()
+    folder = root
+    if config.get("id"):
+        # Each queued job owns an isolated destination, including on retry.
+        from smart_media_manager.cutter_queue import safe_name
+        folder = root / f'{safe_name(config["name"])} [{config["id"][:8]}]'
+    elif local:
         from smart_media_manager.cutter_queue import safe_name, VIDEO_TYPES
         source = Path(local).expanduser().resolve()
         if not source.is_file() or source.suffix.lower() not in VIDEO_TYPES:
             raise ValueError("Choose a valid video file on your PC")
-        # A dedicated folder avoids accidental filename collisions between videos.
-        folder = folder / (safe_name(source.stem) + " snapshots")
+        # Legacy direct snapshots keep their previous destination format.
+        folder = root / (safe_name(source.stem) + " snapshots")
+    if local and config.get("id"):
+        from smart_media_manager.cutter_queue import VIDEO_TYPES
+        source = Path(local).expanduser().resolve()
+        if not source.is_file() or source.suffix.lower() not in VIDEO_TYPES:
+            raise ValueError("Choose a valid video file on your PC")
     folder.mkdir(parents=True, exist_ok=True)
     start = timestamp(config["start"])
     end = timestamp(config["end"]) if config["end"].strip() else None
@@ -134,7 +187,7 @@ def snapshot_video(config, cancel, pause, notify):
             return 0
         try:
             source = download_source(
-                source_job, folder / ".snapshot_cache", cancel,
+                source_job, (root if config.get("id") else folder) / ".snapshot_cache", cancel,
                 lambda stage, percent, detail:
                     notify(f"{detail} ({percent}%)", 0, 0))
         except Exception as exc:
@@ -172,7 +225,8 @@ def snapshot_video(config, cancel, pause, notify):
         hour, rem = divmod(second, 3600)
         minute, secs = divmod(rem, 60)
         suffix = ".png" if fmt == "png" else ".jpg"
-        target = folder / f"snapshot_{index:05d}_{hour:02d}-{minute:02d}-{secs:02d}{suffix}"
+        prefix = (config["name"] + " ") if config.get("id") else "snapshot_"
+        target = folder / f"{prefix}{index:05d}_{hour:02d}-{minute:02d}-{secs:02d}{suffix}"
         if not target.is_file():
             temp = folder / (target.stem + ".partial" + suffix)
             args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",

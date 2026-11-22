@@ -10,11 +10,13 @@ One Windows desktop program with three separate native tabs. Uses the existing t
 
 **Tab 3 — YouTube Downloader:** Full video, video-only and audio-only modes; multiple URLs, selectable quality/format, progress and saved retryable queue. A Snapshots subtab now accepts either one YouTube URL **or a video selected directly from the PC** using "Choose Video from PC" (local files are processed without a network download). It saves JPG/PNG frames on an adjustable interval, with optional time range, quality, resolution, cache/restart support and pause/resume. Local video snapshots go into a video-named subfolder to avoid collisions. Clear the PC selection to switch back to the YouTube URL. Requires access to the video and compliance with platform rules. YouTube anti-bot challenges may prevent downloads.
 
-## YouTube snapshot source format reliability
+## YouTube snapshots share the Clip Cutter downloader
 
-Snapshots accept video-only streams as well as combined video/audio, preferring MP4 when available but falling back to other FFmpeg-supported containers such as WebM. Audio is not needed for frame extraction. Previously the fixed `best[ext=mp4]/best` selector could reject videos available only in separate video-only formats. Successful snapshot source downloads continue to use the per-video cache and completed frames are reused.
+Snapshots now call the **same `smart_media_manager.cutter_queue.download_source()` engine** used by Batch Video Clip Cutter. There is no separate yt-dlp snapshot format selector or duplicate YouTube download logic. Both use the same MP4-first adaptive format selection (including separate video/audio formats, other available formats, and video-only fallbacks), FFmpeg configuration, resume behavior, and no-overwrite source caching. The downloader supports sources with no audio; FFmpeg extracts still frames from their video stream.
 
-If YouTube provides **no accessible video formats** (for example because of sign-in, account restrictions, token/client requirements, or an outdated yt-dlp build), the app reports an actionable message. No format selector can guarantee access when the platform does not expose a downloadable stream. Local PC video snapshots remain available without YouTube.
+For snapshots, cached source videos are stored under the chosen snapshot output folder's `.snapshot_cache/<stable-url-hash>/source.<ext>` directory and reused on restart with the same URL. Already extracted frames are retained as before. Choosing a local PC video bypasses YouTube entirely.
+
+A format error may still occur if YouTube does not expose an accessible stream due to login, age restrictions, anti-bot rules, client changes, or outdated yt-dlp; the app then shows guidance to retry with a playable video or use **Choose Video from PC**. This cannot be guaranteed to work for every YouTube link.
 
 ## Windows download and run
 

@@ -34,6 +34,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Bundle FFmpeg and FFprobe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg-dist"
+          New-Item -ItemType Directory -Force -Path 'video_clip_cutter\bin' | Out-Null
+          $ffmpeg = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-dist" -Filter ffmpeg.exe -Recurse | Select-Object -First 1
+          $ffprobe = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-dist" -Filter ffprobe.exe -Recurse | Select-Object -First 1
+          if (-not $ffmpeg -or -not $ffprobe) { throw 'FFmpeg executables missing' }
+          Copy-Item $ffmpeg.FullName 'video_clip_cutter\bin\ffmpeg.exe'
+          Copy-Item $ffprobe.FullName 'video_clip_cutter\bin\ffprobe.exe'
+          (Resolve-Path 'video_clip_cutter\bin').Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Test media engines and manager integration
         shell: pwsh
         run: |
@@ -54,18 +67,6 @@ jobs:
           python -m compileall -q smart_media_manager
       - name: Install Windows packager
         run: python -m pip install pyinstaller==6.16.0 "yt-dlp[default]>=2025.1.1"
-      - name: Bundle FFmpeg and FFprobe
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
-          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg-dist"
-          New-Item -ItemType Directory -Force -Path 'video_clip_cutter\bin' | Out-Null
-          $ffmpeg = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-dist" -Filter ffmpeg.exe -Recurse | Select-Object -First 1
-          $ffprobe = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg-dist" -Filter ffprobe.exe -Recurse | Select-Object -First 1
-          if (-not $ffmpeg -or -not $ffprobe) { throw 'FFmpeg executables missing' }
-          Copy-Item $ffmpeg.FullName 'video_clip_cutter\bin\ffmpeg.exe'
-          Copy-Item $ffprobe.FullName 'video_clip_cutter\bin\ffprobe.exe'
       - name: Build portable all-in-one SmartMediaManager.exe
         shell: pwsh
         run: |

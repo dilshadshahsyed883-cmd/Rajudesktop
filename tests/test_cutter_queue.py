@@ -1,7 +1,6 @@
 """Batch cutter tests: mixed sources, safe names, durable output folders, retry isolation."""
 import tempfile
 import threading
-import time
 import queue
 from decimal import Decimal
 import unittest
@@ -96,7 +95,7 @@ class CutterQueueTests(unittest.TestCase):
             source.write_bytes(b"test")
             job = new_job(str(source), "Local", "4", str(Path(td) / "out"))
             calls = []
-            with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \\
+            with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
                  patch("smart_media_manager.cutter_queue.process_job") as process:
                 prepare.return_value = Job(
                     source=source, folder=job_output(job), name=job["keyword"],
@@ -114,7 +113,7 @@ class CutterQueueTests(unittest.TestCase):
             source.write_bytes(b"test")
             job = new_job(str(source), "Local", "4", td)
             notes = []
-            with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \\
+            with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
                  patch("smart_media_manager.cutter_queue.process_job") as process:
                 prepare.return_value = Job(
                     source=source, folder=job_output(job), name=job["keyword"],
@@ -154,7 +153,7 @@ class CutterQueueTests(unittest.TestCase):
             return 1, Path("/tmp/out")
 
         try:
-            with patch("smart_media_manager.cutter_queue_ui.download_source", side_effect=downloading), \\
+            with patch("smart_media_manager.cutter_queue_ui.download_source", side_effect=downloading), \
                  patch("smart_media_manager.cutter_queue_ui.cut_source", side_effect=cutting):
                 worker = threading.Thread(target=tab._worker, daemon=True)
                 worker.start()
@@ -208,7 +207,7 @@ class CutterQueueTests(unittest.TestCase):
 
         try:
             with patch("smart_media_manager.cutter_queue_ui.download_source",
-                       side_effect=lambda job, *_: Path(f"{job['id']}.mp4")), \\
+                       side_effect=lambda job, *_: Path(f"{job['id']}.mp4")), \
                  patch("smart_media_manager.cutter_queue_ui.cut_source", side_effect=cutting):
                 worker = threading.Thread(target=tab._worker, daemon=True)
                 worker.start()

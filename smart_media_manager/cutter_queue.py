@@ -136,20 +136,18 @@ def cut_source(job: dict, source: Path, cancel: threading.Event, notify) -> tupl
     if not full_clips:
         notify("Cutting", 100, "Skipped video shorter than requested clip duration")
         return 0, folder
-    notify("Cutting", 0, f"Cutting {full_clips} full-length clips")
-    # Smart Media Manager produces silent video clips, including for PC inputs.
-    # Standalone Video Clip Cutter keeps its existing audio behavior.
-    options = {"include_audio": False}
-    if job.get("quality") is not None:
-        if job["quality"] not in CLIP_QUALITIES:
-            raise ValueError("Video quality must be 720p or 1080p")
-        options["output_height"] = int(job["quality"][:-1])
+    if job.get("quality") is not None and job["quality"] not in CLIP_QUALITIES:
+        raise ValueError("Video quality must be 720p or 1080p")
+    # Stream copy only: no decode/re-encode, scaling or audio track.
+    # YouTube quality limits the source download; PC inputs retain source
+    # resolution. Segment boundaries are keyframe-aligned, not exact seconds.
+    notify("Cutting", 0, f"Fast copying up to {full_clips} keyframe-aligned clips")
     clips = process_job(
-        prepared, cancel=cancel,
+        prepared, cancel=cancel, include_audio=False, fast_copy=True,
         progress=lambda i, n, path:
             notify("Cutting", round(i * 100 / n), f"Clip {i}/{n}: {path.name}"),
-        **options
     )
+    notify("Cutting", 100, f"Saved {len(clips)} clips without re-encoding")
     return len(clips), folder
 
 

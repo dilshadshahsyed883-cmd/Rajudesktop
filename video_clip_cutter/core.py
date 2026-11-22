@@ -185,8 +185,14 @@ def prepare_job(source: Path, folder: Path, name: str, duration: str, *, ffprobe
 
 def process_job(job: Job, *, ffmpeg: str | None = None, cancel: threading.Event | None = None,
                 progress: Callable[[int, int, Path], None] | None = None,
-                process_callback: Callable[[subprocess.Popen | None], None] | None = None) -> list[Path]:
-    """Write each clip to temporary MP4, then commit. Never overwrite output files."""
+                process_callback: Callable[[subprocess.Popen | None], None] | None = None,
+                output_height: int | None = None) -> list[Path]:
+    """Write each clip safely. Optional output_height caps resolution without upscaling.
+
+    Without output_height the standalone cutter's encoding remains unchanged.
+    """
+    if output_height not in (None, 720, 1080):
+        raise ValueError("Output quality must be 720p or 1080p.")
     binary = ffmpeg or find_executable("ffmpeg")
     cancel = cancel or threading.Event()
     completed: list[Path] = []
@@ -197,9 +203,15 @@ def process_job(job: Job, *, ffmpeg: str | None = None, cancel: threading.Event 
             raise CutterError(f"Output already exists: {target.name}. Existing clips were not overwritten.")
         temp = job.folder / f".{uuid.uuid4().hex}.part.mp4"
         command = [binary, "-hide_banner", "-loglevel", "error", "-nostdin", "-ss", _number(start),
-                   "-i", str(job.source), "-t", _number(length), "-map", "0:v:0", "-map", "0:a?",
-                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
-                   "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", str(temp)]
+                   "-i", str(job.source), "-t", _number(length), "-map", "0:v:0", "-map", "0:a?"]
+        if output_height is not None:
+            # Respect landscape/portrait aspect ratios and never enlarge small sources.
+            width = 1280 if output_height == 720 else 1920
+            command += ["-vf",
+                        f"scale=w='min(iw,{width})':h='min(ih,{output_height})'"
+                        ":force_original_aspect_ratio=decrease:force_divisible_by=2"]
+        command += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", str(temp)]
         process: subprocess.Popen | None = None
         try:
             process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,

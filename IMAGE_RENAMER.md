@@ -8,7 +8,9 @@ Features:
 - Default: copy renamed images to Documents/Renamed Images; choose any other output folder.
 - Original files stay untouched and image data is never re-encoded.
 - Optional in-place rename with confirmation and guarded Undo Last Rename.
-- Detect case-insensitive filename conflicts; do not overwrite other files.
+- Smart numbering fills missing numbers for the selected keyword in each destination folder, starting at the chosen number. Existing values are reserved across JPG, PNG, WEBP and other supported image extensions, case-insensitively; unrelated keywords do not count.
+- In-place rename leaves correctly numbered originals unchanged, and records only changed filenames in Undo history.
+- Detect case-insensitive filename conflicts, including new same-number images appearing after Preview; never overwrite other files.
 - JPG/JPEG, PNG, WEBP, BMP, GIF and TIF/TIFF; progress indicator; open output folder.
 - Fully offline, no accounts, cloud, network, or dependency on other Rajudesktop apps.
 

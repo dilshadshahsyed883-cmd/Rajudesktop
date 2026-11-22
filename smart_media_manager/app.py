@@ -1,4 +1,4 @@
-"""One Windows application with four independent media tool tabs.
+"""One Windows application with three independent media tool tabs.
 
 Existing production-tested processing cores remain the single source of truth.
 No operation silently deletes originals or overwrites outputs.
@@ -20,7 +20,6 @@ from image_renamer.core import (
     make_plan as image_make_plan, save_history as image_save_history,
     scan_folder as image_scan_folder, natural_key as image_natural_key, undo_last as image_undo_last,
 )
-from smart_clip_renamer.core import RenamerError, create_plan as clip_create_plan, execute_plan as clip_execute_plan
 from smart_media_manager.youtube_downloader import YoutubeTab
 from smart_media_manager.cutter_queue_ui import BatchCutterTab
 from video_clip_cutter.core import (
@@ -412,94 +411,6 @@ class ImagesTab(WorkTab):
         self.start(job, finished)
 
 
-class ClipsTab(WorkTab):
-    def __init__(self, master, prefs: Preferences):
-        super().__init__(master, prefs)
-        self.source = tk.StringVar()
-        self.keyword = tk.StringVar(value="Alexa")
-        self.output = tk.StringVar(value=prefs.get("clips_output", str(Path.home() / "Documents" / "Renamed Clips")))
-        self.plan = None
-        self.last_output = None
-        self.heading("Smart Video Clip Renamer", "Combine selected clips, smart-shuffle their original sequence, then rename.")
-        self.row_title("1. Main input folder (keep only wanted clips here)")
-        folder_entry(self, self.source, self.choose_folder, "Choose Folder")
-        self.row_title("2. Output keyword")
-        ttk.Entry(self, textvariable=self.keyword).pack(fill="x", pady=(2, 10))
-        self.row_title("3. Output root (a new job folder is created on each run)")
-        folder_entry(self, self.output, self.choose_output, "Change Folder")
-        buttons = ttk.Frame(self)
-        buttons.pack(fill="x", pady=(7, 9))
-        self.preview_button = action_button(buttons, "Preview Smart Order", self.preview)
-        self.run_button = action_button(buttons, "Create Renamed Clips", self.run)
-        self.stop_button = action_button(buttons, "Cancel", self.stop)
-        self.stop_button.config(state="disabled")
-        ttk.Button(buttons, text="Open Output", command=lambda: open_folder(self.last_output or self.output.get())).pack(side="right")
-        self.note = tk.StringVar(value="Originals remain untouched; input siblings are separated where possible.")
-        ttk.Label(self, textvariable=self.note, style="Muted.TLabel", wraplength=890).pack(anchor="w", pady=(0, 7))
-        self.busy_widgets(self.preview_button, self.run_button)
-        self.footer()
-        self.preview_tree = self.table({"number": "#", "before": "Original clip", "after": "New clip", "source_num": "Original #"})
-        for var in (self.source, self.keyword, self.output):
-            var.trace_add("write", self.invalidate)
-
-    def invalidate(self, *_):
-        self.plan = None
-
-    def choose_folder(self):
-        folder = filedialog.askdirectory(title="Choose clips folder")
-        if folder:
-            self.source.set(folder)
-
-    def choose_output(self):
-        folder = filedialog.askdirectory(title="Choose output folder")
-        if folder:
-            self.output.set(folder)
-            self.prefs.set("clips_output", folder)
-
-    def preview(self):
-        if self.running:
-            return False
-        try:
-            plan = clip_create_plan(Path(self.source.get()), Path(self.output.get()), self.keyword.get())
-        except (ValueError, OSError, RenamerError) as exc:
-            self.plan = None
-            messagebox.showerror("Clip preview", str(exc))
-            return False
-        self.plan = plan
-        self.preview_tree.delete(*self.preview_tree.get_children())
-        for i, item in enumerate(plan.items[:500], 1):
-            self.preview_tree.insert("", "end", values=(i, item.original.name, item.renamed, item.original_number or "—"))
-        warning = (f"{plan.remaining_adjacent_pairs} adjacent original pairs could not be separated."
-                   if plan.remaining_adjacent_pairs else "Original consecutive siblings are separated.")
-        self.note.set(warning)
-        self.status.set(f"{len(plan.items)} clips ready (first 500 shown)" if len(plan.items) > 500 else f"{len(plan.items)} clips ready")
-        return True
-
-    def run(self):
-        if self.plan is None and not self.preview():
-            return
-        plan = self.plan
-        self.prefs.set("clips_output", self.output.get())
-        self.stop_button.config(state="normal")
-        self.status.set("Copying and renaming clips...")
-        def job():
-            return str(clip_execute_plan(plan, cancel=self.cancel_event,
-                                         progress=lambda i, n, name: self.emit(i, n, f"Copied {name}")))
-
-        def finished(destination):
-            self.stop_button.config(state="disabled")
-            self.plan = None
-            self.last_output = destination
-            self.status.set(f"Completed {len(plan.items)} clips")
-            messagebox.showinfo("Smart Clip Renamer", f"Created {len(plan.items)} renamed clips.\nSaved to:\n{destination}")
-        self.start(job, finished)
-
-    def stop(self):
-        if self.running:
-            self.cancel_event.set()
-            self.status.set("Cancelling and cleaning partial output...")
-
-
 class SmartMediaManager(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -538,7 +449,7 @@ class SmartMediaManager(tk.Tk):
         header.pack_propagate(False)
         tk.Label(header, text="SMART MEDIA MANAGER", fg="white", bg=NAVY,
                  font=("Segoe UI", 19, "bold")).pack(anchor="w", padx=28, pady=(14, 0))
-        tk.Label(header, text="RAJU DESKTOP  •  4 tools  •  Local Windows processing",
+        tk.Label(header, text="RAJU DESKTOP  •  3 tools  •  Local Windows processing",
                  fg="#b8cbea", bg=NAVY, font=("Segoe UI", 10)).pack(anchor="w", padx=30, pady=(3, 0))
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=14, pady=12)
@@ -546,10 +457,9 @@ class SmartMediaManager(tk.Tk):
         self.tabs = [
             BatchCutterTab(notebook, preferences),
             ImagesTab(notebook, preferences),
-            ClipsTab(notebook, preferences),
             YoutubeTab(notebook, preferences),
         ]
-        for tab, title in zip(self.tabs, ("Video Clip Cutter", "Image Renamer", "Smart Clip Renamer", "YouTube Downloader")):
+        for tab, title in zip(self.tabs, ("Video Clip Cutter", "Image Renamer", "YouTube Downloader")):
             notebook.add(tab, text=title)
         self.protocol("WM_DELETE_WINDOW", self.close)
 

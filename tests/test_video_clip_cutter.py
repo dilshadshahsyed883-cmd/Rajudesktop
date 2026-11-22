@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import shutil
 import subprocess
 import tempfile
@@ -7,8 +8,9 @@ import threading
 import unittest
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
-from video_clip_cutter.core import (Cancelled, CutterError, parse_duration, prepare_job,
+from video_clip_cutter.core import (Job, Cancelled, CutterError, parse_duration, prepare_job,
                                     process_job, read_settings, segments, validate_name, write_settings)
 
 
@@ -32,6 +34,43 @@ class ValidationTests(unittest.TestCase):
             (Decimal("8"), Decimal("4")), (Decimal("12"), Decimal("4")),
             (Decimal("16"), Decimal("1"))])
         self.assertEqual(len(segments(Decimal("0.5"), Decimal("4"))), 1)
+
+    def test_optional_output_quality_scales_without_upscaling(self):
+        # Headless test: inspect the FFmpeg command without real encoding.
+        with tempfile.TemporaryDirectory() as root:
+            folder = Path(root)
+            source = folder / "source.mp4"
+            source.write_bytes(b"source")
+            commands = []
+
+            class FakeProcess:
+                returncode = 0
+                def __init__(self):
+                    self.stderr = io.StringIO("")
+                def poll(self):
+                    return 0
+
+            def mock_popen(args, **kwargs):
+                commands.append(args)
+                Path(args[-1]).write_bytes(b"encoded")
+                return FakeProcess()
+
+            with patch("video_clip_cutter.core.find_executable", return_value="ffmpeg"), \
+                 patch("video_clip_cutter.core.subprocess.Popen", side_effect=mock_popen):
+                for quality in (720, 1080, None):
+                    job = Job(source, folder / str(quality), "Frame",
+                              Decimal("1"), Decimal("1"))
+                    job.folder.mkdir()
+                    self.assertEqual(len(process_job(job, output_height=quality)), 1)
+            self.assertIn("-vf", commands[0])
+            self.assertIn("min(iw,1280)", commands[0][commands[0].index("-vf") + 1])
+            self.assertIn("min(ih,720)", commands[0][commands[0].index("-vf") + 1])
+            self.assertIn("min(iw,1920)", commands[1][commands[1].index("-vf") + 1])
+            self.assertIn("min(ih,1080)", commands[1][commands[1].index("-vf") + 1])
+            self.assertNotIn("-vf", commands[2])
+            with self.assertRaises(ValueError):
+                process_job(Job(source, folder, "Bad", Decimal("1"), Decimal("1")),
+                            output_height=2160)
 
     def test_settings(self):
         with tempfile.TemporaryDirectory() as root:

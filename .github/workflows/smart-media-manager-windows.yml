@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Test all four media engines and integration
+      - name: Test media engines and manager integration
         shell: pwsh
         run: |
           python -m unittest discover -s tests -p test_video_clip_cutter.py -v
@@ -105,5 +105,5 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = "smart-media-manager-v3-onefile-run-$env:GITHUB_RUN_NUMBER"
-          gh release create $tag dist/SmartMediaManager.exe dist/SmartMediaManager.exe.sha256 --title "Smart Media Manager V3 — Single Portable EXE" --notes "Direct download: SmartMediaManager.exe. No ZIP, no manual extraction, no adjacent folders. Bundles FFmpeg, FFprobe, yt-dlp and all four tools including mixed PC/YouTube batch cutter and PC snapshots. Windows may temporarily unpack internal resources automatically during execution." --target $env:GITHUB_SHA --latest
+          gh release create $tag dist/SmartMediaManager.exe dist/SmartMediaManager.exe.sha256 --title "Smart Media Manager V3 — Single Portable EXE" --notes "Direct download: SmartMediaManager.exe. No ZIP, no manual extraction, no adjacent folders. Bundles FFmpeg, FFprobe, yt-dlp and three integrated tools including mixed PC/YouTube batch cutter and PC snapshots. Windows may temporarily unpack internal resources automatically during execution." --target $env:GITHUB_SHA --latest
           if ($LASTEXITCODE -ne 0) { throw 'Direct EXE release publishing failed' }

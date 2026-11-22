@@ -25,7 +25,9 @@ class ResponsiveCutterTests(unittest.TestCase):
             # Other app tabs schedule periodic polling. Cancel those callbacks
             # before destroying Tk so later test roots see no stale Tcl events.
             for identifier in self.root.tk.call("after", "info"):
-                self.root.after_cancel(identifier)
+                # Cancel Tcl callbacks without deleting widget-owned commands:
+                # widget.destroy() must remove each registered command once.
+                self.root.tk.call("after", "cancel", identifier)
             self.root.destroy()
 
     def resize(self, width, height):

@@ -97,7 +97,8 @@ class ValidationTests(unittest.TestCase):
 
             class FakeProcess:
                 returncode = 0
-                stderr = io.StringIO("")
+                def __init__(self):
+                    self.stderr = io.StringIO("")
                 def poll(self):
                     return 0
 

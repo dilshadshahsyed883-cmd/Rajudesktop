@@ -192,7 +192,7 @@ def _fast_copy_job(job: Job, *, binary: str, cancel: threading.Event,
     Segments are created in an isolated staging folder. Each segment is
     published with exclusive-create semantics after the next one starts, so
     cancellation preserves previously completed outputs without overwriting
-    existing files. A short final remainder is discarded.
+    existing files. Every segment shorter than the requested length is discarded.
     """
     if cancel.is_set():
         raise Cancelled("Cancelled. 0 completed clip(s) kept.")
@@ -212,19 +212,16 @@ def _fast_copy_job(job: Job, *, binary: str, cancel: threading.Event,
 
     def publish(final: bool) -> None:
         files = sorted(staging.glob("clip-*.mp4"))
-        # FFmpeg may still be writing the newest file until the next one opens.
-        safe_count = len(files) if final else max(0, len(files) - 1)
-        for index in range(len(completed), safe_count):
-            segment = files[index]
-            if index >= len(job.parts):
-                break
-            if final and index == len(files) - 1:
-                # Allow minor packet/frame rounding, but not a short tail.
-                tolerance = min(Decimal("0.15"), job.step * Decimal("0.05"))
-                if video_duration(segment) + tolerance < job.step:
-                    segment.unlink()
-                    break
-            target = job.folder / f"{job.name} {index + 1}.mp4"
+        # FFmpeg is still writing the newest segment until it opens the next.
+        ready = files if final else files[:-1]
+        for segment in ready:
+            # Check *every* completed segment, not just the final remainder.
+            # When a source has irregular keyframes an interior segment can
+            # also be shorter than the user's target length.
+            if video_duration(segment) < job.step:
+                segment.unlink()
+                continue
+            target = job.folder / f"{job.name} {len(completed) + 1}.mp4"
             try:
                 os.link(segment, target)
             except FileExistsError:
@@ -282,8 +279,6 @@ def _fast_copy_job(job: Job, *, binary: str, cancel: threading.Event,
                 + (stderr.strip()[-500:] or "FFmpeg failed")
             )
         publish(final=True)
-        if not completed:
-            raise CutterError("Fast Copy produced no complete clips; the source may have too few keyframes.")
         return completed
     except OSError as ex:
         raise CutterError(f"Cannot write Fast Copy clips: {ex}") from ex

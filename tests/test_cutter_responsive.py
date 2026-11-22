@@ -5,7 +5,7 @@ Runs on Windows CI with a display; does not start downloads or media work.
 import tkinter as tk
 import unittest
 
-from smart_media_manager.app import Preferences, SmartMediaManager
+from smart_media_manager.app import SmartMediaManager
 from smart_media_manager.cutter_queue_ui import BatchCutterTab
 
 
@@ -67,9 +67,7 @@ class ResponsiveCutterTests(unittest.TestCase):
             self.cutter._upper_canvas.winfo_height(),
             self.cutter._upper_body.winfo_reqheight(),
         )
-        self.assertEqual(self.cutter.tree["xscrollcommand"], str(
-            self.cutter.tree["xscrollcommand"]
-        ))
+        self.assertTrue(self.cutter.tree["xscrollcommand"])
         self.assertNotEqual(
             self.cutter.run_button.grid_info()["row"],
             self.cutter.clear_button.grid_info()["row"],
@@ -79,8 +77,8 @@ class ResponsiveCutterTests(unittest.TestCase):
         self.resize(720, 600)
         self.assertIsInstance(self.cutter.links, tk.Text)
         self.assertEqual(str(self.cutter.quality_select["state"]), "readonly")
-        self.assertEqual(self.cutter.run_button["command"] != "", True)
-        self.assertEqual(self.cutter.pc_button["command"] != "", True)
+        self.assertTrue(self.cutter.run_button["command"])
+        self.assertTrue(self.cutter.pc_button["command"])
         self.assert_footer_visible()
 
 

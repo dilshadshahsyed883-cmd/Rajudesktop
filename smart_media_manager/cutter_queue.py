@@ -75,7 +75,7 @@ def download_source(job: dict, cache_root: Path, cancel: threading.Event, notify
             notify("Downloading", min(99, round(100 * downloaded / total)), "Downloading video")
 
     opts = {
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/best",
+        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/best/bv*[ext=mp4]/bv*",
         "outtmpl": str(folder / "source.%(ext)s"),
         "noplaylist": True, "continuedl": True, "overwrites": False,
         "merge_output_format": "mp4",

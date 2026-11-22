@@ -108,8 +108,8 @@ class YouTubeSnapshotTests(unittest.TestCase):
                     self.assertEqual(count, 2)
             self.assertEqual(log["downloads"], 1)
             self.assertEqual(len(log["formats"]), 1)
-            self.assertIn("bv*[ext=mp4]+ba[ext=m4a]", log["formats"][0])
-            self.assertIn("/bv*", log["formats"][0])
+            self.assertEqual(log["formats"][0], "bv[ext=mp4]/bv")
+            self.assertNotIn("+", log["formats"][0])
             self.assertEqual(len(list(root.glob("snapshot_*.jpg"))), 2)
 
     def test_no_accessible_video_format_reports_actionable_message(self):

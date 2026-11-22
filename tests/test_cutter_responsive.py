@@ -22,6 +22,10 @@ class ResponsiveCutterTests(unittest.TestCase):
 
     def tearDown(self):
         if hasattr(self, "root"):
+            # Other app tabs schedule periodic polling. Cancel those callbacks
+            # before destroying Tk so later test roots see no stale Tcl events.
+            for identifier in self.root.tk.call("after", "info"):
+                self.root.after_cancel(identifier)
             self.root.destroy()
 
     def resize(self, width, height):
@@ -43,21 +47,31 @@ class ResponsiveCutterTests(unittest.TestCase):
         self.assertGreater(self.cutter.tree.winfo_height(), 28)
 
     def test_wide_medium_and_narrow_reflow(self):
-        for width, height, expected in (
-            (1260, 900, "wide"),
-            (960, 700, "medium"),
-            (720, 600, "narrow"),
+        # On GitHub's Windows virtual display the window manager may clamp
+        # 1260px to the physical resolution: assert the *actual* tab width.
+        seen = set()
+        for width, height in (
+            (1260, 900),
+            (960, 700),
+            (720, 600),
         ):
             with self.subTest(size=(width, height)):
                 self.resize(width, height)
+                actual = self.cutter.winfo_width()
+                expected = ("wide" if actual >= 1130 else
+                            "medium" if actual >= 800 else
+                            "narrow" if actual >= 550 else "tiny")
                 self.assertEqual(self.cutter._layout_mode, expected)
+                seen.add(expected)
                 left = self.cutter._input_left.grid_info()
                 right = self.cutter._input_right.grid_info()
-                if expected == "narrow":
+                if expected in ("narrow", "tiny"):
                     self.assertNotEqual(left["row"], right["row"])
                 else:
                     self.assertEqual(left["row"], right["row"])
                 self.assert_footer_visible()
+        self.assertTrue(seen & {"narrow", "tiny"})
+        self.assertTrue(seen & {"medium", "wide"})
 
     def test_vertical_scroll_and_compact_action_grid(self):
         self.resize(660, 540)

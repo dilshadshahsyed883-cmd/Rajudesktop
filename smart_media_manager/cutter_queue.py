@@ -15,18 +15,22 @@ VIDEO_TYPES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".ts"}
 CLIP_QUALITIES = ("720p", "1080p")
 # A missing quality on old persisted jobs (or snapshot download jobs)
 # retains the old uncapped behavior.
-LEGACY_DOWNLOAD_FORMAT = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/best/bv*[ext=mp4]/bv*"
+LEGACY_DOWNLOAD_FORMAT = "bv[ext=mp4]/bv"
 
 
 def source_format(quality=None):
-    """Prefer the selected resolution, with a general fallback for availability."""
+    """Download ONLY a video-only stream, preferring the selected quality.
+
+    Strict bestvideo (bv) excludes audio tracks: no separate audio download
+    or FFmpeg merge. If YouTube only offers muxed formats, fail rather than
+    downloading audio unexpectedly.
+    """
     if quality is None:
         return LEGACY_DOWNLOAD_FORMAT
     if quality not in CLIP_QUALITIES:
         raise ValueError("Video quality must be 720p or 1080p")
     cap = "[height<=" + quality[:-1] + "]"
-    return (f"bv*{cap}[ext=mp4]+ba[ext=m4a]/b{cap}[ext=mp4]/"
-            f"bv*{cap}+ba/b{cap}/bv*{cap}/{LEGACY_DOWNLOAD_FORMAT}")
+    return f"bv{cap}[ext=mp4]/bv{cap}/{LEGACY_DOWNLOAD_FORMAT}"
 
 
 
@@ -98,7 +102,7 @@ def download_source(job: dict, cache_root: Path, cancel: threading.Event, notify
         "format": source_format(job.get("quality")),
         "outtmpl": str(folder / "source.%(ext)s"),
         "noplaylist": True, "continuedl": True, "overwrites": False,
-        "merge_output_format": "mp4",
+        # One video-only stream: no audio formats, no remux step.
         "progress_hooks": [progress_hook], "quiet": True,
     }
     if ffmpeg:
@@ -133,7 +137,9 @@ def cut_source(job: dict, source: Path, cancel: threading.Event, notify) -> tupl
         notify("Cutting", 100, "Skipped video shorter than requested clip duration")
         return 0, folder
     notify("Cutting", 0, f"Cutting {full_clips} full-length clips")
-    options = {}
+    # Smart Media Manager produces silent video clips, including for PC inputs.
+    # Standalone Video Clip Cutter keeps its existing audio behavior.
+    options = {"include_audio": False}
     if job.get("quality") is not None:
         if job["quality"] not in CLIP_QUALITIES:
             raise ValueError("Video quality must be 720p or 1080p")

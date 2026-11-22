@@ -1,9 +1,11 @@
 """Batch cutter tests: mixed sources, safe names, durable output folders, retry isolation."""
+import sys
 import tempfile
 import threading
 import queue
 from decimal import Decimal
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -44,12 +46,46 @@ class CutterQueueTests(unittest.TestCase):
                 new_job(str(source), "Local", "4", td, quality="4k")
 
     def test_download_source_quality_preference_and_legacy_fallback(self):
-        self.assertIn("[height<=720]", source_format("720p"))
-        self.assertIn("[height<=1080]", source_format("1080p"))
-        self.assertIn("bv*[ext=mp4]+ba[ext=m4a]", source_format())
+        self.assertIn("bv[height<=720]", source_format("720p"))
+        self.assertIn("bv[height<=1080]", source_format("1080p"))
+        self.assertEqual(source_format(), "bv[ext=mp4]/bv")
         self.assertNotIn("[height<=", source_format())
+        for quality in (None, "720p", "1080p"):
+            selected = source_format(quality)
+            self.assertNotIn("+", selected)  # never request separate audio
+            self.assertTrue(all(part.startswith("bv") for part in selected.split("/")))
+            self.assertNotIn("ba", selected)  # no bestaudio format
         with self.assertRaises(ValueError):
             source_format("2160p")
+
+    def test_download_video_only_uses_no_audio_or_merge_postprocessing(self):
+        with tempfile.TemporaryDirectory() as td:
+            job = new_job("https://www.youtube.com/watch?v=abc", "YouTube",
+                          "3", td, quality="720p")
+            seen = {}
+            class FakeYDL:
+                def __init__(self, opts):
+                    seen.update(opts)
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    return False
+                def extract_info(self, url, download):
+                    self_test.assertTrue(download)
+                    target = Path(seen["outtmpl"].replace("%(ext)s", "mp4"))
+                    target.write_bytes(b"silent video")
+                    return {"id": "abc"}
+            self_test = self
+            with patch.dict(sys.modules, {"yt_dlp": SimpleNamespace(YoutubeDL=FakeYDL)}), \
+                 patch("smart_media_manager.cutter_queue.ffmpeg_paths",
+                       return_value=(None, None)):
+                source = download_source(job, Path(td) / "cache",
+                                         threading.Event(), lambda *args: None)
+            self.assertTrue(source.is_file())
+            self.assertNotIn("+", seen["format"])
+            self.assertNotIn("merge_output_format", seen)
+            self.assertNotIn("postprocessors", seen)
+
 
     def test_cutter_output_height_selected_per_job(self):
         with tempfile.TemporaryDirectory() as td:
@@ -68,6 +104,7 @@ class CutterQueueTests(unittest.TestCase):
                         job, source, threading.Event(), lambda *event: None)
                 self.assertEqual(count, 1)
                 self.assertEqual(process.call_args.kwargs["output_height"], expected)
+                self.assertFalse(process.call_args.kwargs["include_audio"])
             legacy = new_job(str(source), "Local", "2", str(root))
             legacy.pop("quality")
             with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
@@ -78,6 +115,7 @@ class CutterQueueTests(unittest.TestCase):
                     step=Decimal("2"), total=Decimal("2"))
                 cut_source(legacy, source, threading.Event(), lambda *event: None)
             self.assertNotIn("output_height", process.call_args.kwargs)
+            self.assertFalse(process.call_args.kwargs["include_audio"])
 
     def test_keyword_validation_and_retry_folder(self):
         with tempfile.TemporaryDirectory() as td:

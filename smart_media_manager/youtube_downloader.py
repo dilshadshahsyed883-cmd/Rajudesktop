@@ -250,19 +250,24 @@ class YoutubeTab(ttk.Frame):
         self.cancel = threading.Event()
         self.snap_cancel = threading.Event()
         self.snap_pause = threading.Event()
+        self.snap_stop_queue = threading.Event()
+        self.snap_work_items = None
+        self.snap_active_id = None
         self.downloading = False
         self.snap_running = False
         self.running = False
         self.queue_file = (Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share")
                            / "SmartMediaManager" / "youtube_queue.json")
         self.jobs = self._read_queue()
+        self.snapshot_queue_file = self.queue_file.with_name("snapshot_queue.json")
+        self.snapshot_jobs = self._read_snapshot_queue()
         self.output = tk.StringVar(value=prefs.get("yt_output", str(Path.home() / "Documents" / "YouTube Downloads")))
         self.mode = tk.StringVar(value=prefs.get("yt_mode", "Full Video"))
         self.quality = tk.StringVar(value=prefs.get("yt_quality", "1080p"))
         self.video_format = tk.StringVar(value=prefs.get("yt_video_format", "MP4"))
         self.audio_format = tk.StringVar(value=prefs.get("yt_audio_format", "MP3"))
-        self.snapshot_url = tk.StringVar()
         self.snapshot_local = tk.StringVar()
+        self.snapshot_name = tk.StringVar()
         self.snapshot_output = tk.StringVar(value=prefs.get("yt_snap_output", str(Path.home() / "Documents" / "YouTube Snapshots")))
         self.interval = tk.StringVar(value="5")
         self.snap_format = tk.StringVar(value="JPG")
@@ -272,6 +277,7 @@ class YoutubeTab(ttk.Frame):
         self.end_time = tk.StringVar()
         self.status = tk.StringVar(value="Ready")
         self.snap_status = tk.StringVar(value="Ready")
+        self.snapshot_stats = tk.StringVar(value="")
         self.percent = tk.DoubleVar(value=0)
         self._build()
         self.after(150, self._poll)
@@ -295,6 +301,58 @@ class YoutubeTab(ttk.Frame):
         temp = self.queue_file.with_suffix(".tmp")
         temp.write_text(json.dumps(self.jobs[-500:], indent=2), encoding="utf-8")
         os.replace(temp, self.queue_file)
+
+    def _read_snapshot_queue(self):
+        try:
+            data = json.loads(self.snapshot_queue_file.read_text(encoding="utf-8"))
+            if not isinstance(data, list):
+                return []
+            required = ("id", "name", "output", "interval", "format",
+                        "quality", "resolution", "status")
+            jobs = [job for job in data[-500:] if isinstance(job, dict)
+                    and all(field in job for field in required)]
+            for job in jobs:
+                if job["status"] in ("Downloading", "Extracting", "Preparing"):
+                    job["status"] = "Queued"
+                    job["progress"] = 0
+            return jobs
+        except (OSError, ValueError):
+            return []
+
+    def _save_snapshot_queue(self):
+        self.snapshot_queue_file.parent.mkdir(parents=True, exist_ok=True)
+        temp = self.snapshot_queue_file.with_suffix(".tmp")
+        temp.write_text(json.dumps(self.snapshot_jobs, ensure_ascii=False, indent=2),
+                        encoding="utf-8")
+        os.replace(temp, self.snapshot_queue_file)
+
+    def _refresh_snapshot_queue(self):
+        selected = set(self.snapshot_tree.selection())
+        self.snapshot_tree.delete(*self.snapshot_tree.get_children())
+        for job in self.snapshot_jobs:
+            source = "PC" if job.get("local_video") else "YouTube"
+            self.snapshot_tree.insert(
+                "", "end", iid=job["id"],
+                values=(job["name"], source, str(job["interval"]) + "s",
+                        job["format"], str(round(job.get("progress", 0))) + "%",
+                        str(job["status"])[:105]))
+        for identifier in selected:
+            if self.snapshot_tree.exists(identifier):
+                self.snapshot_tree.selection_add(identifier)
+        waiting = sum(j["status"] == "Queued" for j in self.snapshot_jobs)
+        done = sum(j["status"] == "Completed" for j in self.snapshot_jobs)
+        self.snapshot_stats.set(
+            f"{len(self.snapshot_jobs)} total  •  {waiting} waiting  •  {done} completed")
+
+    def _set_snapshot_running(self, running):
+        self.snap_running = running
+        self.running = self.downloading or running
+        for control in (self.snapshot_start_button, self.snapshot_retry_button,
+                        self.snapshot_remove_button, self.snapshot_clear_button):
+            control.configure(state="disabled" if running else "normal")
+        self.snapshot_pause_button.configure(state="normal" if running else "disabled")
+        self.snapshot_cancel_button.configure(state="normal" if running else "disabled")
+        self.snapshot_stop_button.configure(state="normal" if running else "disabled")
 
     def _folder(self, parent, variable):
         row = ttk.Frame(parent)
@@ -355,14 +413,18 @@ class YoutubeTab(ttk.Frame):
         ttk.Label(dl, textvariable=self.status).pack(anchor="w")
         ttk.Label(dl, text="Only download content you have permission to use.",
                   style="Muted.TLabel").pack(anchor="w", pady=12)
-        ttk.Label(sn, text="YouTube URL (optional if using a video from PC)").pack(anchor="w")
-        ttk.Entry(sn, textvariable=self.snapshot_url).pack(fill="x", pady=6)
+        ttk.Label(sn, text="YouTube URLs (one per line; optional if using PC videos)").pack(anchor="w")
+        self.snapshot_links = tk.Text(sn, height=2, wrap="word")
+        self.snapshot_links.pack(fill="x", pady=6)
         ttk.Label(sn, text="Or select a local video — no download needed").pack(anchor="w")
         source_row = ttk.Frame(sn)
         source_row.pack(fill="x", pady=(5, 9))
         ttk.Entry(source_row, textvariable=self.snapshot_local).pack(side="left", fill="x", expand=True)
         ttk.Button(source_row, text="Choose Video from PC", command=self.choose_snapshot_video).pack(side="left", padx=(6, 0))
+        ttk.Button(source_row, text="Add PC Videos", command=self.add_snapshot_pc_batch).pack(side="left", padx=(6, 0))
         ttk.Button(source_row, text="Clear", command=lambda: self.snapshot_local.set("")).pack(side="left", padx=(6, 0))
+        ttk.Label(sn, text="Snapshot name (optional; used for folder and filenames)").pack(anchor="w")
+        ttk.Entry(sn, textvariable=self.snapshot_name).pack(fill="x", pady=(4, 9))
         ttk.Label(sn, text="Output folder").pack(anchor="w")
         self._folder(sn, self.snapshot_output)
         row = ttk.Frame(sn)
@@ -385,12 +447,52 @@ class YoutubeTab(ttk.Frame):
             ttk.Entry(row, textvariable=var, width=15).pack(side="left", padx=8)
         row = ttk.Frame(sn)
         row.pack(fill="x", pady=10)
-        ttk.Button(row, text="Start Snapshots", command=self.start_snapshots).pack(side="left")
-        ttk.Button(row, text="Pause / Resume", command=self.pause_snapshots).pack(side="left", padx=9)
-        ttk.Button(row, text="Stop", command=self.stop_snapshots).pack(side="left")
-        ttk.Label(sn, textvariable=self.snap_status).pack(anchor="w", pady=8)
-        ttk.Label(sn, text="Cached source and completed frames are reused on restart.",
-                  style="Muted.TLabel").pack(anchor="w", pady=8)
+        ttk.Button(row, text="Add to Queue", command=self.add_snapshots).pack(side="left")
+        ttk.Button(row, text="Add & Start", command=self.start_snapshots).pack(side="left", padx=6)
+        self.snapshot_start_button = ttk.Button(row, text="Start Queue", command=self.start_snapshot_queue)
+        self.snapshot_start_button.pack(side="left", padx=6)
+        self.snapshot_pause_button = ttk.Button(row, text="Pause / Resume", command=self.pause_snapshots, state="disabled")
+        self.snapshot_pause_button.pack(side="left", padx=6)
+        self.snapshot_cancel_button = ttk.Button(row, text="Cancel Current", command=self.cancel_snapshot_current, state="disabled")
+        self.snapshot_cancel_button.pack(side="left", padx=6)
+        self.snapshot_stop_button = ttk.Button(row, text="Stop Queue", command=self.stop_snapshots, state="disabled")
+        self.snapshot_stop_button.pack(side="left", padx=6)
+        ttk.Label(sn, textvariable=self.snap_status).pack(anchor="w", pady=(2, 6))
+        heading = ttk.Frame(sn)
+        heading.pack(fill="x", pady=(3, 3))
+        ttk.Label(heading, text="Snapshot processing queue", style="Section.TLabel").pack(side="left")
+        ttk.Label(heading, textvariable=self.snapshot_stats, style="Muted.TLabel").pack(side="right")
+        table_area = ttk.Frame(sn)
+        table_area.pack(fill="both", expand=True)
+        columns = ("name", "source", "interval", "format", "progress", "status")
+        self.snapshot_tree = ttk.Treeview(
+            table_area, columns=columns, show="headings", height=6,
+            selectmode="extended", style="Queue.Treeview")
+        for col, title, width in (
+            ("name", "Snapshot name", 220), ("source", "Input", 75),
+            ("interval", "Interval", 75), ("format", "Format", 65),
+            ("progress", "Progress", 90), ("status", "Status", 230)):
+            self.snapshot_tree.heading(col, text=title)
+            self.snapshot_tree.column(col, width=width, minwidth=60,
+                                      stretch=col in ("name", "status"))
+        self.snapshot_tree.pack(side="left", fill="both", expand=True)
+        scrollbar = ttk.Scrollbar(table_area, orient="vertical",
+                                 command=self.snapshot_tree.yview)
+        self.snapshot_tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        snap_actions = ttk.Frame(sn)
+        snap_actions.pack(fill="x", pady=(6, 3))
+        self.snapshot_retry_button = ttk.Button(
+            snap_actions, text="Retry Failed", command=self.retry_snapshot_failed)
+        self.snapshot_retry_button.pack(side="left")
+        self.snapshot_remove_button = ttk.Button(
+            snap_actions, text="Remove Completed", command=self.remove_completed_snapshots)
+        self.snapshot_remove_button.pack(side="left", padx=6)
+        self.snapshot_clear_button = ttk.Button(
+            snap_actions, text="Remove Selected", command=self.remove_selected_snapshots)
+        self.snapshot_clear_button.pack(side="left", padx=6)
+        ttk.Label(sn, text="One snapshot job at a time • named output folders • saved queue • cached YouTube sources",
+                  style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
         self.tree = ttk.Treeview(jobs, columns=("url", "mode", "pct", "status"), show="headings")
         for col, width in (("url", 450), ("mode", 120), ("pct", 70), ("status", 180)):
             self.tree.heading(col, text=col.title())
@@ -401,6 +503,7 @@ class YoutubeTab(ttk.Frame):
         ttk.Button(row, text="Retry Selected", command=self.retry_selected).pack(side="left")
         ttk.Button(row, text="Remove Completed", command=self.remove_completed).pack(side="left", padx=8)
         self._refresh()
+        self._refresh_snapshot_queue()
 
     def _refresh(self):
         self.tree.delete(*self.tree.get_children())

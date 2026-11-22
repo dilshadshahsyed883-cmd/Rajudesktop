@@ -5,11 +5,12 @@ import json
 import os
 import queue
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from smart_media_manager.cutter_queue import execute_job, new_job, safe_name
+from smart_media_manager.cutter_queue import cut_source, download_source, new_job
 
 
 def state_root() -> Path:
@@ -25,6 +26,7 @@ class BatchCutterTab(ttk.Frame):
         self.events = queue.Queue()
         self.cancel = threading.Event()
         self.running = False
+        self.work_items = None  # Thread-safe incoming queue for active runs.
         self.duration = tk.StringVar(value=prefs.get("cutter_duration", "4"))
         self.output = tk.StringVar(value=prefs.get("cutter_output", str(Path.home() / "Documents" / "ProcessedClips")))
         self.keyword = tk.StringVar()
@@ -46,7 +48,7 @@ class BatchCutterTab(ttk.Frame):
                 if not isinstance(item, dict) or not all(k in item for k in
                         ("id", "source", "kind", "keyword", "duration", "output", "status")):
                     continue
-                if item["status"] in ("Downloading", "Cutting"):
+                if item["status"] in ("Downloading", "Ready to Cut", "Cutting"):
                     item["status"] = "Queued"
                 result.append(item)
             return result
@@ -160,22 +162,28 @@ class BatchCutterTab(ttk.Frame):
         self.prefs.set("cutter_duration", self.duration.get())
 
     def _add(self, sources, kind):
-        if self.running:
-            return
         if not sources:
             return
         try:
+            # Never truncate an active job when new sources are added.
+            if len(self.jobs) + len(sources) > 500:
+                raise ValueError("Queue limit is 500 items. Remove completed items before adding more.")
             self._remember()
+            additions = []
             for i, source in enumerate(sources, 1):
                 prefix = self.keyword.get().strip()
                 if prefix and len(sources) > 1:
                     prefix = f"{prefix} {i}"
-                job = new_job(source, kind, self.duration.get(), self.output.get(), prefix)
-                self.jobs.append(job)
-            self.jobs = self.jobs[-500:]
+                additions.append(new_job(source, kind, self.duration.get(), self.output.get(), prefix))
+            self.jobs.extend(additions)
             self._save()
             self._refresh()
-            self.status.set(f"Added {len(sources)} {kind.lower()} video(s). Press Start Queue.")
+            if self.running and self.work_items is not None and not self.cancel.is_set():
+                for job in additions:
+                    self.work_items.put(job.copy())
+                self.status.set(f"Added {len(additions)} {kind.lower()} video(s) to the running queue.")
+            else:
+                self.status.set(f"Added {len(additions)} {kind.lower()} video(s). Press Start Queue.")
         except (OSError, ValueError) as exc:
             self.status.set(f"Could not add items: {exc}")
             messagebox.showerror("Queue inputs", str(exc))
@@ -215,8 +223,9 @@ class BatchCutterTab(ttk.Frame):
 
     def _set_running(self, running):
         self.running = running
-        for control in (self.run_button, self.pc_button, self.yt_button, self.retry_button,
-                        self.remove_button, self.clear_button, self.seconds):
+        # Keep source inputs and clip-duration presets usable during processing.
+        for control in (self.run_button, self.retry_button,
+                        self.remove_button, self.clear_button):
             control.configure(state="disabled" if running else "normal")
         self.cancel_button.configure(state="normal" if running else "disabled")
 
@@ -229,31 +238,80 @@ class BatchCutterTab(ttk.Frame):
             return
         self._remember()
         self.cancel.clear()
+        self.work_items = queue.Queue()
+        for job in pending:
+            self.work_items.put(job)
         self._set_running(True)
         self.status.set(f"Starting queue of {len(pending)} videos...")
         self.percent.set(0)
-        self.worker = threading.Thread(target=self._worker, args=(pending,), daemon=True)
+        self.worker = threading.Thread(target=self._worker, daemon=True)
         self.worker.start()
 
-    def _worker(self, pending):
+    def _cut_downloaded(self, job, source):
+        """Single cutting lane; downloaded sources are processed in arrival order."""
+        identity = job["id"]
+        if self.cancel.is_set():
+            # This job never started cutting; keep it retryable without an extra attempt.
+            self.events.put(("state", identity, "Queued"))
+            return False
+        self.events.put(("state", identity, "Cutting"))
+        def notify(stage, pct, info):
+            self.events.put(("progress", identity, stage, pct, info))
+        try:
+            count, folder = cut_source(job, source, self.cancel, notify)
+            self.events.put(("state", identity, "Completed", str(folder)))
+            return True
+        except Exception as exc:
+            status = "Cancelled" if self.cancel.is_set() else "Failed: " + str(exc)[:140]
+            self.events.put(("state", identity, status))
+            return False
+
+    def _worker(self):
+        """Download sequentially, overlapping downloads with one FFmpeg cutter.
+
+        Jobs appended while a cut is running enter the same live incoming queue.
+        The final finished event comes only after all submitted cuts finish.
+        """
+        submitted = []
+        started = 0
+        try:
+            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="smart-media-cut") as cuts:
+                while not self.cancel.is_set():
+                    try:
+                        job = self.work_items.get(timeout=0.12)
+                    except queue.Empty:
+                        if all(future.done() for future in submitted):
+                            break
+                        continue
+                    started += 1
+                    identity = job["id"]
+                    if job["kind"] == "YouTube":
+                        self.events.put(("state", identity, "Downloading"))
+                        def notify(stage, pct, info, job_id=identity):
+                            self.events.put(("progress", job_id, stage, pct, info))
+                        try:
+                            source = download_source(
+                                job, state_root() / "cutter_sources", self.cancel, notify)
+                        except Exception as exc:
+                            status = "Cancelled" if self.cancel.is_set() else "Failed: " + str(exc)[:140]
+                            self.events.put(("state", identity, status))
+                            continue
+                    else:
+                        source = Path(job["source"])
+                    if self.cancel.is_set():
+                        self.events.put(("state", identity, "Queued"))
+                        break
+                    self.events.put(("state", identity, "Ready to Cut"))
+                    submitted.append(cuts.submit(self._cut_downloaded, job, source))
+        except Exception as exc:
+            self.events.put(("worker_error", str(exc)[:200]))
         completed = 0
-        for job in pending:
-            if self.cancel.is_set():
-                break
-            identity = job["id"]
-            self.events.put(("state", identity, "Downloading" if job["kind"] == "YouTube" else "Cutting"))
-            def notify(stage, pct, info):
-                self.events.put(("progress", identity, stage, pct, info))
+        for future in submitted:
             try:
-                count, folder = execute_job(job, self.cancel, notify, state_root() / "cutter_sources")
-                self.events.put(("state", identity, "Completed", str(folder)))
-                completed += 1
+                completed += bool(future.result())
             except Exception as exc:
-                status = "Cancelled" if self.cancel.is_set() else "Failed: " + str(exc)[:140]
-                self.events.put(("state", identity, status))
-                if self.cancel.is_set():
-                    break
-        self.events.put(("finished", completed, len(pending), self.cancel.is_set()))
+                self.events.put(("worker_error", str(exc)[:200]))
+        self.events.put(("finished", completed, started, self.cancel.is_set()))
 
     def cancel_current(self):
         if self.running:
@@ -317,12 +375,19 @@ class BatchCutterTab(ttk.Frame):
                             self.tree.item(identifier, values=(
                                 job["keyword"], job["kind"], str(job["duration"]) + " s",
                                 str(round(percent)) + "%", stage))
+                elif kind == "worker_error":
+                    self.status.set("Worker error: " + item[1])
                 elif kind == "finished":
                     self._set_running(False)
+                    self.work_items = None
                     self._save()
                     self._refresh()
-                    self.status.set(f'Queue ended: {item[1]} completed in this run. ' +
-                                    ("Cancelled by user." if item[3] else "Check individual statuses."))
+                    if not item[3] and any(job["status"] == "Queued" for job in self.jobs):
+                        # An add may race with the worker's idle shutdown: do not lose it.
+                        self.start_queue()
+                    else:
+                        self.status.set(f'Queue ended: {item[1]} completed in this run. ' +
+                                        ("Cancelled by user." if item[3] else "Check individual statuses."))
         except queue.Empty:
             pass
         self.after(120, self._poll)

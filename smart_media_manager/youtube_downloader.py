@@ -1,6 +1,7 @@
 """YouTube download and snapshots tab for Smart Media Manager."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import queue
@@ -17,8 +18,6 @@ from tkinter import ttk, filedialog, messagebox
 
 QUALITIES = ("Best", "2160p", "1440p", "1080p", "720p", "480p", "360p")
 RESOLUTIONS = ("Original", "1080p", "720p", "480p")
-# Snapshots need a video stream only. YouTube may not offer muxed video+audio.
-SNAPSHOT_VIDEO_FORMAT = "bv*[ext=mp4]/bv*/best"
 
 def valid_url(url):
     try:
@@ -121,42 +120,33 @@ def snapshot_video(config, cancel, pause, notify):
         raise ValueError("End must follow start")
     notify("Reading local video" if local else "Reading YouTube video", 0, 0)
     if not local:
-        import yt_dlp
-        cache = folder / ".snapshot_cache"
-        cache.mkdir(parents=True, exist_ok=True)
-        opts = {"format": SNAPSHOT_VIDEO_FORMAT,
-                "outtmpl": str(cache / "%(id)s.%(ext)s"),
-                "noplaylist": True, "quiet": True, "continuedl": True,
-                "ffmpeg_location": str(Path(ffmpeg).parent)}
+        # Reuse the Video Clip Cutter downloader, including its format selection,
+        # FFmpeg configuration, resume behavior and completed-source cache.
+        # A stable ID lets snapshots reuse the same source after a restart without
+        # mixing different URLs together in the shared snapshot cache.
+        from smart_media_manager.cutter_queue import download_source
+        url = config["url"].strip()
+        source_job = {
+            "id": hashlib.sha256(url.encode("utf-8")).hexdigest()[:24],
+            "source": url,
+        }
+        if cancel.is_set():
+            return 0
         try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(config["url"], download=False)
-                if not info or not info.get("id"):
-                    raise RuntimeError("Could not identify the YouTube video for snapshots")
-                video_id = str(info["id"])
-                # yt-dlp may choose a video-only MP4/WebM stream, which FFmpeg
-                # can decode without needing an audio track or a mux step.
-                source = next((p for p in cache.glob(video_id + ".*")
-                               if p.is_file() and p.stat().st_size > 0
-                               and p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov", ".m4v", ".ts")), None)
-                if source is None:
-                    if cancel.is_set():
-                        return 0
-                    notify("Downloading snapshot source", 0, 0)
-                    ydl.extract_info(config["url"], download=True)
-                    source = next((p for p in cache.glob(video_id + ".*")
-                                   if p.is_file() and p.stat().st_size > 0
-                                   and p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov", ".m4v", ".ts")), None)
+            source = download_source(
+                source_job, folder / ".snapshot_cache", cancel,
+                lambda stage, percent, detail:
+                    notify(f"{detail} ({percent}%)", 0, 0))
         except Exception as exc:
             if "Requested format is not available" in str(exc):
                 raise RuntimeError(
-                    "YouTube did not provide an accessible video format for snapshots. "
-                    "Update yt-dlp and verify this video's availability; some videos "
-                    "require sign-in or additional YouTube access. Alternatively use "
-                    "'Choose Video from PC'.") from exc
+                    "YouTube did not provide an accessible video format. "
+                    "Snapshots use the same download engine as Video Clip Cutter. "
+                    "Try an updated yt-dlp or a different accessible video, "
+                    "or use 'Choose Video from PC'.") from exc
             raise
-        if source is None:
-            raise RuntimeError("Source video missing after download")
+        if cancel.is_set():
+            return 0
     probe = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration",
                             "-of", "default=noprint_wrappers=1:nokey=1", str(source)],
                            capture_output=True, text=True, timeout=40, check=True)

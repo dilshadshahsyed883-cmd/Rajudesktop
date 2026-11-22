@@ -584,58 +584,170 @@ class YoutubeTab(ttk.Frame):
         if chosen:
             self.snapshot_local.set(chosen)
 
-    def start_snapshots(self):
-        if self.snap_running:
-            return
-        local = self.snapshot_local.get().strip()
-        if not local and not valid_url(self.snapshot_url.get()):
-            messagebox.showerror("Source", "Choose a PC video or enter a valid YouTube URL")
-            return
-        if local and (not Path(local).is_file() or Path(local).suffix.lower() not in
-                      (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".ts")):
-            messagebox.showerror("Source", "Selected PC video is missing or unsupported")
+    def add_snapshot_pc_batch(self):
+        chosen = filedialog.askopenfilenames(
+            title="Add multiple PC videos to snapshot queue", filetypes=[
+                ("Video files", "*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.wmv *.ts"),
+                ("All files", "*.*")])
+        if chosen:
+            self._queue_snapshots(locals=list(chosen))
+
+    def _queue_snapshots(self, locals=None, start=False):
+        """Freeze all settings for each newly queued source, even while running."""
+        if locals is None:
+            local = self.snapshot_local.get().strip()
+            if local:
+                locals = [local]
+                urls = []
+            else:
+                locals = []
+                urls = [s.strip() for s in self.snapshot_links.get("1.0", "end").splitlines()
+                        if s.strip()]
+        else:
+            urls = []
+        sources = [("local_video", source) for source in locals]
+        sources += [("url", url) for url in urls]
+        if not sources:
+            messagebox.showerror("Snapshot source", "Choose PC videos or paste YouTube URLs")
             return
         try:
-            assert 1 <= int(self.interval.get()) <= 3600
-            assert 1 <= int(self.snap_quality.get()) <= 100
-            start = timestamp(self.start_time.get())
-            end = timestamp(self.end_time.get()) if self.end_time.get().strip() else None
-            if end is not None and end <= start:
-                raise ValueError("End time must follow start")
-        except (AssertionError, ValueError):
-            messagebox.showerror("Options", "Check interval, quality and optional start/end times")
+            if len(self.snapshot_jobs) + len(sources) > 500:
+                raise ValueError("Snapshot queue limit is 500 items. Remove old jobs first.")
+            base = {
+                "output": self.snapshot_output.get(), "interval": self.interval.get(),
+                "format": self.snap_format.get(), "quality": self.snap_quality.get(),
+                "resolution": self.resolution.get(), "start": self.start_time.get(),
+                "end": self.end_time.get(),
+            }
+            name = self.snapshot_name.get().strip()
+            additions = []
+            for index, (kind, source) in enumerate(sources, 1):
+                config = dict(base)
+                config.update({"local_video": "", "url": "", "name":
+                               f"{name} {index}" if name and len(sources) > 1 else name})
+                config[kind] = source
+                additions.append(new_snapshot_job(config))
+            self.prefs.set("yt_snap_output", self.snapshot_output.get())
+            self.snapshot_jobs.extend(additions)
+            self._save_snapshot_queue()
+            self._refresh_snapshot_queue()
+            if not locals:
+                self.snapshot_links.delete("1.0", "end")
+            if self.snap_running and self.snap_work_items is not None and not self.snap_stop_queue.is_set():
+                for job in additions:
+                    self.snap_work_items.put(job.copy())
+                self.snap_status.set(f"Added {len(additions)} job(s) to running snapshot queue")
+            else:
+                self.snap_status.set(f"Added {len(additions)} snapshot job(s) to queue")
+                if start and not self.snap_running:
+                    self.start_snapshot_queue()
+        except (ValueError, OSError, TypeError) as exc:
+            messagebox.showerror("Snapshot queue", str(exc))
+
+    def add_snapshots(self):
+        self._queue_snapshots()
+
+    def start_snapshots(self):
+        # Preserve the original quick-start action, now adding to a durable queue.
+        self._queue_snapshots(start=True)
+
+    def start_snapshot_queue(self):
+        if self.snap_running:
             return
-        self.prefs.set("yt_snap_output", self.snapshot_output.get())
+        pending = [job.copy() for job in self.snapshot_jobs if job["status"] == "Queued"]
+        if not pending:
+            messagebox.showinfo("Snapshot queue", "No queued snapshot jobs")
+            return
         self.snap_cancel.clear()
+        self.snap_stop_queue.clear()
         self.snap_pause.clear()
-        self.snap_running = self.running = True
-        config = {"url": self.snapshot_url.get(), "local_video": local, "output": self.snapshot_output.get(),
-                  "interval": self.interval.get(), "format": self.snap_format.get(),
-                  "quality": self.snap_quality.get(), "resolution": self.resolution.get(),
-                  "start": self.start_time.get(), "end": self.end_time.get()}
-        def work():
+        self.snap_work_items = queue.Queue()
+        for job in pending:
+            self.snap_work_items.put(job)
+        self._set_snapshot_running(True)
+        self.snap_status.set(f"Starting snapshot queue: {len(pending)} item(s)")
+        threading.Thread(target=self._snapshot_worker, daemon=True,
+                         name="snapshot-queue").start()
+
+    def _snapshot_worker(self):
+        """Process one snapshot job at a time; allow additions during a running job."""
+        completed = 0
+        while not self.snap_stop_queue.is_set():
             try:
-                count = snapshot_video(config, self.snap_cancel, self.snap_pause,
-                                       lambda desc, i, n: self.events.put(("frame", desc, i, n)))
-                status = "Completed: " + str(count) + " frames"
+                job = self.snap_work_items.get(timeout=0.15)
+            except queue.Empty:
+                break
+            identifier = job["id"]
+            self.snap_cancel.clear()
+            self.events.put(("snap_state", identifier, "Preparing"))
+            def notify(detail, index, total, job_id=identifier):
+                self.events.put(("snap_progress", job_id, detail, index, total))
+            try:
+                frames = snapshot_video(job, self.snap_cancel, self.snap_pause, notify)
+                if self.snap_cancel.is_set():
+                    state = "Cancelled"
+                else:
+                    completed += 1
+                    state = "Completed"
+                self.events.put(("snap_done", identifier, state, frames))
             except Exception as exc:
-                status = "Failed: " + str(exc)
-            self.events.put(("snapshot_done", status))
-        threading.Thread(target=work, daemon=True).start()
-        self.snap_status.set("Preparing local snapshots..." if local else "Preparing YouTube snapshots...")
+                state = ("Cancelled" if self.snap_cancel.is_set()
+                         else "Failed: " + str(exc)[:160])
+                self.events.put(("snap_done", identifier, state, 0))
+        self.events.put(("snap_finished", completed, self.snap_stop_queue.is_set()))
 
     def pause_snapshots(self):
         if self.snap_running:
             if self.snap_pause.is_set():
                 self.snap_pause.clear()
-                self.snap_status.set("Resuming...")
+                self.snap_status.set("Resuming snapshot queue...")
             else:
                 self.snap_pause.set()
-                self.snap_status.set("Paused")
+                self.snap_status.set("Pausing snapshot extraction...")
+
+    def cancel_snapshot_current(self):
+        if self.snap_running:
+            self.snap_cancel.set()
+            self.snap_pause.clear()
+            self.snap_status.set("Cancelling current snapshot; next queued item will continue")
 
     def stop_snapshots(self):
-        self.snap_cancel.set()
-        self.snap_pause.clear()
+        if self.snap_running:
+            self.snap_stop_queue.set()
+            self.snap_cancel.set()
+            self.snap_pause.clear()
+            self.snap_status.set("Stopping snapshot queue; pending jobs remain saved")
+
+    def retry_snapshot_failed(self):
+        if self.snap_running:
+            return
+        changed = False
+        for job in self.snapshot_jobs:
+            if str(job["status"]).startswith(("Failed", "Cancelled")):
+                job["status"] = "Queued"
+                job["progress"] = 0
+                changed = True
+        if changed:
+            self._save_snapshot_queue()
+            self._refresh_snapshot_queue()
+            self.snap_status.set("Failed/cancelled snapshot jobs requeued")
+
+    def remove_completed_snapshots(self):
+        if self.snap_running:
+            return
+        self.snapshot_jobs = [job for job in self.snapshot_jobs
+                              if job["status"] != "Completed"]
+        self._save_snapshot_queue()
+        self._refresh_snapshot_queue()
+
+    def remove_selected_snapshots(self):
+        if self.snap_running:
+            return
+        selected = set(self.snapshot_tree.selection())
+        self.snapshot_jobs = [job for job in self.snapshot_jobs
+                              if job["id"] not in selected]
+        self._save_snapshot_queue()
+        self._refresh_snapshot_queue()
 
     def _poll(self):
         try:
@@ -664,13 +776,54 @@ class YoutubeTab(ttk.Frame):
                     self._save()
                     self._refresh()
                     self._next()
-                elif item[0] == "frame":
-                    _, name, i, n = item
-                    self.snap_status.set(str(i) + " / " + str(n) + " — " + name)
-                elif item[0] == "snapshot_done":
-                    self.snap_running = False
-                    self.running = self.downloading
-                    self.snap_status.set(item[1])
+                elif item[0] == "snap_state":
+                    _, identifier, stage = item
+                    job = next((j for j in self.snapshot_jobs if j["id"] == identifier), None)
+                    if job:
+                        job["status"] = stage
+                        self.snap_active_id = identifier
+                        self._save_snapshot_queue()
+                        self._refresh_snapshot_queue()
+                elif item[0] == "snap_progress":
+                    _, identifier, detail, i, n = item
+                    job = next((j for j in self.snapshot_jobs if j["id"] == identifier), None)
+                    if job:
+                        job["status"] = "Extracting" if n else "Downloading"
+                        job["progress"] = round(i * 100 / n, 1) if n else 0
+                        self.snap_status.set(job["name"] + " — " + str(detail))
+                        if self.snapshot_tree.exists(identifier):
+                            self.snapshot_tree.item(
+                                identifier,
+                                values=(job["name"], "PC" if job.get("local_video") else "YouTube",
+                                        str(job["interval"]) + "s", job["format"],
+                                        str(round(job["progress"])) + "%", job["status"]))
+                        if n and (i % 25 == 0 or i == n):
+                            self._save_snapshot_queue()
+                elif item[0] == "snap_done":
+                    _, identifier, stage, frames = item
+                    job = next((j for j in self.snapshot_jobs if j["id"] == identifier), None)
+                    if job:
+                        job["status"] = stage
+                        job["frames"] = frames
+                        if stage == "Completed":
+                            job["progress"] = 100
+                        self.snap_status.set(f"{job['name']} — {stage} ({frames} frames)")
+                        self._save_snapshot_queue()
+                        self._refresh_snapshot_queue()
+                elif item[0] == "snap_finished":
+                    _, completed, stopped = item
+                    self._set_snapshot_running(False)
+                    self.snap_work_items = None
+                    self.snap_active_id = None
+                    self._save_snapshot_queue()
+                    self._refresh_snapshot_queue()
+                    if not stopped and any(j["status"] == "Queued" for j in self.snapshot_jobs):
+                        # An add can race with the worker's empty-queue check.
+                        self.start_snapshot_queue()
+                    else:
+                        self.snap_status.set(
+                            f"Snapshot queue ended: {completed} completed this run" +
+                            ("; stopped by user" if stopped else ""))
         except queue.Empty:
             pass
         self.after(150, self._poll)

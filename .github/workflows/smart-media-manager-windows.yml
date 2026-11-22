@@ -9,6 +9,7 @@ on:
       - "launch_smart_media_manager.py"
       - "tests/test_smart_media_manager.py"
       - "tests/test_cutter_queue.py"
+      - "tests/test_cutter_responsive.py"
       - "tests/test_snapshots_local.py"
       - "SMART_MEDIA_MANAGER.md"
       - ".github/workflows/smart-media-manager-windows.yml"
@@ -18,6 +19,7 @@ on:
       - "launch_smart_media_manager.py"
       - "tests/test_smart_media_manager.py"
       - "tests/test_cutter_queue.py"
+      - "tests/test_cutter_responsive.py"
       - "tests/test_snapshots_local.py"
       - "SMART_MEDIA_MANAGER.md"
       - ".github/workflows/smart-media-manager-windows.yml"
@@ -62,6 +64,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Downloader tests failed' }
           python -m unittest discover -s tests -p test_cutter_queue.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Batch cutter tests failed' }
+          python -m unittest discover -s tests -p test_cutter_responsive.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Responsive cutter GUI tests failed' }
           python -m unittest discover -s tests -p test_snapshots_local.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Local snapshot tests failed' }
           python -m compileall -q smart_media_manager

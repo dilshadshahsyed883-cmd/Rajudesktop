@@ -99,11 +99,13 @@ class BatchCutterTab(ttk.Frame):
         for s in (2, 4, 5, 10):
             ttk.Button(line, text=f"{s}s", width=4,
                        command=lambda n=s: self.duration.set(str(n))).pack(side="left", padx=2)
-        ttk.Label(line, text="Video quality").pack(side="left", padx=(15, 6))
+        ttk.Label(line, text="YouTube quality").pack(side="left", padx=(15, 6))
         self.quality_select = ttk.Combobox(
             line, textvariable=self.quality, values=("720p", "1080p"),
             width=8, state="readonly")
         self.quality_select.pack(side="left")
+        ttk.Label(settings, text="Fast Copy: no re-encoding. Cuts follow keyframes; PC files keep original resolution.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(7, 0))
         output = ttk.Frame(settings)
         output.pack(fill="x", pady=(9, 0))
         ttk.Label(output, text="Output").pack(side="left")

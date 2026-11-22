@@ -466,7 +466,7 @@ class YoutubeTab(ttk.Frame):
         table_area.pack(fill="both", expand=True)
         columns = ("name", "source", "interval", "format", "progress", "status")
         self.snapshot_tree = ttk.Treeview(
-            table_area, columns=columns, show="headings", height=6,
+            table_area, columns=columns, show="headings", height=4,
             selectmode="extended", style="Queue.Treeview")
         for col, title, width in (
             ("name", "Snapshot name", 220), ("source", "Input", 75),
@@ -633,6 +633,10 @@ class YoutubeTab(ttk.Frame):
             self._refresh_snapshot_queue()
             if not locals:
                 self.snapshot_links.delete("1.0", "end")
+            elif locals == [self.snapshot_local.get().strip()]:
+                # Avoid unintentionally re-adding the previous local video
+                # when the user next pastes a YouTube URL.
+                self.snapshot_local.set("")
             if self.snap_running and self.snap_work_items is not None and not self.snap_stop_queue.is_set():
                 for job in additions:
                     self.snap_work_items.put(job.copy())

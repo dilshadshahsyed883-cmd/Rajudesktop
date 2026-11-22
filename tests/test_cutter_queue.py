@@ -8,7 +8,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from smart_media_manager.cutter_queue import (
-    VIDEO_TYPES, cut_source, download_source, execute_job, job_output, new_job, safe_name
+    VIDEO_TYPES, cut_source, download_source, execute_job, job_output, new_job,
+    safe_name, source_format
 )
 from smart_media_manager.cutter_queue_ui import BatchCutterTab
 from video_clip_cutter.core import Job
@@ -30,6 +31,53 @@ class CutterQueueTests(unittest.TestCase):
             self.assertEqual(x["status"], "Queued")
             self.assertEqual(x["duration"], "4")
             self.assertTrue(job_output(x).parent.name == "output")
+
+    def test_new_queue_quality_defaults_and_validation(self):
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "source.mp4"
+            source.write_bytes(b"video")
+            default = new_job(str(source), "Local", "4", td)
+            hd = new_job(str(source), "Local", "4", td, quality="1080p")
+            self.assertEqual(default["quality"], "720p")
+            self.assertEqual(hd["quality"], "1080p")
+            with self.assertRaises(ValueError):
+                new_job(str(source), "Local", "4", td, quality="4k")
+
+    def test_download_source_quality_preference_and_legacy_fallback(self):
+        self.assertIn("[height<=720]", source_format("720p"))
+        self.assertIn("[height<=1080]", source_format("1080p"))
+        self.assertIn("bv*[ext=mp4]+ba[ext=m4a]", source_format())
+        self.assertNotIn("[height<=", source_format())
+        with self.assertRaises(ValueError):
+            source_format("2160p")
+
+    def test_cutter_output_height_selected_per_job(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / "sample.mp4"
+            source.write_bytes(b"dummy")
+            for label, expected in (("720p", 720), ("1080p", 1080)):
+                job = new_job(str(source), "Local", "2", str(root), quality=label)
+                with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
+                     patch("smart_media_manager.cutter_queue.process_job",
+                           return_value=[Path("part.mp4")]) as process:
+                    prepare.return_value = Job(
+                        source=source, folder=job_output(job), name=job["keyword"],
+                        step=Decimal("2"), total=Decimal("2"))
+                    count, _ = cut_source(
+                        job, source, threading.Event(), lambda *event: None)
+                self.assertEqual(count, 1)
+                self.assertEqual(process.call_args.kwargs["output_height"], expected)
+            legacy = new_job(str(source), "Local", "2", str(root))
+            legacy.pop("quality")
+            with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
+                 patch("smart_media_manager.cutter_queue.process_job",
+                       return_value=[Path("part.mp4")]) as process:
+                prepare.return_value = Job(
+                    source=source, folder=job_output(legacy), name=legacy["keyword"],
+                    step=Decimal("2"), total=Decimal("2"))
+                cut_source(legacy, source, threading.Event(), lambda *event: None)
+            self.assertNotIn("output_height", process.call_args.kwargs)
 
     def test_keyword_validation_and_retry_folder(self):
         with tempfile.TemporaryDirectory() as td:
@@ -191,6 +239,7 @@ class CutterQueueTests(unittest.TestCase):
                 self.value = value
         tab.keyword = Field("Live")
         tab.duration = Field("3")
+        tab.quality = Field("720p")
         tab.output = Field("/tmp")
         tab.status = Field("")
         tab._remember = lambda: None

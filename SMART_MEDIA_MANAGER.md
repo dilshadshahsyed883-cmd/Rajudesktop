@@ -10,6 +10,12 @@ One Windows desktop program with three separate native tabs. Uses the existing t
 
 **Tab 3 — YouTube Downloader:** Full video, video-only and audio-only modes; multiple URLs, selectable quality/format, progress and saved retryable queue. A Snapshots subtab now accepts either one YouTube URL **or a video selected directly from the PC** using "Choose Video from PC" (local files are processed without a network download). It saves JPG/PNG frames on an adjustable interval, with optional time range, quality, resolution, cache/restart support and pause/resume. Local video snapshots go into a video-named subfolder to avoid collisions. Clear the PC selection to switch back to the YouTube URL. Requires access to the video and compliance with platform rules. YouTube anti-bot challenges may prevent downloads.
 
+## YouTube snapshot source format reliability
+
+Snapshots accept video-only streams as well as combined video/audio, preferring MP4 when available but falling back to other FFmpeg-supported containers such as WebM. Audio is not needed for frame extraction. Previously the fixed `best[ext=mp4]/best` selector could reject videos available only in separate video-only formats. Successful snapshot source downloads continue to use the per-video cache and completed frames are reused.
+
+If YouTube provides **no accessible video formats** (for example because of sign-in, account restrictions, token/client requirements, or an outdated yt-dlp build), the app reports an actionable message. No format selector can guarantee access when the platform does not expose a downloadable stream. Local PC video snapshots remain available without YouTube.
+
 ## Windows download and run
 
 From GitHub Releases download **SmartMediaManager.exe** directly from the latest **V3 Single Portable EXE** release. Save it anywhere (for example D:\\Apps\\SmartMediaManager.exe), then double-click. There is **no ZIP to extract and no adjacent support folder**. The single EXE embeds Python runtime, FFmpeg, FFprobe, yt-dlp and all three integrated tool modules. The PyInstaller one-file bootloader automatically extracts temporary internal components at runtime; user data and output clips are saved to the selected output folder and persistent settings/queue live under LOCALAPPDATA. The EXE is not an installer; it does not modify other apps. First launch may be slower because the EXE unpacks its embedded files.

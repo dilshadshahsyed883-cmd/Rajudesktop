@@ -415,8 +415,12 @@ class SmartMediaManager(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Smart Media Manager — Rajudesktop")
-        self.geometry("1260x900")
-        self.minsize(1020, 760)
+        # Fit the initial window to the available desktop (including smaller
+        # laptop screens). The cutter reflows and scrolls below this size.
+        self.minsize(600, 440)
+        initial_width = max(600, min(1260, self.winfo_screenwidth() - 60))
+        initial_height = max(440, min(900, self.winfo_screenheight() - 100))
+        self.geometry(f"{initial_width}x{initial_height}")
         self.configure(bg=PALE)
         style = ttk.Style(self)
         style.theme_use("clam")

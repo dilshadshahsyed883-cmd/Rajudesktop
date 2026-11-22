@@ -65,93 +65,368 @@ class BatchCutterTab(ttk.Frame):
         os.replace(temp, self.queue_path)
 
     def _build(self):
-        ttk.Label(self, text="Batch Video Clip Cutter", style="Heading.TLabel").pack(anchor="w")
-        ttk.Label(self, text="Local videos + YouTube URLs  •  Download automatically  •  Cut one-by-one  •  Resume saved queue",
-                  style="Muted.TLabel").pack(anchor="w", pady=(2, 12))
+        """Keep the queue/actions visible; scroll and reflow only the inputs."""
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(2, weight=1)
 
-        inputs = ttk.Frame(self)
-        inputs.pack(fill="x")
-        left = ttk.LabelFrame(inputs, text="1  •  Videos from PC", padding=12)
-        left.pack(side="left", fill="both", expand=True, padx=(0, 7))
-        ttk.Label(left, text="Choose multiple local videos in one selection").pack(anchor="w", pady=(2, 9))
-        self.pc_button = ttk.Button(left, text="＋  Add Videos from PC", command=self.add_pc, style="Primary.TButton")
+        # The upper controls have their own scrollable viewport. When screen
+        # height shrinks, the queue and bottom action bar never disappear.
+        self._upper_canvas = tk.Canvas(
+            self, background="#f3f6fb", borderwidth=0, highlightthickness=0,
+            height=350,
+        )
+        self._upper_canvas.grid(row=0, column=0, sticky="ew")
+        upper_scrollbar = ttk.Scrollbar(
+            self, orient="vertical", command=self._upper_canvas.yview,
+        )
+        upper_scrollbar.grid(row=0, column=1, sticky="ns")
+        self._upper_canvas.configure(yscrollcommand=upper_scrollbar.set)
+        self._upper_body = ttk.Frame(self._upper_canvas)
+        self._upper_body.columnconfigure(0, weight=1)
+        self._upper_window = self._upper_canvas.create_window(
+            (0, 0), anchor="nw", window=self._upper_body,
+        )
+        self._upper_body.bind("<Configure>", self._update_scroll_region)
+        self._upper_canvas.bind("<Configure>", self._size_upper_body)
+
+        ttk.Label(
+            self._upper_body, text="Batch Video Clip Cutter", style="Heading.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        self._subtitle = ttk.Label(
+            self._upper_body,
+            text="Local videos + YouTube URLs  •  Download automatically  •  Cut one-by-one  •  Resume saved queue",
+            style="Muted.TLabel",
+        )
+        self._subtitle.grid(row=1, column=0, sticky="w", pady=(2, 12))
+
+        self._inputs = ttk.Frame(self._upper_body)
+        self._inputs.grid(row=2, column=0, sticky="ew")
+        self._input_left = ttk.LabelFrame(
+            self._inputs, text="1  •  Videos from PC", padding=12,
+        )
+        ttk.Label(
+            self._input_left, text="Choose multiple local videos in one selection",
+        ).pack(anchor="w", pady=(2, 9))
+        self.pc_button = ttk.Button(
+            self._input_left, text="＋  Add Videos from PC",
+            command=self.add_pc, style="Primary.TButton",
+        )
         self.pc_button.pack(anchor="w", pady=(0, 6))
-        ttk.Label(left, text="Supports MP4, MOV, MKV, WEBM and more", style="Muted.TLabel").pack(anchor="w")
-        right = ttk.LabelFrame(inputs, text="2  •  YouTube videos", padding=12)
-        right.pack(side="left", fill="both", expand=True, padx=(7, 0))
-        ttk.Label(right, text="Paste one YouTube URL per line").pack(anchor="w")
-        self.links = tk.Text(right, height=3, wrap="word", font=("Segoe UI", 9),
-                             relief="solid", borderwidth=1, background="#ffffff")
+        ttk.Label(
+            self._input_left, text="Supports MP4, MOV, MKV, WEBM and more",
+            style="Muted.TLabel",
+        ).pack(anchor="w")
+
+        self._input_right = ttk.LabelFrame(
+            self._inputs, text="2  •  YouTube videos", padding=12,
+        )
+        ttk.Label(
+            self._input_right, text="Paste one YouTube URL per line",
+        ).pack(anchor="w")
+        self.links = tk.Text(
+            self._input_right, height=3, wrap="word", font=("Segoe UI", 9),
+            relief="solid", borderwidth=1, background="#ffffff",
+        )
         self.links.pack(fill="x", pady=(5, 6))
-        self.yt_button = ttk.Button(right, text="＋  Add Links to Queue", command=self.add_links)
+        self.yt_button = ttk.Button(
+            self._input_right, text="＋  Add Links to Queue", command=self.add_links,
+        )
         self.yt_button.pack(anchor="e")
 
-        settings = ttk.LabelFrame(self, text="3  •  Settings for new queue items", padding=10)
-        settings.pack(fill="x", pady=(12, 7))
-        line = ttk.Frame(settings)
-        line.pack(fill="x")
-        ttk.Label(line, text="Keyword (optional)").pack(side="left")
-        ttk.Entry(line, textvariable=self.keyword, width=27).pack(side="left", padx=(7, 14))
-        ttk.Label(line, text="Clip seconds").pack(side="left")
-        self.seconds = ttk.Spinbox(line, textvariable=self.duration, from_=0.1, to=3600,
-                                   increment=0.5, width=8)
-        self.seconds.pack(side="left", padx=(8, 12))
-        for s in (2, 4, 5, 10):
-            ttk.Button(line, text=f"{s}s", width=4,
-                       command=lambda n=s: self.duration.set(str(n))).pack(side="left", padx=2)
-        ttk.Label(line, text="YouTube quality").pack(side="left", padx=(15, 6))
-        self.quality_select = ttk.Combobox(
-            line, textvariable=self.quality, values=("720p", "1080p"),
-            width=8, state="readonly")
-        self.quality_select.pack(side="left")
-        ttk.Label(settings, text="Fast Copy: no re-encoding. Cuts follow keyframes; PC files keep original resolution.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(7, 0))
-        output = ttk.Frame(settings)
-        output.pack(fill="x", pady=(9, 0))
-        ttk.Label(output, text="Output").pack(side="left")
-        ttk.Entry(output, textvariable=self.output).pack(side="left", fill="x", expand=True, padx=(9, 7))
-        ttk.Button(output, text="Browse", command=self.choose_output).pack(side="left")
-        ttk.Button(output, text="Open Folder", command=self.open_output).pack(side="left", padx=(7, 0))
+        settings = ttk.LabelFrame(
+            self._upper_body, text="3  •  Settings for new queue items", padding=10,
+        )
+        settings.grid(row=3, column=0, sticky="ew", pady=(12, 7))
+        settings.columnconfigure(0, weight=1)
+        self._settings_controls = ttk.Frame(settings)
+        self._settings_controls.grid(row=0, column=0, sticky="ew")
 
-        heading = ttk.Frame(self)
-        heading.pack(fill="x", pady=(11, 5))
-        ttk.Label(heading, text="4  •  Processing queue", style="Section.TLabel").pack(side="left")
-        ttk.Label(heading, textvariable=self.stats, style="Muted.TLabel").pack(side="right")
+        keyword_group = ttk.Frame(self._settings_controls)
+        ttk.Label(keyword_group, text="Keyword (optional)").pack(anchor="w")
+        ttk.Entry(
+            keyword_group, textvariable=self.keyword, width=22,
+        ).pack(fill="x", pady=(5, 0))
+
+        duration_group = ttk.Frame(self._settings_controls)
+        ttk.Label(duration_group, text="Clip seconds").pack(anchor="w")
+        self.seconds = ttk.Spinbox(
+            duration_group, textvariable=self.duration, from_=0.1,
+            to=3600, increment=0.5, width=8,
+        )
+        self.seconds.pack(anchor="w", pady=(5, 0))
+
+        presets_group = ttk.Frame(self._settings_controls)
+        ttk.Label(presets_group, text="Quick duration").pack(anchor="w")
+        preset_buttons = ttk.Frame(presets_group)
+        preset_buttons.pack(anchor="w", pady=(5, 0))
+        for seconds in (2, 4, 5, 10):
+            ttk.Button(
+                preset_buttons, text=f"{seconds}s", width=4,
+                command=lambda value=seconds: self.duration.set(str(value)),
+            ).pack(side="left", padx=(0, 4))
+
+        quality_group = ttk.Frame(self._settings_controls)
+        ttk.Label(quality_group, text="YouTube quality").pack(anchor="w")
+        self.quality_select = ttk.Combobox(
+            quality_group, textvariable=self.quality,
+            values=("720p", "1080p"), width=9, state="readonly",
+        )
+        self.quality_select.pack(anchor="w", pady=(5, 0))
+        self._setting_panels = (
+            keyword_group, duration_group, presets_group, quality_group,
+        )
+
+        self._fast_copy_note = ttk.Label(
+            settings,
+            text="Fast Copy: no re-encoding. Cuts follow keyframes; PC files keep original resolution.",
+            style="Muted.TLabel",
+        )
+        self._fast_copy_note.grid(
+            row=1, column=0, sticky="w", pady=(9, 0),
+        )
+
+        self._output_layout = ttk.Frame(settings)
+        self._output_layout.grid(
+            row=2, column=0, sticky="ew", pady=(9, 0),
+        )
+        self._output_layout.columnconfigure(0, weight=1)
+        self._output_field = ttk.Frame(self._output_layout)
+        self._output_field.columnconfigure(1, weight=1)
+        ttk.Label(self._output_field, text="Output").grid(
+            row=0, column=0, sticky="w", padx=(0, 9),
+        )
+        ttk.Entry(
+            self._output_field, textvariable=self.output,
+        ).grid(row=0, column=1, sticky="ew")
+        self._output_buttons = ttk.Frame(self._output_layout)
+        ttk.Button(
+            self._output_buttons, text="Browse", command=self.choose_output,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            self._output_buttons, text="Open Folder", command=self.open_output,
+        ).pack(side="left")
+
+        queue_heading = ttk.Frame(self)
+        queue_heading.grid(
+            row=1, column=0, columnspan=2, sticky="ew", pady=(8, 4),
+        )
+        queue_heading.columnconfigure(0, weight=1)
+        self._queue_title = ttk.Label(
+            queue_heading, text="4  •  Processing queue", style="Section.TLabel",
+        )
+        self._queue_title.grid(row=0, column=0, sticky="w")
+        self._queue_stats = ttk.Label(
+            queue_heading, textvariable=self.stats, style="Muted.TLabel",
+        )
+        self._queue_stats.grid(row=0, column=1, sticky="e")
+        self._queue_heading = queue_heading
+
         table_frame = ttk.Frame(self)
-        table_frame.pack(fill="both", expand=True)
+        table_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
+        table_frame.rowconfigure(0, weight=1)
+        table_frame.columnconfigure(0, weight=1)
         cols = ("name", "source", "length", "quality", "progress", "status")
-        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", height=9,
-                                 selectmode="extended", style="Queue.Treeview")
-        widths = {"name": 320, "source": 110, "length": 85, "quality": 90,
-                  "progress": 100, "status": 215}
-        labels = {"name": "Video / output keyword", "source": "Input", "length": "Clip length",
-                  "quality": "Quality", "progress": "Progress", "status": "Status"}
-        for col in cols:
-            self.tree.heading(col, text=labels[col])
-            self.tree.column(col, width=widths[col], minwidth=70, stretch=col in ("name", "status"))
-        scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
-        self.tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-        controls = ttk.Frame(self)
-        controls.pack(fill="x", pady=(10, 6))
-        self.run_button = ttk.Button(controls, text="▶  Start Queue", command=self.start_queue,
-                                     style="Primary.TButton")
-        self.run_button.pack(side="left", padx=(0, 7))
-        self.cancel_button = ttk.Button(controls, text="■  Cancel Current", command=self.cancel_current,
-                                        state="disabled")
-        self.cancel_button.pack(side="left", padx=3)
-        self.retry_button = ttk.Button(controls, text="Retry Failed", command=self.retry_failed)
-        self.retry_button.pack(side="left", padx=3)
-        self.remove_button = ttk.Button(controls, text="Remove Completed", command=self.remove_completed)
-        self.remove_button.pack(side="left", padx=3)
-        self.clear_button = ttk.Button(controls, text="Remove Selected", command=self.remove_selected)
-        self.clear_button.pack(side="left", padx=3)
-        self.progress_bar = ttk.Progressbar(self, maximum=100, variable=self.percent)
-        self.progress_bar.pack(fill="x", pady=(3, 5))
-        ttk.Label(self, textvariable=self.status).pack(anchor="w")
-        ttk.Label(self, text="Each video gets its own numbered-clips folder. Originals and previous results are never overwritten.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(5, 0))
+        self.tree = ttk.Treeview(
+            table_frame, columns=cols, show="headings", height=3,
+            selectmode="extended", style="Queue.Treeview",
+        )
+        widths = {
+            "name": 320, "source": 110, "length": 85, "quality": 90,
+            "progress": 100, "status": 215,
+        }
+        labels = {
+            "name": "Video / output keyword", "source": "Input",
+            "length": "Clip length", "quality": "Quality",
+            "progress": "Progress", "status": "Status",
+        }
+        for column in cols:
+            self.tree.heading(column, text=labels[column])
+            self.tree.column(
+                column, width=widths[column], minwidth=70,
+                stretch=column in ("name", "status"),
+            )
+        vertical = ttk.Scrollbar(
+            table_frame, orient="vertical", command=self.tree.yview,
+        )
+        horizontal = ttk.Scrollbar(
+            table_frame, orient="horizontal", command=self.tree.xview,
+        )
+        self.tree.configure(
+            yscrollcommand=vertical.set, xscrollcommand=horizontal.set,
+        )
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        vertical.grid(row=0, column=1, sticky="ns")
+        horizontal.grid(row=1, column=0, sticky="ew")
+
+        self._action_bar = ttk.Frame(self)
+        self._action_bar.grid(
+            row=3, column=0, columnspan=2, sticky="ew", pady=(9, 5),
+        )
+        self.run_button = ttk.Button(
+            self._action_bar, text="▶  Start Queue", command=self.start_queue,
+            style="Primary.TButton",
+        )
+        self.cancel_button = ttk.Button(
+            self._action_bar, text="■  Cancel Current",
+            command=self.cancel_current, state="disabled",
+        )
+        self.retry_button = ttk.Button(
+            self._action_bar, text="Retry Failed", command=self.retry_failed,
+        )
+        self.remove_button = ttk.Button(
+            self._action_bar, text="Remove Completed",
+            command=self.remove_completed,
+        )
+        self.clear_button = ttk.Button(
+            self._action_bar, text="Remove Selected",
+            command=self.remove_selected,
+        )
+        self._actions = (
+            self.run_button, self.cancel_button, self.retry_button,
+            self.remove_button, self.clear_button,
+        )
+
+        self.progress_bar = ttk.Progressbar(
+            self, maximum=100, variable=self.percent,
+        )
+        self.progress_bar.grid(
+            row=4, column=0, columnspan=2, sticky="ew", pady=(3, 5),
+        )
+        self._status_label = ttk.Label(
+            self, textvariable=self.status,
+        )
+        self._status_label.grid(
+            row=5, column=0, columnspan=2, sticky="w",
+        )
+        self._safety_note = ttk.Label(
+            self,
+            text="Each video gets its own numbered-clips folder. Originals and previous results are never overwritten.",
+            style="Muted.TLabel",
+        )
+        self._safety_note.grid(
+            row=6, column=0, columnspan=2, sticky="w", pady=(5, 0),
+        )
+
+        self._layout_mode = None
+        self._top_height = None
+        self.bind("<Configure>", self._on_resize, add="+")
+        self._bind_scroll_wheel(self._upper_body)
+        self._upper_canvas.bind("<MouseWheel>", self._scroll_upper, add="+")
+        self._upper_canvas.bind("<Button-4>", self._scroll_upper, add="+")
+        self._upper_canvas.bind("<Button-5>", self._scroll_upper, add="+")
+        self.after_idle(self._on_resize)
+
+    def _update_scroll_region(self, _event=None):
+        bounds = self._upper_canvas.bbox("all")
+        if bounds:
+            self._upper_canvas.configure(scrollregion=bounds)
+
+    def _size_upper_body(self, event):
+        self._upper_canvas.itemconfigure(self._upper_window, width=event.width)
+        self._update_scroll_region()
+
+    def _bind_scroll_wheel(self, widget):
+        """Scroll top controls without stealing wheel input from the queue."""
+        if not isinstance(widget, tk.Text):
+            for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                widget.bind(sequence, self._scroll_upper, add="+")
+        for child in widget.winfo_children():
+            self._bind_scroll_wheel(child)
+
+    def _scroll_upper(self, event):
+        if getattr(event, "num", None) == 4:
+            steps = -1
+        elif getattr(event, "num", None) == 5:
+            steps = 1
+        else:
+            delta = getattr(event, "delta", 0)
+            steps = -(1 if delta > 0 else -1) if delta else 0
+        if steps:
+            self._upper_canvas.yview_scroll(steps, "units")
+            return "break"
+
+    def _on_resize(self, event=None):
+        width = self.winfo_width()
+        height = self.winfo_height()
+        if width < 200 or height < 200:
+            return
+        mode = ("wide" if width >= 1130 else
+                "medium" if width >= 800 else "narrow" if width >= 550 else "tiny")
+        if mode != self._layout_mode:
+            self._layout_mode = mode
+            self._reflow_controls(mode)
+
+        wrap = max(230, width - 70)
+        self._subtitle.configure(wraplength=wrap)
+        self._fast_copy_note.configure(wraplength=wrap - 20)
+        self._status_label.configure(wraplength=wrap)
+        self._safety_note.configure(wraplength=wrap)
+
+        # Keep a useful queue viewport and pinned actions, even on 600px-high
+        # displays. Upper inputs scroll when they cannot all fit at once.
+        reserved = 245 if mode in ("narrow", "tiny") else 210
+        maximum = max(125, int((height - reserved) * 0.60))
+        desired = min(self._upper_body.winfo_reqheight(), maximum)
+        if desired != self._top_height:
+            self._top_height = desired
+            self._upper_canvas.configure(height=desired)
+        self._update_scroll_region()
+
+    def _reflow_controls(self, mode):
+        stacked_inputs = mode in ("narrow", "tiny")
+        for frame in (self._input_left, self._input_right):
+            frame.grid_forget()
+        for col in (0, 1):
+            self._inputs.columnconfigure(col, weight=0)
+        if stacked_inputs:
+            self._inputs.columnconfigure(0, weight=1)
+            self._input_left.grid(row=0, column=0, sticky="ew", pady=(0, 7))
+            self._input_right.grid(row=1, column=0, sticky="ew")
+        else:
+            self._inputs.columnconfigure(0, weight=1, uniform="input")
+            self._inputs.columnconfigure(1, weight=1, uniform="input")
+            self._input_left.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+            self._input_right.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+
+        for frame in self._setting_panels:
+            frame.grid_forget()
+        columns = 4 if mode == "wide" else 2 if mode == "medium" else 1
+        for col in range(4):
+            self._settings_controls.columnconfigure(col, weight=int(col < columns))
+        for index, frame in enumerate(self._setting_panels):
+            frame.grid(
+                row=index // columns, column=index % columns, sticky="ew",
+                padx=(0, 10), pady=(0, 8),
+            )
+
+        self._output_field.grid_forget()
+        self._output_buttons.grid_forget()
+        if mode in ("wide", "medium"):
+            self._output_field.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+            self._output_buttons.grid(row=0, column=1, sticky="e")
+        else:
+            self._output_field.grid(row=0, column=0, sticky="ew")
+            self._output_buttons.grid(row=1, column=0, sticky="e", pady=(7, 0))
+
+        self._queue_stats.grid_forget()
+        if mode in ("narrow", "tiny"):
+            self._queue_stats.grid(row=1, column=0, sticky="w", pady=(3, 0))
+        else:
+            self._queue_stats.grid(row=0, column=1, sticky="e")
+
+        for button in self._actions:
+            button.grid_forget()
+        columns = 5 if mode == "wide" else 3 if mode == "medium" else 2 if mode == "narrow" else 1
+        for col in range(5):
+            self._action_bar.columnconfigure(
+                col, weight=int(col < columns and columns < 5),
+            )
+        for index, button in enumerate(self._actions):
+            button.grid(
+                row=index // columns, column=index % columns,
+                sticky="ew" if columns < 5 else "w",
+                padx=(0, 7), pady=(0, 5),
+            )
 
     def _refresh(self):
         selected = set(self.tree.selection())

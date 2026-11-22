@@ -1,4 +1,5 @@
 """Unified app's settings and backend regression tests (no display required)."""
+import inspect
 import tempfile
 import unittest
 from decimal import Decimal
@@ -7,11 +8,23 @@ from unittest.mock import patch
 
 from image_renamer.core import execute, make_plan, save_history, undo_last
 from smart_clip_renamer.core import create_plan, execute_plan
-from smart_media_manager.app import Preferences
+from smart_media_manager import app as manager_app
+from smart_media_manager.app import Preferences, SmartMediaManager
 from video_clip_cutter.core import prepare_job
 
 
 class ManagerTests(unittest.TestCase):
+    def test_standalone_smart_clip_renamer_not_in_manager_tabs(self):
+        # Verify the integrated window without requiring a display in CI.
+        source = inspect.getsource(SmartMediaManager.__init__)
+        for tab in ("BatchCutterTab(notebook, preferences)",
+                    "ImagesTab(notebook, preferences)",
+                    "YoutubeTab(notebook, preferences)"):
+            self.assertIn(tab, source)
+        self.assertNotIn("Smart Clip Renamer", source)
+        self.assertNotIn("ClipsTab(", source)
+        self.assertFalse(hasattr(manager_app, "ClipsTab"))
+
     def test_settings_persist(self):
         with tempfile.TemporaryDirectory() as td:
             file = Path(td) / "prefs.json"

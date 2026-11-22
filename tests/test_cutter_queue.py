@@ -87,7 +87,7 @@ class CutterQueueTests(unittest.TestCase):
             self.assertNotIn("postprocessors", seen)
 
 
-    def test_cutter_output_height_selected_per_job(self):
+    def test_batch_cutter_uses_lossless_fast_copy_regardless_of_download_quality(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             source = root / "sample.mp4"
@@ -103,8 +103,9 @@ class CutterQueueTests(unittest.TestCase):
                     count, _ = cut_source(
                         job, source, threading.Event(), lambda *event: None)
                 self.assertEqual(count, 1)
-                self.assertEqual(process.call_args.kwargs["output_height"], expected)
+                self.assertNotIn("output_height", process.call_args.kwargs)
                 self.assertFalse(process.call_args.kwargs["include_audio"])
+                self.assertTrue(process.call_args.kwargs["fast_copy"])
             legacy = new_job(str(source), "Local", "2", str(root))
             legacy.pop("quality")
             with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
@@ -116,6 +117,7 @@ class CutterQueueTests(unittest.TestCase):
                 cut_source(legacy, source, threading.Event(), lambda *event: None)
             self.assertNotIn("output_height", process.call_args.kwargs)
             self.assertFalse(process.call_args.kwargs["include_audio"])
+            self.assertTrue(process.call_args.kwargs["fast_copy"])
 
     def test_keyword_validation_and_retry_folder(self):
         with tempfile.TemporaryDirectory() as td:

@@ -128,6 +128,70 @@ class ValidationTests(unittest.TestCase):
                     process_job(job, ffmpeg="ffmpeg", include_audio=False, fast_copy=True)
             self.assertEqual((output / "Clip 1.mp4").read_bytes(), b"first")
 
+    def test_fast_copy_discards_all_underlength_clips_and_renumbers(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            source = base / "source.mp4"
+            source.write_bytes(b"source")
+            folder = base / "out"
+            folder.mkdir()
+            job = Job(source, folder, "Only Full", Decimal("4"), Decimal("16"))
+
+            class FakeProcess:
+                returncode = 0
+                stderr = io.StringIO("")
+                def poll(self):
+                    return 0
+
+            def launch(command, **kwargs):
+                stage = Path(command[-1]).parent
+                for number in range(1, 5):
+                    (stage / f"clip-{number:06d}.mp4").write_bytes(bytes([number]))
+                return FakeProcess()
+
+            lengths = {
+                "clip-000001.mp4": Decimal("4.5"),
+                "clip-000002.mp4": Decimal("2.0"),
+                "clip-000003.mp4": Decimal("4.0"),
+                "clip-000004.mp4": Decimal("3.99"),
+            }
+            with patch("video_clip_cutter.core.subprocess.Popen", side_effect=launch), \
+                 patch("video_clip_cutter.core.video_duration",
+                       side_effect=lambda p: lengths[p.name]):
+                clips = process_job(job, ffmpeg="ffmpeg", include_audio=False, fast_copy=True)
+
+            self.assertEqual([p.name for p in clips],
+                             ["Only Full 1.mp4", "Only Full 2.mp4"])
+            self.assertEqual([p.read_bytes() for p in clips], [b"\x01", b"\x03"])
+            self.assertFalse(any(folder.glob(".fast-copy-*")))
+            self.assertTrue(source.exists())
+
+    def test_fast_copy_zero_valid_segments_is_not_a_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            source = base / "source.mp4"
+            source.write_bytes(b"source")
+            out = base / "out"
+            out.mkdir()
+            job = Job(source, out, "No Shorts", Decimal("4"), Decimal("8"))
+
+            class FakeProcess:
+                returncode = 0
+                stderr = io.StringIO("")
+                def poll(self):
+                    return 0
+
+            def launch(command, **kwargs):
+                (Path(command[-1]).parent / "clip-000001.mp4").write_bytes(b"short")
+                return FakeProcess()
+
+            with patch("video_clip_cutter.core.subprocess.Popen", side_effect=launch), \
+                 patch("video_clip_cutter.core.video_duration", return_value=Decimal("2")):
+                clips = process_job(job, ffmpeg="ffmpeg", include_audio=False, fast_copy=True)
+            self.assertEqual(clips, [])
+            self.assertFalse(any(out.glob("*.mp4")))
+            self.assertFalse(any(out.glob(".fast-copy-*")))
+
     def test_fast_copy_rejects_scaling_or_audio(self):
         with tempfile.TemporaryDirectory() as root:
             folder = Path(root)

@@ -177,7 +177,7 @@ class RenameTests(unittest.TestCase):
         one.write_bytes(b"one")
         two.write_bytes(b"two")
         plan = make_plan([two, one], "Alexa", 1, in_place=True)
-        self.assertEqual([p.target for p in plan], [two, one])
+        self.assertEqual([p.target for p in plan], [two.resolve(), one.resolve()])
         self.assertEqual(execute(plan, True), 0)
         self.assertEqual(one.read_bytes(), b"one")
         self.assertEqual(two.read_bytes(), b"two")

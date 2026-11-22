@@ -182,14 +182,15 @@ class SnapshotQueueTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0)
 
             with patch("smart_media_manager.youtube_downloader.ffmpeg_paths",
-                       return_value=("ffmpeg", "ffprobe")), \\
+                       return_value=("ffmpeg", "ffprobe")), \
                  patch("smart_media_manager.youtube_downloader.subprocess.run",
                        side_effect=fake_ffmpeg):
                 self.assertEqual(snapshot_video(first, threading.Event(),
                                                  threading.Event(), lambda *a: None), 2)
                 self.assertEqual(snapshot_video(second, threading.Event(),
                                                  threading.Event(), lambda *a: None), 2)
-            folders = list((root / "out").glob("Naomi Osaka [*"))
+            folders = [p for p in (root / "out").iterdir()
+                       if p.is_dir() and p.name.startswith("Naomi Osaka [")]
             self.assertEqual(len(folders), 2)
             images = sorted((root / "out").rglob("*.jpg"))
             self.assertEqual(len(images), 4)

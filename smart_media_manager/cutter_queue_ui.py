@@ -299,7 +299,7 @@ class BatchCutterTab(ttk.Frame):
         )
         self._safety_note = ttk.Label(
             self,
-            text="New clips go directly into the selected folder. Existing files are preserved. Adding videos starts the queue.",
+            text="Auto-start queue • Clips saved directly to output folder • Existing files preserved.",
             style="Muted.TLabel",
         )
         self._safety_note.grid(
@@ -364,7 +364,7 @@ class BatchCutterTab(ttk.Frame):
         # Keep a useful queue viewport and pinned actions, even on 600px-high
         # displays. Upper inputs scroll when they cannot all fit at once.
         reserved = 245 if mode in ("narrow", "tiny") else 210
-        maximum = max(125, int((height - reserved) * 0.60))
+        maximum = max(80, int((height - reserved) * 0.60))
         desired = min(self._upper_body.winfo_reqheight(), maximum)
         if desired != self._top_height:
             self._top_height = desired

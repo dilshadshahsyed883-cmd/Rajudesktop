@@ -361,10 +361,20 @@ class BatchCutterTab(ttk.Frame):
         self._status_label.configure(wraplength=wrap)
         self._safety_note.configure(wraplength=wrap)
 
-        # Keep a useful queue viewport and pinned actions, even on 600px-high
-        # displays. Upper inputs scroll when they cannot all fit at once.
-        reserved = 245 if mode in ("narrow", "tiny") else 210
-        maximum = max(80, int((height - reserved) * 0.60))
+        # Measure after Tk has applied wrapping and action-row reflow. Fixed
+        # pixel budgets can leave only a header on Windows at 660x540.
+        self.after_idle(self._fit_upper_panel)
+
+    def _fit_upper_panel(self):
+        if not self.winfo_exists():
+            return
+        footer = (self._queue_heading, self._action_bar, self.progress_bar,
+                  self._status_label, self._safety_note)
+        # Frame padding (36) plus the fixed rows' vertical grid padding (39).
+        fixed = 75 + sum(widget.winfo_reqheight() for widget in footer)
+        # Leave room for the queue header, a full row and horizontal scrollbar.
+        budget = max(20, self.winfo_height() - fixed - 90)
+        maximum = min(budget, max(20, int(self.winfo_height() * 0.40)))
         desired = min(self._upper_body.winfo_reqheight(), maximum)
         if desired != self._top_height:
             self._top_height = desired

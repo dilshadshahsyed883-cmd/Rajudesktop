@@ -1,15 +1,19 @@
-"""Unified local/YouTube cutter pipeline. Every job uses an isolated output directory."""
+"""Unified local/YouTube cutter pipeline. New jobs publish completed clips into a shared output directory."""
 from __future__ import annotations
 
 import re
 import threading
+import os
+import tempfile
+import unicodedata
 from dataclasses import replace
 import uuid
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
+from smart_media_manager.clip_output import publish_clip, validate_output
 from smart_media_manager.youtube_downloader import ffmpeg_paths, valid_url
-from video_clip_cutter.core import prepare_job, process_job, parse_duration, RESERVED_NAMES
+from video_clip_cutter.core import prepare_job, process_job, parse_duration, RESERVED_NAMES, Cancelled
 
 VIDEO_TYPES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".ts"}
 CLIP_QUALITIES = ("720p", "1080p")
@@ -35,12 +39,14 @@ def source_format(quality=None):
 
 
 def safe_name(value: str) -> str:
-    result = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", str(value))
+    result = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", unicodedata.normalize("NFC", str(value)))
     result = re.sub(r"\s+", " ", result).strip(" .")[:85].rstrip(" .")
     result = result or "Video"
-    if result.split(".")[0].upper() in RESERVED_NAMES:
+    if result.split(".")[0].rstrip().upper() in RESERVED_NAMES | {"COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³"}:
         result = "Video " + result
-    return result
+    while len(result.encode("utf-8")) > 180 or len(result.encode("utf-16-le")) > 170:
+        result = result[:-1]
+    return result.rstrip(" .")
 
 
 def new_job(source: str, kind: str, duration: str, output: str,
@@ -64,12 +70,15 @@ def new_job(source: str, kind: str, duration: str, output: str,
         raise ValueError("Choose an output folder")
     return {"id": uuid.uuid4().hex, "source": source, "kind": kind,
             "keyword": safe_name(keyword or default_name), "duration": str(duration),
-            "quality": quality, "output": str(output),
+            "quality": quality, "output": str(Path(output).expanduser().resolve()),
+            "output_layout": "shared",
             "status": "Queued", "progress": 0, "attempt": 0}
 
 
 def job_output(job: dict) -> Path:
     root = Path(job["output"]).expanduser()
+    if job.get("output_layout") == "shared":
+        return root
     label = f'{safe_name(job["keyword"])} [{job["id"][:8]}]'
     if job.get("attempt", 0):
         label += f' retry-{int(job["attempt"])}'
@@ -121,7 +130,7 @@ def download_source(job: dict, cache_root: Path, cancel: threading.Event, notify
     return finished[0]
 
 
-def cut_source(job: dict, source: Path, cancel: threading.Event, notify) -> tuple[int, Path]:
+def _cut_source(job: dict, source: Path, cancel: threading.Event, notify) -> tuple[int, Path]:
     """Cut only complete-length clips; never write a shorter final remainder.
 
     This rule belongs to Smart Media Manager. The independent video cutter
@@ -158,3 +167,50 @@ def execute_job(job: dict, cancel: threading.Event, notify, cache_root: Path) ->
     source = (download_source(job, cache_root, cancel, notify)
               if job["kind"] == "YouTube" else Path(job["source"]))
     return cut_source(job, source, cancel, notify)
+
+
+def cut_source(job: dict, source: Path, cancel: threading.Event, notify) -> tuple[int, Path]:
+    if job.get("output_layout") != "shared":
+        return _cut_source(job, source, cancel, notify)
+    if cancel.is_set():
+        raise RuntimeError("Cancelled")
+    if job.get("quality") is not None and job["quality"] not in CLIP_QUALITIES:
+        raise ValueError("Video quality must be 720p or 1080p")
+    destination = validate_output(job_output(job))
+    cache = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "SmartMediaManager" / "cutter_staging"
+    cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=job["id"] + "-", dir=cache) as staging:
+        # process_job calls progress only for closed, probed full-length segments.
+        # Publish each one immediately so cancellation keeps finished clips.
+        prepared = prepare_job(Path(source), Path(staging), job["keyword"], job["duration"])
+        full_clips = int(prepared.total // prepared.step)
+        prepared = replace(prepared, total=prepared.step * full_clips)
+        if not full_clips:
+            notify("Cutting", 100, "Skipped video shorter than requested clip duration")
+            return 0, destination
+        published = []
+        def progress(index, total, clip):
+            if cancel.is_set():
+                raise Cancelled(f"Cancelled. {len(published)} completed clip(s) kept.")
+            target = publish_clip(clip, destination, job["keyword"], prepared.step)
+            published.append(target)
+            notify("Cutting", round(index * 100 / total), f"Clip {index}/{total}: {target.name}")
+        notify("Cutting", 0, f"Fast copying up to {full_clips} keyframe-aligned clips")
+        process = None
+        def remember_process(value):
+            nonlocal process
+            if value is not None:
+                process = value
+        try:
+            process_job(prepared, cancel=cancel, include_audio=False, fast_copy=True,
+                        progress=progress, process_callback=remember_process)
+        finally:
+            # Publication/probe/disk errors must not leave FFmpeg writing after
+            # its staging directory is released (especially on Windows).
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+        if cancel.is_set():
+            raise Cancelled(f"Cancelled. {len(published)} completed clip(s) kept.")
+        notify("Cutting", 100, f"Saved {len(published)} clips without re-encoding")
+        return len(published), destination

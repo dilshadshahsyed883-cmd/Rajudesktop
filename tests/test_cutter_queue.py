@@ -27,12 +27,12 @@ class CutterQueueTests(unittest.TestCase):
             b.write_bytes(b"test")
             x = new_job(str(a), "Local", "4", str(root / "output"))
             y = new_job(str(b), "Local", "4", str(root / "output"))
-            self.assertNotEqual(job_output(x), job_output(y))
+            self.assertEqual(job_output(x), job_output(y))
             self.assertEqual(x["keyword"], "first")
             self.assertEqual(y["keyword"], "second")
             self.assertEqual(x["status"], "Queued")
             self.assertEqual(x["duration"], "4")
-            self.assertTrue(job_output(x).parent.name == "output")
+            self.assertEqual(job_output(x).name, "output")
 
     def test_new_queue_quality_defaults_and_validation(self):
         with tempfile.TemporaryDirectory() as td:
@@ -94,6 +94,7 @@ class CutterQueueTests(unittest.TestCase):
             source.write_bytes(b"dummy")
             for label, expected in (("720p", 720), ("1080p", 1080)):
                 job = new_job(str(source), "Local", "2", str(root), quality=label)
+                job.pop("output_layout")
                 with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
                      patch("smart_media_manager.cutter_queue.process_job",
                            return_value=[Path("part.mp4")]) as process:
@@ -108,6 +109,7 @@ class CutterQueueTests(unittest.TestCase):
                 self.assertTrue(process.call_args.kwargs["fast_copy"])
             legacy = new_job(str(source), "Local", "2", str(root))
             legacy.pop("quality")
+            legacy.pop("output_layout")
             with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
                  patch("smart_media_manager.cutter_queue.process_job",
                        return_value=[Path("part.mp4")]) as process:
@@ -128,7 +130,11 @@ class CutterQueueTests(unittest.TestCase):
             self.assertEqual(job["keyword"], "My Video")
             old = job_output(job)
             job["attempt"] = 1
-            self.assertNotEqual(job_output(job), old)
+            self.assertEqual(job_output(job), old)
+            job.pop("output_layout")
+            legacy = job_output(job)
+            job["attempt"] = 2
+            self.assertNotEqual(job_output(job), legacy)
             with self.assertRaises(ValueError):
                 new_job("https://example.com/video", "YouTube", "4", td)
             with self.assertRaises(Exception):
@@ -139,6 +145,7 @@ class CutterQueueTests(unittest.TestCase):
             path = Path(td) / "sample.mp4"
             path.write_bytes(b"local")
             job = new_job(str(path), "Local", "4", str(Path(td) / "out"))
+            job.pop("output_layout")
             cancel = threading.Event()
             notifications = []
             with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
@@ -182,6 +189,7 @@ class CutterQueueTests(unittest.TestCase):
             source = Path(td) / "source.mp4"
             source.write_bytes(b"test")
             job = new_job(str(source), "Local", "4", str(Path(td) / "out"))
+            job.pop("output_layout")
             calls = []
             with patch("smart_media_manager.cutter_queue.prepare_job") as prepare, \
                  patch("smart_media_manager.cutter_queue.process_job") as process:
@@ -282,6 +290,7 @@ class CutterQueueTests(unittest.TestCase):
         tab.quality = Field("720p")
         tab.output = Field("/tmp")
         tab.status = Field("")
+        tab.links = SimpleNamespace(delete=lambda *args: None)
         tab._remember = lambda: None
         tab._save = lambda: None
         tab._refresh = lambda: None
@@ -301,7 +310,8 @@ class CutterQueueTests(unittest.TestCase):
                 worker = threading.Thread(target=tab._worker, daemon=True)
                 worker.start()
                 self.assertTrue(first_cut_started.wait(2))
-                tab._add([second_url], "YouTube")
+                second = new_job(second_url, "YouTube", "3", "/tmp")
+                tab._finish_add([second], "YouTube", "/tmp")
                 self.assertEqual(len(tab.jobs), 2)
                 allow_first_cut_to_finish.set()
                 worker.join(timeout=4)

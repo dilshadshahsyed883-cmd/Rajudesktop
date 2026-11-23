@@ -10,6 +10,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from smart_media_manager.clip_output import default_output_folder, validate_output
 from smart_media_manager.cutter_queue import cut_source, download_source, new_job
 
 
@@ -26,12 +27,13 @@ class BatchCutterTab(ttk.Frame):
         self.events = queue.Queue()
         self.cancel = threading.Event()
         self.running = False
+        self.adding = False
         self.work_items = None  # Thread-safe incoming queue for active runs.
         self.duration = tk.StringVar(value=prefs.get("cutter_duration", "4"))
         self.quality = tk.StringVar(value=prefs.get("cutter_quality", "720p"))
         if self.quality.get() not in ("720p", "1080p"):
             self.quality.set("720p")
-        self.output = tk.StringVar(value=prefs.get("cutter_output", str(Path.home() / "Documents" / "ProcessedClips")))
+        self.output = tk.StringVar(value=prefs.get("cutter_output", str(default_output_folder())))
         self.keyword = tk.StringVar()
         self.status = tk.StringVar(value="Ready — add PC videos or YouTube links")
         self.stats = tk.StringVar()
@@ -40,6 +42,7 @@ class BatchCutterTab(ttk.Frame):
         self._build()
         self._refresh()
         self.after(120, self._poll)
+        self.after_idle(self.start_queue)
 
     def _load(self):
         try:
@@ -192,7 +195,7 @@ class BatchCutterTab(ttk.Frame):
         self._output_layout.columnconfigure(0, weight=1)
         self._output_field = ttk.Frame(self._output_layout)
         self._output_field.columnconfigure(1, weight=1)
-        ttk.Label(self._output_field, text="Output").grid(
+        ttk.Label(self._output_field, text="Output Folder").grid(
             row=0, column=0, sticky="w", padx=(0, 9),
         )
         ttk.Entry(
@@ -262,10 +265,6 @@ class BatchCutterTab(ttk.Frame):
         self._action_bar.grid(
             row=3, column=0, columnspan=2, sticky="ew", pady=(9, 5),
         )
-        self.run_button = ttk.Button(
-            self._action_bar, text="▶  Start Queue", command=self.start_queue,
-            style="Primary.TButton",
-        )
         self.cancel_button = ttk.Button(
             self._action_bar, text="■  Cancel Current",
             command=self.cancel_current, state="disabled",
@@ -282,7 +281,7 @@ class BatchCutterTab(ttk.Frame):
             command=self.remove_selected,
         )
         self._actions = (
-            self.run_button, self.cancel_button, self.retry_button,
+            self.cancel_button, self.retry_button,
             self.remove_button, self.clear_button,
         )
 
@@ -300,7 +299,7 @@ class BatchCutterTab(ttk.Frame):
         )
         self._safety_note = ttk.Label(
             self,
-            text="Each video gets its own numbered-clips folder. Originals and previous results are never overwritten.",
+            text="New clips go directly into the selected folder. Existing files are preserved. Adding videos starts the queue.",
             style="Muted.TLabel",
         )
         self._safety_note.grid(
@@ -416,15 +415,15 @@ class BatchCutterTab(ttk.Frame):
 
         for button in self._actions:
             button.grid_forget()
-        columns = 5 if mode == "wide" else 3 if mode == "medium" else 2 if mode == "narrow" else 1
-        for col in range(5):
+        columns = 4 if mode == "wide" else 3 if mode == "medium" else 2 if mode == "narrow" else 1
+        for col in range(4):
             self._action_bar.columnconfigure(
-                col, weight=int(col < columns and columns < 5),
+                col, weight=int(col < columns and columns < 4),
             )
         for index, button in enumerate(self._actions):
             button.grid(
                 row=index // columns, column=index % columns,
-                sticky="ew" if columns < 5 else "w",
+                sticky="ew" if columns < 4 else "w",
                 padx=(0, 7), pady=(0, 5),
             )
 
@@ -450,33 +449,75 @@ class BatchCutterTab(ttk.Frame):
         self.prefs.set("cutter_quality", self.quality.get())
 
     def _add(self, sources, kind):
-        if not sources:
+        if not sources or self.adding:
             return
+        if len(self.jobs) + len(sources) > 500:
+            messagebox.showerror("Queue inputs", "Queue limit is 500 items. Remove completed items first.")
+            return
+        settings = (self.duration.get(), self.output.get(), self.keyword.get().strip(), self.quality.get())
+        self.adding = True
+        self.pc_button.configure(state="disabled")
+        self.yt_button.configure(state="disabled")
+        self.links.configure(state="disabled")
+        self.progress_bar.configure(mode="indeterminate")
+        self.progress_bar.start(12)
+        self.status.set("Checking inputs and output folder…")
+        def validate():
+            try:
+                duration, output, keyword, quality = settings
+                if not output.strip():
+                    raise ValueError("Choose an output folder")
+                folder = validate_output(Path(output))
+                additions = []
+                seen = set()
+                for source in sources:
+                    job = new_job(source, kind, duration, str(folder), keyword, quality=quality)
+                    if kind == "Local":
+                        job["source"] = str(Path(source).resolve())
+                    key = self._source_key(job)
+                    if key not in seen:
+                        additions.append(job)
+                        seen.add(key)
+                self.events.put(("add_ready", additions, kind, str(folder), output))
+            except Exception as exc:
+                self.events.put(("add_error", str(exc)))
+        threading.Thread(target=validate, daemon=True, name="smart-media-enqueue").start()
+
+    @staticmethod
+    def _source_key(job):
+        if job["kind"] == "Local":
+            return ("Local", os.path.normpath(job["source"]).casefold())
+        from urllib.parse import urlparse, parse_qs
+        url = urlparse(job["source"])
+        identifier = parse_qs(url.query).get("v", [""])[0] or url.path.rstrip("/").split("/")[-1]
+        return ("YouTube", identifier)
+
+    def _finish_add(self, additions, kind, folder, selected=None):
+        active = {self._source_key(j) for j in self.jobs
+                  if j["status"] in ("Queued", "Downloading", "Ready to Cut", "Cutting")}
+        additions = [j for j in additions if self._source_key(j) not in active]
+        previous = list(self.jobs)
         try:
-            # Never truncate an active job when new sources are added.
-            if len(self.jobs) + len(sources) > 500:
-                raise ValueError("Queue limit is 500 items. Remove completed items before adding more.")
+            if selected is None or self.output.get() == selected:
+                self.output.set(folder)
             self._remember()
-            additions = []
-            for i, source in enumerate(sources, 1):
-                prefix = self.keyword.get().strip()
-                if prefix and len(sources) > 1:
-                    prefix = f"{prefix} {i}"
-                additions.append(new_job(
-                    source, kind, self.duration.get(), self.output.get(), prefix,
-                    quality=self.quality.get()))
             self.jobs.extend(additions)
-            self._save()
-            self._refresh()
-            if self.running and self.work_items is not None and not self.cancel.is_set():
-                for job in additions:
-                    self.work_items.put(job.copy())
-                self.status.set(f"Added {len(additions)} {kind.lower()} video(s) to the running queue.")
-            else:
-                self.status.set(f"Added {len(additions)} {kind.lower()} video(s). Press Start Queue.")
-        except (OSError, ValueError) as exc:
-            self.status.set(f"Could not add items: {exc}")
+            self._save()  # Durable before any worker receives new jobs.
+        except OSError as exc:
+            self.jobs = previous
+            self.status.set(f"Could not save queue: {exc}")
             messagebox.showerror("Queue inputs", str(exc))
+            return
+        if kind == "YouTube":
+            self.links.delete("1.0", "end")
+        self._refresh()
+        if self.running and self.work_items is not None and not self.cancel.is_set():
+            for job in additions:
+                self.work_items.put(job.copy())
+        elif not self.running:
+            self.start_queue()
+        if not additions:
+            self.status.set("These videos are already waiting or processing.")
 
     def add_pc(self):
         files = filedialog.askopenfilenames(title="Select videos to cut", filetypes=[
@@ -491,7 +532,6 @@ class BatchCutterTab(ttk.Frame):
             messagebox.showerror("YouTube URLs", "Paste valid YouTube video links, one per line.")
             return
         self._add(links, "YouTube")
-        self.links.delete("1.0", "end")
 
     def choose_output(self):
         choice = filedialog.askdirectory(title="Choose processed clips output folder")
@@ -514,7 +554,7 @@ class BatchCutterTab(ttk.Frame):
     def _set_running(self, running):
         self.running = running
         # Keep source inputs and clip-duration presets usable during processing.
-        for control in (self.run_button, self.retry_button,
+        for control in (self.retry_button,
                         self.remove_button, self.clear_button):
             control.configure(state="disabled" if running else "normal")
         self.cancel_button.configure(state="normal" if running else "disabled")
@@ -524,9 +564,12 @@ class BatchCutterTab(ttk.Frame):
             return
         pending = [j.copy() for j in self.jobs if j["status"] == "Queued"]
         if not pending:
-            messagebox.showinfo("Queue", "No waiting videos. Add videos or retry failed items.")
             return
-        self._remember()
+        try:
+            self._remember()
+        except OSError as exc:
+            self.status.set(f"Could not save queue settings: {exc}")
+            return
         self.cancel.clear()
         self.work_items = queue.Queue()
         for job in pending:
@@ -621,7 +664,7 @@ class BatchCutterTab(ttk.Frame):
         if changed:
             self._save()
             self._refresh()
-            self.status.set("Failed/cancelled videos requeued. Press Start Queue.")
+            self.start_queue()
 
     def remove_completed(self):
         if self.running:
@@ -643,7 +686,19 @@ class BatchCutterTab(ttk.Frame):
             for _ in range(150):
                 item = self.events.get_nowait()
                 kind = item[0]
-                if kind == "state":
+                if kind in ("add_ready", "add_error"):
+                    self.progress_bar.stop()
+                    self.progress_bar.configure(mode="determinate")
+                    self.links.configure(state="normal")
+                    self.adding = False
+                    self.pc_button.configure(state="normal")
+                    self.yt_button.configure(state="normal")
+                    if kind == "add_ready":
+                        self._finish_add(*item[1:])
+                    else:
+                        self.status.set("Could not add items: " + item[1])
+                        messagebox.showerror("Queue inputs", item[1])
+                elif kind == "state":
                     job = next((j for j in self.jobs if j["id"] == item[1]), None)
                     if job:
                         job["status"] = item[2]
@@ -673,7 +728,7 @@ class BatchCutterTab(ttk.Frame):
                     self.work_items = None
                     self._save()
                     self._refresh()
-                    if not item[3] and any(job["status"] == "Queued" for job in self.jobs):
+                    if any(job["status"] == "Queued" for job in self.jobs):
                         # An add may race with the worker's idle shutdown: do not lose it.
                         self.start_queue()
                     else:
@@ -681,4 +736,6 @@ class BatchCutterTab(ttk.Frame):
                                         ("Cancelled by user." if item[3] else "Check individual statuses."))
         except queue.Empty:
             pass
+        except OSError as exc:
+            self.status.set(f"Could not save queue state: {exc}")
         self.after(120, self._poll)

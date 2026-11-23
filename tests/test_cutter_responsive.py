@@ -38,7 +38,7 @@ class ResponsiveCutterTests(unittest.TestCase):
 
     def assert_footer_visible(self):
         parent_bottom = self.cutter.winfo_rooty() + self.cutter.winfo_height()
-        for widget in (self.cutter.run_button, self.cutter.cancel_button,
+        for widget in (self.cutter.cancel_button,
                        self.cutter.retry_button, self.cutter.remove_button,
                        self.cutter.clear_button, self.cutter.progress_bar):
             self.assertEqual(widget.winfo_manager(), "grid")
@@ -85,7 +85,7 @@ class ResponsiveCutterTests(unittest.TestCase):
         )
         self.assertTrue(self.cutter.tree["xscrollcommand"])
         self.assertNotEqual(
-            self.cutter.run_button.grid_info()["row"],
+            self.cutter.cancel_button.grid_info()["row"],
             self.cutter.clear_button.grid_info()["row"],
         )
 
@@ -93,7 +93,7 @@ class ResponsiveCutterTests(unittest.TestCase):
         self.resize(720, 600)
         self.assertIsInstance(self.cutter.links, tk.Text)
         self.assertEqual(str(self.cutter.quality_select["state"]), "readonly")
-        self.assertTrue(self.cutter.run_button["command"])
+        self.assertFalse(hasattr(self.cutter, "run_button"))
         self.assertTrue(self.cutter.pc_button["command"])
         self.assert_footer_visible()
 

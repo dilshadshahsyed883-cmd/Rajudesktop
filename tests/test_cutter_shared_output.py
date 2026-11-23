@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from smart_media_manager.clip_output import publish_clip, validate_output, default_output_folder
+from smart_media_manager.clip_output import publish_clip, validate_output, default_output_folder, available_clip_name
 from smart_media_manager.cutter_queue import cut_source, job_output, new_job, safe_name
 from smart_media_manager.cutter_queue_ui import BatchCutterTab
 from smart_media_manager.app import Preferences
@@ -42,18 +42,56 @@ class SharedOutputTests(unittest.TestCase):
             folder = validate_output(Path(td) / "clips")
             old = folder / "ALEX 3.MP4"
             old.write_bytes(b"historic")
-            clip = Path(td) / "clip.mp4"
+            clip = Path(td) / "Alex 3.mp4"
             clip.write_bytes(b"finished-video")
             with patch("smart_media_manager.clip_output.video_duration", return_value=Decimal(4)):
                 with ThreadPoolExecutor(max_workers=6) as executor:
                     results = list(executor.map(
-                        lambda _: publish_clip(clip, folder, "Alex", Decimal(4)), range(12)))
+                        lambda _: publish_clip(clip, folder, Decimal(4)), range(12)))
             self.assertEqual(len(set(results)), 12)
             self.assertEqual({p.name for p in results}, {f"Alex {n}.mp4" for n in range(4, 16)})
             self.assertEqual(old.read_bytes(), b"historic")
             self.assertTrue(all(p.read_bytes() == b"finished-video" for p in results))
             self.assertEqual(len(list(folder.iterdir())), 13)
             self.assertFalse(list(Path(td).glob(".smart-media-publish-*")))
+
+    def test_exact_filename_first_and_only_trailing_number_changes(self):
+        cases = [
+            ("Alex_007.mp4", {"Alex_077.mp4"}, "Alex_007.mp4"),
+            ("Alex_007.mp4", {"Alex_007.mp4", "Alex_077.mp4"}, "Alex_078.mp4"),
+            ("Alex 7.MP4", {"ALEX 7.mp4", "Alex 77.mp4"}, "Alex 78.MP4"),
+            ("Alex-007.mp4", {"Alex-007.mp4", "Alex-999.mp4"}, "Alex-1000.mp4"),
+            ("Alex_007.mp4", {"Alex_007.mp4", "Alex 999.mp4", "Alex_888.txt"}, "Alex_008.mp4"),
+            ("Alex.mp4", {"Alex.mp4", "Alex 9.mp4"}, "Alex 10.mp4"),
+            ("Alex.mp4", {"Alex 9.mp4"}, "Alex.mp4"),
+            ("Alex007.mp4", {"alex007.MP4", "Alex077.mp4"}, "Alex078.mp4"),
+            ("Café_007.mp4", {"Cafe\u0301_007.mp4", "CAFÉ_077.MP4"}, "Café_078.mp4"),
+        ]
+        for original, existing, expected in cases:
+            with self.subTest(original=original, existing=existing):
+                self.assertEqual(available_clip_name(original, existing), expected)
+
+    @unittest.skipIf(os.name == "nt", "Exercises the POSIX exclusive-link race path")
+    def test_external_writer_race_rescans_maximum_and_keeps_existing_data(self):
+        with tempfile.TemporaryDirectory() as td:
+            folder = validate_output(Path(td) / "clips")
+            clip = Path(td) / "Alex_007.mp4"
+            clip.write_bytes(b"finished-video")
+            link = os.link
+            calls = []
+            def racing_link(source, target):
+                calls.append(target.name)
+                if len(calls) == 1:
+                    target.write_bytes(b"other-writer")
+                    (folder / "Alex_077.mp4").write_bytes(b"other-maximum")
+                    raise FileExistsError(target)
+                link(source, target)
+            with patch("smart_media_manager.clip_output.video_duration", return_value=Decimal(4)), \
+                 patch("smart_media_manager.clip_output.os.link", side_effect=racing_link):
+                result = publish_clip(clip, folder, Decimal(4))
+            self.assertEqual(calls, ["Alex_007.mp4", "Alex_078.mp4"])
+            self.assertEqual(result.read_bytes(), b"finished-video")
+            self.assertEqual((folder / "Alex_007.mp4").read_bytes(), b"other-writer")
 
     def test_partial_copy_never_appears_in_library(self):
         with tempfile.TemporaryDirectory() as td:
@@ -67,7 +105,7 @@ class SharedOutputTests(unittest.TestCase):
             with patch("smart_media_manager.clip_output.video_duration", return_value=Decimal(4)), \
                  patch("smart_media_manager.clip_output.shutil.copyfile", side_effect=broken_copy):
                 with self.assertRaises(OSError):
-                    publish_clip(clip, folder, "Alex", Decimal(4))
+                    publish_clip(clip, folder, Decimal(4))
             self.assertEqual(list(folder.iterdir()), [])
             self.assertFalse(list(Path(td).glob(".smart-media-publish-*")))
 
@@ -101,7 +139,7 @@ class SharedOutputTests(unittest.TestCase):
             first = new_job(str(source), "Local", "2", str(folder), "Alex")
             count, result = cut_source(first, source, threading.Event(), lambda *args: None)
             self.assertEqual(count, 3)
-            self.assertEqual(result, folder)
+            self.assertEqual(result, folder.resolve())
             before = {p.name: p.read_bytes() for p in folder.iterdir()}
             cancel = threading.Event()
             second = new_job(str(source), "Local", "2", str(folder), "alex")

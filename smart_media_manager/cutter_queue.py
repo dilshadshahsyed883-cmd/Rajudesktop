@@ -192,7 +192,7 @@ def cut_source(job: dict, source: Path, cancel: threading.Event, notify) -> tupl
         def progress(index, total, clip):
             if cancel.is_set():
                 raise Cancelled(f"Cancelled. {len(published)} completed clip(s) kept.")
-            target = publish_clip(clip, destination, job["keyword"], prepared.step)
+            target = publish_clip(clip, destination, prepared.step)
             published.append(target)
             notify("Cutting", round(index * 100 / total), f"Clip {index}/{total}: {target.name}")
         notify("Cutting", 0, f"Fast copying up to {full_clips} keyframe-aligned clips")

@@ -71,12 +71,31 @@ def _key(name: str) -> str:
     return unicodedata.normalize("NFC", name).casefold()
 
 
-def publish_clip(clip: Path, folder: Path, keyword: str, minimum) -> Path:
-    """Probe, copy privately on the destination volume, then publish atomically.
+def available_clip_name(original: str, existing: set[str]) -> str:
+    """Keep the exact basename unless occupied; then change ending digits only.
 
-    Keep the cutter's existing `keyword N.mp4` style and continue its numbering
-    using actual target files (including case variants), across jobs/retries.
+    This matches Combine_All_Clips_Fixed: original prefix/separators, extension
+    case and minimum digit width survive; collisions advance past the highest
+    existing number in that exact prefix family, compared case-insensitively.
     """
+    occupied = {_key(name) for name in existing}
+    if _key(original) not in occupied:
+        return original
+    path = Path(original)
+    match = re.fullmatch(r"(.*?)([0-9]+)", path.stem)
+    if match:
+        prefix, digits = match.groups()
+        width, original_number = len(digits), int(digits)
+    else:
+        prefix, width, original_number = path.stem + " ", 0, 0
+    family = re.compile(re.escape(_key(prefix)) + r"([0-9]+)\.mp4$")
+    numbers = [int(m.group(1)) for name in occupied if (m := family.fullmatch(name))]
+    number = max([original_number, *numbers]) + 1
+    return prefix + str(number).zfill(width) + path.suffix
+
+
+def publish_clip(clip: Path, folder: Path, minimum) -> Path:
+    """Probe, stage privately, and publish with exact-name-first collision rules."""
     if video_duration(clip) < minimum:
         raise CutterError("Completed clip is shorter than the requested duration.")
     if shutil.disk_usage(folder).free < clip.stat().st_size + 1024 * 1024:
@@ -89,15 +108,8 @@ def publish_clip(clip: Path, folder: Path, keyword: str, minimum) -> Path:
         with ready.open("rb+") as handle:
             os.fsync(handle.fileno())
         with publish_lock(folder):
-            existing = {_key(p.name) for p in folder.iterdir()}
-            pattern = re.compile(re.escape(_key(keyword)) + r" (\d+)\.mp4$")
-            numbers = [int(m.group(1)) for name in existing if (m := pattern.fullmatch(name))]
-            number = max(numbers, default=0) + 1
             while True:
-                target = folder / f"{keyword} {number}.mp4"
-                if _key(target.name) in existing:
-                    number += 1
-                    continue
+                target = folder / available_clip_name(clip.name, {p.name for p in folder.iterdir()})
                 try:
                     if os.name == "nt":
                         # Windows rename never replaces an existing destination.
@@ -107,4 +119,6 @@ def publish_clip(clip: Path, folder: Path, keyword: str, minimum) -> Path:
                         os.link(ready, target)
                     return target
                 except FileExistsError:
-                    number += 1
+                    # A writer outside Smart Media Manager may race the lock.
+                    # Rescan the actual directory before choosing the next name.
+                    continue

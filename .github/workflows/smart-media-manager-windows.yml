@@ -92,6 +92,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Downloader tests failed' }
           python -m unittest discover -s tests -p test_cutter_queue.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Batch cutter tests failed' }
+          python -m unittest discover -s tests -p test_cutter_shared_output.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Shared output tests failed' }
           python -m unittest discover -s tests -p test_cutter_responsive.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Responsive cutter GUI tests failed' }
           python -m unittest discover -s tests -p test_snapshots_local.py -v

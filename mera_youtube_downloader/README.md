@@ -1,0 +1,4 @@
+# Mera YouTube Downloader — desktop migration
+Standalone React/Vite/Ant Design + Python/PyWebView (WebView2) app. Direct yt-dlp download only. The V2 quality choices, full playlist toggle, output folder, paste, cancel, open folder, progress, speed/ETA, activity log, settings and help are retained. Authentication settings are ignored and never passed to yt-dlp. Partial resume remains enabled. Progress is per stream, not overall playlist. Cancellation is cooperative; blocking network or FFmpeg operations may take time. No main-branch merge.
+
+Build using the dedicated Windows Actions workflow. It bundles FFmpeg, FFprobe, Deno and Python dependencies into a single EXE. Microsoft Edge WebView2 Runtime must be present (normally included in Windows 10/11). No Python or Node installation required to run the packaged EXE. Live YouTube availability is not guaranteed or bypassed.

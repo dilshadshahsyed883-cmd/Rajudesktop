@@ -1,0 +1,89 @@
+name: Mera Downloader - Windows EXE
+on:
+  push:
+    branches: [feature/mera-downloader-desktop-v3]
+    paths:
+      - 'mera_youtube_downloader/**'
+      - '.github/workflows/mera-downloader-windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mera_youtube_downloader
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test direct-only backend
+        run: python -m unittest -v test_core
+      - name: Build React frontend
+        working-directory: mera_youtube_downloader/frontend
+        run: |
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+      - name: Bundle FFmpeg, FFprobe and Deno
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force tools | Out-Null
+          Copy-Item (Get-Command deno).Source tools/deno.exe
+          $archive = "$env:RUNNER_TEMP/mera-ffmpeg.zip"
+          $sources = @('https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip','https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip')
+          $ok = $false
+          foreach ($uri in $sources) {
+            try { Invoke-WebRequest -Uri $uri -OutFile $archive -TimeoutSec 180; if ((Get-Item $archive).Length -lt 10000000) { throw 'Invalid archive' }; $ok = $true; break }
+            catch { Remove-Item $archive -ErrorAction SilentlyContinue }
+          }
+          if (-not $ok) { throw 'FFmpeg download failed' }
+          Expand-Archive $archive "$env:RUNNER_TEMP/mera-ffmpeg" -Force
+          foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
+            $file = Get-ChildItem "$env:RUNNER_TEMP/mera-ffmpeg" -Filter $name -Recurse | Select-Object -First 1
+            if (-not $file) { throw "Missing $name" }
+            Copy-Item $file.FullName "tools/$name"
+          }
+          & tools/ffmpeg.exe -version
+          & tools/deno.exe --version
+      - name: Build standalone EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name MeraYouTubeDownloader --collect-all yt_dlp --collect-all yt_dlp_ejs --collect-all webview --add-data 'frontend/dist;frontend/dist' --add-binary 'tools/ffmpeg.exe;tools' --add-binary 'tools/ffprobe.exe;tools' --add-binary 'tools/deno.exe;tools' app.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path dist/MeraYouTubeDownloader.exe)) { throw 'EXE missing' }
+          (Get-FileHash dist/MeraYouTubeDownloader.exe -Algorithm SHA256).Hash.ToLower() | Set-Content dist/MeraYouTubeDownloader.exe.sha256
+      - name: Smoke test packaged React bridge
+        shell: pwsh
+        run: |
+          $env:MERA_SMOKE_FILE = "$env:RUNNER_TEMP/mera-smoke.txt"
+          $p = Start-Process (Resolve-Path dist/MeraYouTubeDownloader.exe) -PassThru
+          try {
+            for ($i=0; $i -lt 60; $i++) {
+              if (Test-Path $env:MERA_SMOKE_FILE) { break }
+              $p.Refresh()
+              if ($p.HasExited) { throw "EXE exited: $($p.ExitCode)" }
+              Start-Sleep -Seconds 2
+            }
+            if (-not (Test-Path $env:MERA_SMOKE_FILE)) { throw 'React bridge did not initialize' }
+            Get-Content $env:MERA_SMOKE_FILE
+          } finally { & taskkill.exe /F /T /PID $p.Id 2>$null | Out-Null }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeraYouTubeDownloader-Windows
+          path: |
+            mera_youtube_downloader/dist/MeraYouTubeDownloader.exe
+            mera_youtube_downloader/dist/MeraYouTubeDownloader.exe.sha256
+          if-no-files-found: error

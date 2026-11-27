@@ -60,6 +60,7 @@ jobs:
         run: python capcut_independent_renderer/build_source_zip.py --output release-source/CapCut_Independent_Renderer_v04_source.zip
       - uses: actions/upload-artifact@v4
         with:
+          retention-days: 1
           name: CapCut-Independent-Renderer-v04-source-${{ matrix.os }}
           path: release-source/*
           if-no-files-found: error

@@ -58,4 +58,4 @@ jobs:
           name: CapCut_Native_Render_Queue_Windows
           path: CapCut_Native_Render_Queue_Windows.zip
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 3

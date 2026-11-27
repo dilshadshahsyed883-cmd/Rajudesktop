@@ -108,7 +108,7 @@ jobs:
             dist/EdgeVoiceStudio.exe
             dist/EdgeVoiceStudio.exe.sha256
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
       - name: Publish direct single-EXE release from main only
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh

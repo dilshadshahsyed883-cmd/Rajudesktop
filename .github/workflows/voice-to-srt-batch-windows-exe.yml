@@ -76,7 +76,7 @@ jobs:
             voice_to_srt_batch/Voice-To-SRT-Studio-Batch-Windows-EXE.zip
             voice_to_srt_batch/VoiceToSRTStudioBatch.exe.sha256
             voice_to_srt_batch/Voice-To-SRT-Studio-Batch-Windows-EXE.zip.sha256
-          retention-days: 30
+          retention-days: 3
           if-no-files-found: error
       - name: Publish direct-download GitHub release when merged to main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

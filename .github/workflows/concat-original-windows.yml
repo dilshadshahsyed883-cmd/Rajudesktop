@@ -63,4 +63,4 @@ jobs:
             dist/SHA256SUMS
             concat_original/README.md
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3

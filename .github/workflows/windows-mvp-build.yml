@@ -47,4 +47,4 @@ jobs:
             SceneDesktopStudio-windows-x64.zip
             SceneDesktopStudio-windows-x64.zip.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3

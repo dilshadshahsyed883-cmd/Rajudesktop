@@ -61,4 +61,4 @@ jobs:
             CapCut_Auto_Export_Evidence_Demo_Windows.zip
             frozen_selfcheck.json
           if-no-files-found: error
-          retention-days: 60
+          retention-days: 3

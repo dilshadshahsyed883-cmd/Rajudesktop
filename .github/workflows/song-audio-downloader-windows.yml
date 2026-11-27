@@ -80,7 +80,7 @@ jobs:
             dist/SongAudioDownloader.exe
             dist/SongAudioDownloader.exe.sha256
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
       - name: Publish direct EXE release after merging to main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:

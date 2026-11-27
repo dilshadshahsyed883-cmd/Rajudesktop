@@ -47,6 +47,7 @@ jobs:
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 3
           name: VideoClipCutter-Windows
           path: VideoClipCutter-Windows.zip
           if-no-files-found: error

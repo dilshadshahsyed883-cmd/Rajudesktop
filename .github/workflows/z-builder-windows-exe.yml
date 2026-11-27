@@ -84,7 +84,7 @@ jobs:
             dist/Z_Builder_V6.3.exe
             dist/Windows-Smoke.json
             dist/Windows-Smoke.png
-          retention-days: 30
+          retention-days: 3
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
